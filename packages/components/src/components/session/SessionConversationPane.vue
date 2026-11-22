@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowDown } from "@lucide/vue"
-import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
+import { useElementSize, useResizeObserver, useScroll, watchImmediate } from "@vueuse/core"
 import { computed, nextTick, onBeforeUnmount, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
@@ -38,6 +38,7 @@ const reading = useConversationReadingStore()
 provide(conversationReadingKey, () => reading.session(props.readingId))
 const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
 const scroller = computed(() => scrollArea.value?.viewportElement ?? undefined)
+const content = useTemplateRef<HTMLElement>("content")
 const overlay = useTemplateRef<HTMLElement>("overlay")
 const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
 const followBottom = ref(true)
@@ -71,7 +72,6 @@ function saveReading(id: string): void {
 }
 onBeforeUnmount(() => saveReading(props.readingId))
 const { arrivedState } = useScroll(scroller, {
-  offset: { bottom: 100 },
   onScroll() {
     if (restoringScroll || followingSpring) return
     followBottom.value = arrivedState.bottom
@@ -119,6 +119,16 @@ function locateEntry(id: string): void {
   activeEntry.value = id
 }
 
+function restoreReading() {
+  if (!restoringScroll || props.loading || !scroller.value) return
+  if (!focusedEntry.value && !pendingLocate.value) {
+    const saved = reading.session(props.readingId).scroll
+    scroller.value.scrollTo({ top: !saved || saved.bottom ? scroller.value.scrollHeight : saved.top })
+  }
+  restoringScroll = false
+  updateOutline()
+}
+
 watchImmediate(() => props.readingId, (id, previous) => {
   if (previous) saveReading(previous)
   followingSpring?.cancel()
@@ -129,20 +139,19 @@ watchImmediate(() => props.readingId, (id, previous) => {
   followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== props.sessionId))
   const saved = reading.session(id).scroll
   if (saved && !focusedEntry.value && !pendingLocate.value) followBottom.value = saved.bottom
-  void nextTick(() => {
-    if (props.readingId !== id) return
-    if (!focusedEntry.value && !pendingLocate.value && (saved || !props.loading)) {
-      scroller.value?.scrollTo({ top: !saved || saved.bottom ? scroller.value.scrollHeight : saved.top })
-    }
-    restoringScroll = false
-    updateOutline()
-  })
+  void nextTick(() => { if (props.readingId === id) restoreReading() })
 })
+function followLatest() {
+  const el = scroller.value
+  if (!el || restoringScroll || props.loading || !followBottom.value || pendingLocate.value) return
+  if (followingSpring) followSpringToBottom(el)
+  else el.scrollTo({ top: el.scrollHeight })
+}
+// Realizing history rows and loading their media can resize the transcript between revisions.
+useResizeObserver(content, followLatest)
 watch([() => props.revision, () => props.loading], () => {
-  if (!props.loading && followBottom.value && !pendingLocate.value && scroller.value) {
-    if (followingSpring) followSpringToBottom(scroller.value)
-    else scroller.value.scrollTo({ top: scroller.value.scrollHeight })
-  }
+  if (restoringScroll) restoreReading()
+  else followLatest()
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
 watch([focusedEntry, () => props.readingId, () => props.loading, () => props.revision], async ([entry, id, loading]) => {
@@ -182,7 +191,7 @@ watch([pendingLocate, () => props.loading, () => props.revision, focusedPreview,
       data-session-scroll-area
       :viewport-attrs="{ 'data-session-scroll-viewport': '' }"
     >
-      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
+      <div ref="content" class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <slot :focused-entry="focusedEntry" />
       </div>
     </UiScrollArea>

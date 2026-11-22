@@ -1,6 +1,8 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { createPinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
+import { conversationReadingKey, useConversationReadingStore } from "../../stores/conversation-reading.ts"
 import { agentInput } from "../../test/agent.ts"
 import AgentUserMessage from "./AgentUserMessage.vue"
 
@@ -54,4 +56,23 @@ test("a denied clipboard write shows an error and a successful retry clears it",
   expect(writeText).toHaveBeenCalledTimes(2)
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   expect(wrapper.find('[aria-label="Copied"]').exists()).toBe(true)
+})
+
+test("pasted resources restore independent disclosure states when their messages remount", async () => {
+  const reading = useConversationReadingStore(createPinia()).session("30")
+  const content = [
+    { type: "resource" as const, resource: { uri: "deskfleet://pasted-text/log", text: "Log" } },
+    { type: "resource" as const, resource: { uri: "deskfleet://pasted-text/log", text: "Another log" } },
+  ]
+  function render(id: string) {
+    wrapper?.unmount()
+    wrapper = mount(AgentUserMessage, {
+      props: { input: agentInput({ id, content }) },
+      global: { plugins: [i18n], provide: { [conversationReadingKey as symbol]: () => reading } },
+    })
+    return wrapper.findAll("[data-pasted-resource] button")
+  }
+  await render("first")[1]!.trigger("click")
+  expect(render("second").map(button => button.attributes("aria-expanded"))).toEqual(["false", "false"])
+  expect(render("first").map(button => button.attributes("aria-expanded"))).toEqual(["false", "true"])
 })

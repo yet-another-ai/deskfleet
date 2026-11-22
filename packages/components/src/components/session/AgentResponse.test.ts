@@ -1,16 +1,18 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { defineComponent, h, type PropType } from "vue"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
 import type { ConversationResponse, ConversationStep, ConversationTool } from "../../services/agent-conversation.ts"
 import { pendingMermaidLocate } from "../../stores/layout.ts"
-import { agentElicitation, agentPermission } from "../../test/agent.ts"
+import { agentElicitation, agentInput, agentPermission } from "../../test/agent.ts"
 import AgentResponse from "./AgentResponse.vue"
+import AgentConversation from "./AgentConversation.vue"
 
 const wrappers: VueWrapper[] = []
 afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   pendingMermaidLocate.value = null
+  vi.unstubAllGlobals()
 })
 
 const contentStub = defineComponent({
@@ -226,14 +228,34 @@ test("collapsed activity shows pending approval without promoting tool failures"
 
 test.each([true, false])("locating a thought diagram opens its response and group (entry ID: %s)", async withEntryId => {
   const code = "graph TD\nA --> B"
-  const view = render(response([
+  const completed = response([
     tool("read"), message("diagram", "thought", `\`\`\`mermaid\n${code}\n\`\`\``),
     message("progress", "assistant"), tool("other-read"), message("other-thought", "thought"),
     message("answer", "assistant"),
-  ], false))
-  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("false")
+  ], false)
+  vi.stubGlobal("IntersectionObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  })
+  const laterInputs = Array.from({ length: 24 }, (_, i) => ({
+    id: `input-${i}`, kind: "input" as const, input: agentInput({ id: String(i) }),
+  }))
+  const view = mount(AgentConversation, {
+    props: {
+      sessionId: "30",
+      projection: [...completed.steps.map(step => ({ ...step, turnId: "70" })), ...laterInputs],
+      turns: [completed.turn!],
+    },
+    global: { plugins: [i18n], stubs: { AgentContent: contentStub, AgentUserMessage: true } },
+  })
+  wrappers.push(view)
+  expect(view.findComponent(AgentResponse).exists()).toBe(false)
+  pendingMermaidLocate.value = { id: 1, sessionId: "another-session", code }
+  await flushPromises()
+  expect(view.findComponent(AgentResponse).exists()).toBe(false)
 
-  pendingMermaidLocate.value = { id: 1, code, ...(withEntryId ? { entryId: "diagram" } : {}) }
+  pendingMermaidLocate.value = { id: 2, sessionId: "30", code, ...(withEntryId ? { entryId: "diagram" } : {}) }
   await flushPromises()
 
   expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")

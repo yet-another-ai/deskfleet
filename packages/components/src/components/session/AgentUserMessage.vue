@@ -12,7 +12,7 @@ import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ input: ConversationInput; animateSend?: boolean; unattributedLabel?: string }>()
+const props = defineProps<{ input: ConversationInput; disclosureId?: string; animateSend?: boolean; unattributedLabel?: string }>()
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
 const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.input.createdAt, intlLocale(locale.value as AppLocale)))
@@ -45,7 +45,7 @@ onScopeDispose(() => { for (const anim of animations) anim.cancel() })
         <time v-if="time" :datetime="input.deliveredAt ?? input.createdAt">{{ time }}</time>
       </div>
       <div data-user-message-bubble class="max-w-full rounded-2xl bg-ui-accent/8 px-4 py-2.5">
-        <AgentContent :content="input.content" />
+        <AgentContent :content="input.content" :disclosure-id="disclosureId ?? `input-${input.id}`" />
       </div>
       <p v-if="input.state === 'uncertain'" class="m-0 max-w-md text-right text-xs text-ui-warning">{{ t('agent.uncertainInput') }}</p>
       <AgentMessageActions :text="text" />

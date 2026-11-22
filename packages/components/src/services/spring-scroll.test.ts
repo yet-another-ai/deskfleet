@@ -67,15 +67,45 @@ test("reduced motion clamps to scroll bounds without scheduling frames", async (
   expect(frames.size).toBe(0)
 })
 
-test("locate centers content in its scroll parent with the same spring", async () => {
+test("locate centers the target after earlier rows change height during the scroll", async () => {
   const element = scroller()
   const target = document.createElement("div")
   element.append(target)
   vi.spyOn(element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 400, 400))
-  vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 900, 100, 100))
+  let targetTop = 900
+  vi.spyOn(target, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, targetTop - element.scrollTop, 100, 100))
   const scroll = springScrollIntoView(target)
   expect(element.scrollTop).toBe(0)
+  await tick(96)
+  targetTop += 400
   await tick(3000)
   expect(await scroll.finished).toBe(true)
-  expect(element.scrollTop).toBe(650)
+  expect(element.scrollTop).toBe(1050)
+})
+
+test("locating near the scroll limit settles at the reachable edge", async () => {
+  const element = scroller()
+  const target = document.createElement("div")
+  element.append(target)
+  vi.spyOn(target, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, 1980 - element.scrollTop, 100, 20))
+  const scroll = springScrollIntoView(target)
+  await tick(3000)
+  expect(frames.size).toBe(0)
+  expect(await scroll.finished).toBe(true)
+  expect(element.scrollTop).toBe(1600)
+})
+
+test("leaving the Session interrupts the scroll to its previous entry", async () => {
+  const element = scroller()
+  const target = document.createElement("div")
+  element.append(target)
+  vi.spyOn(target, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, 900 - element.scrollTop, 100, 20))
+  const scroll = springScrollIntoView(target)
+  await tick(64)
+  target.remove()
+  const position = element.scrollTop
+  await tick(32)
+  expect(await scroll.finished).toBe(false)
+  expect(frames.size).toBe(0)
+  expect(element.scrollTop).toBe(position)
 })

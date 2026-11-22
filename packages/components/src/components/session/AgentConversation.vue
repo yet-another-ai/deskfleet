@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { LoaderCircle } from "@lucide/vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
-import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
+import { computed, inject, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { AgentLiveNotice } from "@deskfleet/client/agent-live"
-import { containsConversationEntry, groupTranscript, liveTurnStates, type ConversationEntry, type ConversationTurn, type TranscriptEntry } from "../../services/agent-conversation.ts"
+import { groupTranscript, liveTurnStates, type ConversationEntry, type ConversationTurn, type TranscriptEntry } from "../../services/agent-conversation.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
+import { useConversationViewport } from "../../composables/useConversationViewport.ts"
+import { useTranscriptLocate } from "../../composables/useTranscriptLocate.ts"
+import { conversationReadingKey, createConversationReading } from "../../stores/conversation-reading.ts"
+import ConversationRowContent from "./ConversationRowContent.vue"
 import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
 import AgentLiveNotices from "./AgentLiveNotices.vue"
@@ -77,6 +81,16 @@ const startupStatus = computed(() => {
   if (snapshot.runs.at(-1)?.state === "starting") return t("agent.runState.starting")
   return undefined
 })
+const located = useTranscriptLocate(displayedTranscript, sessionId, () => props.locateEntry)
+const { observe, printing } = useConversationViewport(() => props.locateEntry)
+const reading = inject(conversationReadingKey, undefined)
+const fallbackReading = ref(createConversationReading())
+watch(sessionId, () => { fallbackReading.value = createConversationReading() })
+const readingState = computed(() => reading?.() ?? fallbackReading.value)
+provide(conversationReadingKey, () => readingState.value)
+// Short histories paint on the first frame. A long history opens without parsing distant rows.
+const eager = computed(() => displayedTranscript.value.length < 20)
+const canObserve = typeof IntersectionObserver !== "undefined"
 const items = useTemplateRef<HTMLLIElement[]>("items")
 defineExpose({ items })
 </script>
@@ -85,15 +99,15 @@ defineExpose({ items })
   <div class="flex flex-col gap-4">
   <slot name="live" />
   <AgentLiveNotices :notices="notices ?? []" @dismiss="emit('dismissNotice', $event)" />
-  <ol class="flex flex-col gap-6 text-[15px] leading-[1.65]" :aria-label="t('agent.conversation')">
+  <ol :key="sessionId" class="flex flex-col gap-6 text-[15px] leading-[1.65]" :aria-label="t('agent.conversation')">
     <li v-for="entry in displayedTranscript" :key="entryKey(entry)" ref="items" class="scroll-mt-6"
-      :class="{
-        'ui-conversation-history': entry !== displayedTranscript.at(-1) && (entry.kind === 'input' ? entry.id !== locateEntry : !entry.live && !entry.steps.some(step => locateEntry && containsConversationEntry(step, locateEntry))),
-        'ui-conversation-input': entry.kind === 'input',
-      }"
+      :class="{ 'ui-conversation-input': entry.kind === 'input' }"
       :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
-      <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :animate-send="entry.id === lastInputId" :unattributed-label="unattributedUserLabel" />
-      <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === displayedTranscript.at(-1)" :fork-disabled="forkDisabled" :locate-entry="locateEntry" @fork="emit('fork')" />
+      <ConversationRowContent :observe="canObserve ? observe : undefined" :eager="eager" :heights="readingState.rowHeights" :row-id="entryKey(entry)" :estimate="entry.kind === 'input' ? 80 : 384"
+        :pinned="printing || entry === displayedTranscript.at(-1) || (entry.kind === 'response' && entry.live) || located?.rowId === entry.id">
+        <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :disclosure-id="entryKey(entry)" :animate-send="entry.id === lastInputId" :unattributed-label="unattributedUserLabel" />
+        <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === displayedTranscript.at(-1)" :fork-disabled="forkDisabled" :locate-entry="located?.rowId === entry.id ? located.entryId : undefined" @fork="emit('fork')" />
+      </ConversationRowContent>
     </li>
     <li v-if="startupStatus" key="agent-startup-status" data-agent-startup-status class="scroll-mt-6">
       <div class="flex items-center gap-2 text-ui-text-muted" role="status">
@@ -104,19 +118,3 @@ defineExpose({ items })
   </ol>
   </div>
 </template>
-
-<style scoped>
-/* Keep historical DOM and component state, but let the browser skip rendering
-   distant rows. The remembered size preserves scrollback after a row is seen.
-   Live/latest responses and explicitly located entries always render immediately. */
-.ui-conversation-history {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 24rem;
-}
-.ui-conversation-history.ui-conversation-input {
-  contain-intrinsic-block-size: auto 5rem;
-}
-@media print {
-  .ui-conversation-history { content-visibility: visible; }
-}
-</style>

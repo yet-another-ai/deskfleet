@@ -13,8 +13,7 @@ const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => res
 async function painted() {
   await frame()
   await frame()
-  // rAF callbacks/microtasks run before the rendering update that resumes
-  // content-visibility neighbors. Check them in the following task.
+  // Intersection callbacks and Vue updates follow the rendering step.
   await new Promise<void>(resolve => setTimeout(resolve, 0))
 }
 function require(condition: unknown, message: string): asserts condition {
@@ -71,9 +70,7 @@ function visibleNeighbors(rows: HTMLElement[], index: number, scroller: HTMLElem
   for (let candidate = Math.max(0, index - 1); candidate <= Math.min(rows.length - 1, index + 1); candidate++) {
     const row = rows[candidate]!, bounds = row.getBoundingClientRect()
     if (Math.min(bounds.bottom, viewport.bottom) - Math.max(bounds.top, viewport.top) <= 2) continue
-    // Reading the outer contained box does not request skipped child layout.
-    // Check the child before accessing its geometry or rendered text.
-    require(row.firstElementChild?.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }), `visible neighbor row ${candidate} is still skipped`)
+    require(row.querySelector(".ui-markdown, [data-user-message-bubble]")?.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }), `visible neighbor row ${candidate} is still skipped`)
     const hit = document.elementFromPoint((bounds.left + bounds.right) / 2, Math.max(bounds.top, viewport.top) + 1)
     require(hit && row.contains(hit) && hit !== row, `visible neighbor row ${candidate} has no hit-testable descendants`)
     visible.push(candidate)
@@ -83,16 +80,20 @@ function visibleNeighbors(rows: HTMLElement[], index: number, scroller: HTMLElem
 
 /** Run only after timing/DOM diagnostics; these reads deliberately exercise real layout. */
 export async function verifyConversationScrollback(scroller: HTMLElement, conversation: HTMLElement, options: ScrollbackOptions = {}) {
-  const rows = [...conversation.querySelectorAll<HTMLElement>(":scope > ol > li")]
+  const rows = [...conversation.querySelectorAll<HTMLElement>(":scope > div > ol > li")]
   require(rows.length >= 2, "expected an input and a completed response")
   const originalScrollTop = scroller.scrollTop
-  const originalDisclosures = rows.map(row => disclosures(row).map(({ key, open }) => ({ key, open })))
-  const retainedNodes = rows.flatMap(row => [row, ...row.querySelectorAll(".ui-markdown, [data-mermaid-stage] svg")])
+  const wasAtBottom = originalScrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+  const disclosureState = (row: HTMLElement) => disclosures(row).map(({ key, open }) => ({ key, open }))
+  let topMarkdown: Element | null = null
+  let recycledMarkdown = false
+  let topDisclosures: ReturnType<typeof disclosureState> = []
   const latestMarkdown = rows.at(-1)!.querySelector<HTMLElement>(".ui-markdown")
-  require(latestMarkdown?.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }), "latest completed answer is skipped while viewing history")
+  require(latestMarkdown && latestMarkdown.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true }), "latest completed answer is skipped while viewing history")
   const visits: Array<{ position: string; rowIndex: number; readyMs: number; text: string; visibleRows: number[] }> = []
   let locate: { entryId: string; readyMs: number; text: string } | undefined
   let touchedRow: HTMLElement | undefined
+  let originalDisclosures: ReturnType<typeof disclosureState> = []
 
   async function restoreRow(row: HTMLElement, expected: Array<{ key: string; open: boolean }>) {
     // Reopening an outer disclosure mounts fresh inner buttons. Restore from
@@ -120,20 +121,31 @@ export async function verifyConversationScrollback(scroller: HTMLElement, conver
       let text: string
       try { text = visibleText(row, scroller, position.name) }
       catch (error) { throw new Error(`${String(error)}; ${JSON.stringify({ rowIndex: position.index, before, scrollTopImmediately, afterTwoFrames: scrollPosition(row, scroller) })}`) }
+      if (position.name === "top") {
+        topMarkdown = rows[1]!.querySelector(".ui-markdown")
+        require(topMarkdown, "first answer Markdown did not mount")
+        topDisclosures = disclosureState(rows[1]!)
+      }
       const visibleRows = visibleNeighbors(rows, position.index, scroller)
       visits.push({ position: position.name, rowIndex: position.index, readyMs: performance.now() - started, text, visibleRows })
       await options.checkpoint?.(position.name as "top" | "middle" | "bottom")
     }
-    require(retainedNodes.every(node => node.isConnected && conversation.contains(node)), "scrolling replaced historical DOM")
-    for (const [index, row] of rows.entries()) {
-      require(JSON.stringify(disclosures(row).map(({ key, open }) => ({ key, open }))) === JSON.stringify(originalDisclosures[index]), "scrolling changed disclosure state")
-    }
+    recycledMarkdown = topMarkdown?.isConnected === false && !rows[1]!.querySelector(".ui-markdown")
+    if (rows.length >= 42) require(recycledMarkdown, "first answer Markdown remained mounted at the bottom of a long transcript")
+    require(latestMarkdown.isConnected, "scrolling replaced the latest completed answer")
+    rows[0]!.scrollIntoView({ block: "start", behavior: "instant" })
+    await painted()
+    require(rows[1]!.querySelector(".ui-markdown"), "first answer Markdown did not remount")
+    require(JSON.stringify(disclosureState(rows[1]!)) === JSON.stringify(topDisclosures), "scrolling changed first response disclosure state")
 
     if (options.locate) {
       const target = options.locate
       const row = rows[target.rowIndex]
       require(row, "locate target row is absent")
       touchedRow = row
+      row.scrollIntoView({ block: "start", behavior: "instant" })
+      await painted()
+      originalDisclosures = disclosureState(row)
       const work = row.querySelector<HTMLButtonElement>("[data-turn-work]")
       require(work, "locate target has no work disclosure")
       if (work.getAttribute("aria-expanded") !== "true") { work.click(); await painted() }
@@ -150,7 +162,7 @@ export async function verifyConversationScrollback(scroller: HTMLElement, conver
       await painted()
       const entry = row.querySelector<HTMLElement>(`[data-conversation-entry="${CSS.escape(target.entryId)}"]`)
       require(entry, "locating a collapsed thought did not open its ancestors")
-      require(work.getAttribute("aria-expanded") === "true" && row.querySelector("[data-activity-trigger]")?.getAttribute("aria-expanded") === "true", "locate left an ancestor collapsed")
+      require(row.querySelector("[data-turn-work]")?.getAttribute("aria-expanded") === "true" && row.querySelector("[data-activity-trigger]")?.getAttribute("aria-expanded") === "true", "locate left an ancestor collapsed")
       entry.scrollIntoView({ block: "center", behavior: "instant" })
       await painted()
       const text = visibleText(entry, scroller, "located thought", "center")
@@ -161,7 +173,7 @@ export async function verifyConversationScrollback(scroller: HTMLElement, conver
       await target.select(undefined)
       // If work was originally closed its nested state was absent from the
       // snapshot; restore the state observed when it was first opened above.
-      if (!originalDisclosures[target.rowIndex]!.some(item => item.key.startsWith("activity:"))) {
+      if (!originalDisclosures.some(item => item.key.startsWith("activity:"))) {
         const restoredActivity = row.querySelector<HTMLButtonElement>("[data-activity-trigger]")!
         if ((restoredActivity.getAttribute("aria-expanded") === "true") !== activityWasOpen) restoredActivity.click()
         await painted()
@@ -169,14 +181,14 @@ export async function verifyConversationScrollback(scroller: HTMLElement, conver
     }
   } finally {
     await options.locate?.select(undefined)
-    if (touchedRow) await restoreRow(touchedRow, originalDisclosures[rows.indexOf(touchedRow)]!)
-    scroller.scrollTo({ top: originalScrollTop, behavior: "instant" })
+    if (touchedRow) {
+      await restoreRow(touchedRow, originalDisclosures)
+      require(JSON.stringify(disclosureState(touchedRow)) === JSON.stringify(originalDisclosures), "verification did not restore disclosure state")
+    }
+    scroller.scrollTo({ top: wasAtBottom ? scroller.scrollHeight : originalScrollTop, behavior: "instant" })
     await painted()
     performance.mark("conversation-scrollback-ready")
   }
-  for (const [index, row] of rows.entries()) {
-    require(row.isConnected, "verification replaced a transcript row")
-    require(JSON.stringify(disclosures(row).map(({ key, open }) => ({ key, open }))) === JSON.stringify(originalDisclosures[index]), "verification did not restore disclosure state")
-  }
-  return { latestCompletedRenderable: true, retainedDom: true, disclosureStateRestored: true, visits, locate }
+  require(rows.every(row => row.isConnected), "scrolling replaced a row anchor")
+  return { latestCompletedRenderable: true, recycledMarkdown, disclosureStateRestored: true, visits, locate }
 }
