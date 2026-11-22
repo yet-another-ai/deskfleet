@@ -41,10 +41,10 @@ export function useConversationViewport(searchEntry: () => string | undefined) {
       const root = row.closest<HTMLElement>("[data-session-scroll-viewport]")
       observer = new IntersectionObserver(entries => {
         const list = entries[0]?.target.closest("ol")
-        const viewport = root?.getBoundingClientRect()
         const atBottom = root && root.scrollTop + root.clientHeight >= root.scrollHeight - 1
+        const viewport = root && !atBottom ? root.getBoundingClientRect() : undefined
         const hit = list && viewport && visibleSearchHit(list, viewport, searchEntry())
-        const anchor = hit ?? (list && viewport && !atBottom ? readingAnchor(list, viewport.top) : undefined)
+        const anchor = hit ?? (list && viewport ? readingAnchor(list, viewport.top) : undefined)
         // Keep a visible search result at its current offset, including any scroll by the reader.
         const position = (element: Element) => hit ? midpoint(element) : element.getBoundingClientRect().top
         const before = anchor && position(anchor)
@@ -52,8 +52,8 @@ export function useConversationViewport(searchEntry: () => string | undefined) {
         // Several previously unseen rows above the reader can grow together. Account for
         // any native scroll anchoring already applied by comparing viewport coordinates.
         if (root) void nextTick(() => {
-          if (anchor?.isConnected && before !== undefined) root.scrollTop += position(anchor) - before
-          else if (atBottom) root.scrollTop = root.scrollHeight
+          if (atBottom) root.scrollTop = root.scrollHeight - root.clientHeight
+          else if (anchor?.isConnected && before !== undefined) root.scrollTop += position(anchor) - before
         })
       }, { root, rootMargin: "800px 0px" })
     }

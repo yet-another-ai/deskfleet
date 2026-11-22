@@ -65,7 +65,8 @@ test.each([
   { scrollUp: 0, hitRemainsVisible: true, anchor: "the centered search hit" },
   { scrollUp: 32, hitRemainsVisible: true, anchor: "the visible hit at the reader's chosen offset" },
   { scrollUp: 600, hitRemainsVisible: false, anchor: "the reader's new position after scrolling away" },
-])("remounting a tall neighbor preserves $anchor", async ({ scrollUp, hitRemainsVisible }) => {
+  { scrollUp: 0, hitRemainsVisible: true, returnToBottom: true, anchor: "the bottom after the reader returns to it with the search hit still visible" },
+])("remounting a tall neighbor preserves $anchor", async ({ scrollUp, hitRemainsVisible, returnToBottom }) => {
   let deliverIntersection!: (target: Element) => void
   vi.stubGlobal("IntersectionObserver", class {
     constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
@@ -98,36 +99,44 @@ test.each([
 
   const viewport = wrapper.get<HTMLElement>("[data-session-scroll-viewport]").element
   const rows = wrapper.findAll<HTMLElement>("ol > li").map(row => row.element)
-  const targetRow = rows[25]!
-  const neighbor = rows[24]!.firstElementChild!
-  // The viewport is 400px tall. The row immediately above the hit grows by 300px on mount.
-  Object.defineProperties(viewport, { clientHeight: { value: 400 }, scrollHeight: { value: 6000 } })
+  const messageIndex = returnToBottom ? 21 : 12
+  const entryId = `message-${messageIndex}`
+  const targetIndex = 2 * messageIndex + 1
+  const targetRow = rows[targetIndex]!
+  // At the bottom, grow the neighbor below the visible hit so the two anchors diverge.
+  const neighborIndex = returnToBottom ? targetIndex + 1 : targetIndex - 1
+  const neighbor = rows[neighborIndex]!.firstElementChild!
+  const growth = () => neighbor.childElementCount ? 300 : 0
+  Object.defineProperties(viewport, {
+    clientHeight: { value: 400 },
+    scrollHeight: { get: () => rows.length * 80 + growth() },
+  })
   vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 600, 400))
   for (const [index, row] of rows.entries()) {
     vi.spyOn(row, "getBoundingClientRect").mockImplementation(() => {
-      const growth = neighbor.childElementCount ? 300 : 0
-      const top = index * 80 + (index > 24 ? growth : 0) - viewport.scrollTop
-      return new DOMRect(0, top, 600, 80 + (index === 24 ? growth : 0))
+      const top = index * 80 + (index > neighborIndex ? growth() : 0) - viewport.scrollTop
+      return new DOMRect(0, top, 600, 80 + (index === neighborIndex ? growth() : 0))
     })
   }
   vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: HTMLElement) {
-    expect(this.dataset.conversationEntry).toBe("message-12")
+    expect(this.dataset.conversationEntry).toBe(entryId)
     vi.spyOn(this, "getBoundingClientRect").mockImplementation(() => targetRow.getBoundingClientRect())
     viewport.scrollTop += this.getBoundingClientRect().top + 40 - 200
   })
-  await router.push("/sessions/30?entry=message-12")
+  await router.push({ path: "/sessions/30", query: { entry: entryId } })
   await flushPromises()
   const hit = wrapper.get<HTMLElement>("[data-conversation-located]").element
   expect(neighbor.childElementCount).toBe(0)
   expect(hit.getBoundingClientRect().top).toBe(160)
-  if (scrollUp) {
-    viewport.scrollTop -= scrollUp
+  if (returnToBottom || scrollUp) {
+    viewport.scrollTop = returnToBottom ? viewport.scrollHeight - viewport.clientHeight : viewport.scrollTop - scrollUp
     viewport.dispatchEvent(new Event("scroll"))
   }
   const previousTop = viewport.scrollTop
   deliverIntersection(neighbor)
   await flushPromises()
   expect(neighbor.childElementCount).toBeGreaterThan(0)
-  if (hitRemainsVisible) expect(hit.getBoundingClientRect().top).toBe(160 + scrollUp)
+  if (returnToBottom) expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight)
+  else if (hitRemainsVisible) expect(hit.getBoundingClientRect().top).toBe(160 + scrollUp)
   else expect(viewport.scrollTop).toBe(previousTop)
 })

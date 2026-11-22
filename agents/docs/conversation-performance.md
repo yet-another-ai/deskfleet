@@ -556,11 +556,12 @@ containing keyboard focus stay mounted. Printing mounts the full transcript.
 As estimated sizes become measured sizes, the renderer preserves the offset
 of the first visible row, including after an outline jump. For a search result
 whose midpoint is visible, it preserves that midpoint's offset, so mounting a
-neighbor keeps the result in place. Scrolling away from the bottom releases
-bottom-follow. Reaching the bottom again resumes following new output and
-transcript resizes. The renderer still holds the Session event history
-and projection. One exceptionally large active response can dominate the heap
-because the unit of recycling is a transcript row.
+neighbor keeps the result in place. At the bottom, the bottom edge takes
+precedence even while a search result remains visible. Scrolling away
+releases bottom-follow, and returning to the edge resumes it. The renderer
+still holds the Session event history and projection. One exceptionally large
+active response can dominate the heap because the unit of recycling is a
+transcript row.
 
 The expanded benchmark visits historical responses before streaming so each
 nested disclosure can be opened on a mounted row. During streaming the harness
