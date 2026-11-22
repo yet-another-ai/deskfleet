@@ -3,6 +3,7 @@ import { useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { BrowserNotifications, getBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { TaskNotificationMonitor } from "@deskfleet/client/task-notification-monitor"
 
 /** The Web page observes all authorized machines, independently of the selected route. */
@@ -18,7 +19,7 @@ export function useBrowserNotifications(
   function start(): void {
     if (stop || !central) return
     const notifications = new BrowserNotifications(host.settings, kind => t(`notification.${kind}`), undefined, onSelect)
-    const monitor = new TaskNotificationMonitor(central, event => { void notifications.notify(event) }, console.error)
+    const monitor = new TaskNotificationMonitor(withCentralRequestTrigger(central, "background"), event => { void notifications.notify(event) }, console.error)
     const unsubscribe = central.onEvent(event => {
       if (event.type === "accountChanged") notifications.clear()
     })

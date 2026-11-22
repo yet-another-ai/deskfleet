@@ -135,8 +135,8 @@ This reporting path does not retry requests or change proxy/network selection.
 `withCentralRequestTrigger` creates immutable API views with `user`, `background`,
 or `unknown` attribution; concurrent requests do not share mutable trigger state.
 Automatic account/startup/reconnect loads, GitHub status polling, pinned-session
-metadata, terminal list refreshes, scheduled-task polling, and session-read
-acknowledgements opt into `background`. Account actions,
+metadata, task-notification monitoring, terminal list refreshes, scheduled-task
+polling, and session-read acknowledgements opt into `background`. Account actions,
 machine/workspace/provider/session mutations, terminal actions, and manual
 scheduled-task refreshes opt into `user`. Calls that can serve both automatic
 and interactive reads keep `unknown`; a GET or RPC name alone does not establish
