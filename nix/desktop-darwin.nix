@@ -41,7 +41,10 @@ stdenvNoCC.mkDerivation {
     description = "Manage a team's AI agents and working environments across machines";
     homepage = "https://github.com/yet-another-ai/deskfleet";
     license = lib.licenses.asl20;
-    platforms = [ "aarch64-darwin" ];
+    platforms = [
+      "aarch64-darwin"
+      "x86_64-darwin"
+    ];
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
   };
 }

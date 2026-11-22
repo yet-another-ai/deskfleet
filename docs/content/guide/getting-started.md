@@ -10,13 +10,15 @@ Download the disk image for your Mac from [GitHub Releases](https://github.com/y
 Choose the filename ending in `-mac-arm64.dmg` for Apple Silicon or `-mac-x64.dmg` for Intel.
 Open the disk image and drag DeskFleet into Applications.
 
-On Apple Silicon, you can also install DeskFleet from the official Homebrew tap:
+On Apple Silicon and Intel Macs, you can also install DeskFleet from the official Homebrew tap:
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-- **Nix (nix-darwin, Apple Silicon)**: Add the release flake as an input, apply its `deskfleet` overlay, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and manages upgrades. See the [Nix distribution guide](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution).
+Intel desktop cask support requires the companion tap packaging in [`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8). Merge that tap PR before relying on Intel Homebrew installs; the Apple Silicon cask remains available on the published tap today.
+
+- **Nix (nix-darwin, Apple Silicon and Intel)**: Add the release flake as an input, apply its `deskfleet` overlay, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and manages upgrades. See the [Nix distribution guide](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution).
 
 ### Windows (`x64`)
 
@@ -73,6 +75,7 @@ For remote workstations, VMs, or build servers without a desktop session, run th
 
 1. Download the headless daemon archive for your machine from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
    On macOS, use `deskfleet-macos-arm64.tar.gz` for Apple Silicon or `deskfleet-macos-x64.tar.gz` for Intel.
+   After the companion tap packaging in [`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8) merges, you can also `brew install yet-another-ai/tap/deskfleet-daemon` on Apple Silicon or Intel Macs (daemon binary only; enroll before `brew services start`).
    For Linux and Windows, choose `deskfleet-linux-x64.tar.gz`, `deskfleet-linux-arm64.tar.gz`, or `deskfleet-windows-x64.tar.gz`.
    You can also package the daemon from source with the command below.
    ```sh

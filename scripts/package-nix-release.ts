@@ -8,6 +8,7 @@ const targets = [
   { system: "x86_64-linux", suffix: "linux-x64.tar.gz" },
   { system: "aarch64-linux", suffix: "linux-arm64.tar.gz" },
   { system: "aarch64-darwin", suffix: "mac-arm64.zip" },
+  { system: "x86_64-darwin", suffix: "mac-x64.zip" },
 ] as const
 
 export async function packageNixRelease(directory: string, destination: string, archives: readonly string[]): Promise<void> {
@@ -19,7 +20,7 @@ export async function packageNixRelease(directory: string, destination: string, 
     const target = targets.find(({ suffix }) => filename === `deskfleet-${version}-${suffix}`)
     if (!target) {
       throw new Error(
-        `Expected a deskfleet-${version}-linux-{x64,arm64}.tar.gz or deskfleet-${version}-mac-arm64.zip desktop archive; received ${filename}`,
+        `Expected a deskfleet-${version}-linux-{x64,arm64}.tar.gz or deskfleet-${version}-mac-{arm64,x64}.zip desktop archive; received ${filename}`,
       )
     }
     if (sources[target.system]) throw new Error(`Duplicate desktop archive for ${target.system}`)

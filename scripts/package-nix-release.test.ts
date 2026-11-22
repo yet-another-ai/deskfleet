@@ -31,17 +31,19 @@ function unpack(directory: string, archive: string): string {
   return join(extracted, "deskfleet-nix")
 }
 
-test("release flake pins Linux archives and the macOS app bundle", async context => {
+test("release flake pins Linux archives and both macOS app bundles", async context => {
   const directory = fixture(context)
   const payloads = {
     "x86_64-linux": gzipSync("x64 Electron application and native addon"),
     "aarch64-linux": gzipSync("arm64 Electron application and native addon"),
-    "aarch64-darwin": Buffer.from("signed and notarized macOS app bundle"),
+    "aarch64-darwin": Buffer.from("signed and notarized Apple Silicon macOS app bundle"),
+    "x86_64-darwin": Buffer.from("signed and notarized Intel macOS app bundle"),
   }
   const filenames = {
     "x86_64-linux": "deskfleet-1.2.3-linux-x64.tar.gz",
     "aarch64-linux": "deskfleet-1.2.3-linux-arm64.tar.gz",
     "aarch64-darwin": "deskfleet-1.2.3-mac-arm64.zip",
+    "x86_64-darwin": "deskfleet-1.2.3-mac-x64.zip",
   }
   for (const [system, filename] of Object.entries(filenames)) {
     writeFileSync(join(directory, filename), payloads[system as keyof typeof payloads])
@@ -80,6 +82,14 @@ test("CLI packages a single architecture and preserves prerelease versions", con
     `https://github.com/yet-another-ai/deskfleet/releases/download/v1.2.3-rc.1/${filename}`)
 })
 
+test("publish workflow packages both macOS desktop ZIPs into the Nix release flake", () => {
+  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/publish.yml"), "utf8")
+  const step = yaml.match(/Package the Nix release flake[\s\S]*?mac-arm64\.zip[\s\S]*?(?:\n\n|\n      - name:)/)
+  assert.ok(step, "Missing Nix packaging step in publish.yml")
+  assert.match(step[0]!, /deskfleet-\$VERSION-mac-arm64\.zip/)
+  assert.match(step[0]!, /deskfleet-\$VERSION-mac-x64\.zip/)
+})
+
 test("rejects mismatched releases, unsupported targets and duplicate architectures before writing output", async context => {
   const directory = fixture(context)
   const output = join(directory, "deskfleet-nix.tar.gz")
@@ -89,8 +99,8 @@ test("rejects mismatched releases, unsupported targets and duplicate architectur
   for (const filename of [
     "deskfleet-2.0.0-linux-x64.tar.gz",
     "deskfleet-1.2.3-linux-ia32.tar.gz",
-    "deskfleet-1.2.3-mac-x64.zip",
     "deskfleet-1.2.3-mac-arm64.dmg",
+    "deskfleet-1.2.3-mac-x64.dmg",
     "deskfleet-linux-x64.tar.gz",
   ]) {
     await assert.rejects(packageNixRelease(directory, output, [filename]), /Expected a deskfleet-1\.2\.3-/)
