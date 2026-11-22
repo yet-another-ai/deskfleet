@@ -127,6 +127,68 @@ test("installVitePreloadRecovery prevents default and preserves the destination 
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
+test("a canceled earlier navigation does not clear the newer navigation's pending recovery hash", async () => {
+  const storage = memoryStorage()
+  let hash = "#/sessions/1"
+  const reload = vi.fn()
+  const target = new EventTarget() as unknown as Window
+  const env = {
+    storage,
+    pathname: "/",
+    search: "",
+    get hash() { return hash },
+    setHash: (next: string) => { hash = next },
+    reload,
+  }
+  cleanups.push(installVitePreloadRecovery(target, env))
+
+  let releaseSlow!: () => void
+  let failNewer!: () => void
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/", component: defineComponent({ template: "<div />" }) },
+      {
+        path: "/slow",
+        component: () => new Promise(resolve => {
+          releaseSlow = () => resolve(defineComponent({ template: "<div />" }))
+        }),
+      },
+      {
+        path: "/machines/:machineId/control",
+        component: () => new Promise((resolve, reject) => {
+          failNewer = () => {
+            const event = Object.assign(new Event("vite:preloadError", { cancelable: true }), {
+              payload: new TypeError("Importing a module script failed."),
+            })
+            target.dispatchEvent(event)
+            if (event.defaultPrevented) resolve(undefined as never)
+            else reject(event.payload)
+          }
+        }),
+      },
+    ],
+  })
+  cleanups.push(installRouterModuleRecovery(router, { enabled: () => true, env }))
+  await router.push("/")
+
+  const firstNav = router.push("/slow")
+  await flushPromises()
+  const secondNav = router.push("/machines/9/control")
+  await flushPromises()
+
+  // Complete the superseded first navigation so Vue Router fires afterEach with a cancellation failure.
+  releaseSlow()
+  await firstNav
+  await flushPromises()
+
+  // Now the newer navigation's chunk fails to preload; it must still recover to /machines/9/control.
+  failNewer()
+  await secondNav.catch(() => {})
+  expect(hash).toBe("#/machines/9/control")
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+
 test("installRouterModuleRecovery reloads toward the failed route only when enabled", async () => {
   const storage = memoryStorage()
   const reload = vi.fn()

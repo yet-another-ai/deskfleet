@@ -11,7 +11,7 @@ const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /loading (?:css )?chunk [^\s]+ failed/i,
 ]
 
-let pendingNavigationHash: string | undefined
+let pendingNavigation: { to: unknown; hash?: string } | undefined
 
 export interface ModuleRecoveryEnvironment {
   now?: () => number
@@ -95,8 +95,8 @@ export function installVitePreloadRecovery(
   if (!target) return () => {}
   const onPreloadError = (event: Event) => {
     const payload = "payload" in event ? (event as Event & { payload?: unknown }).payload : event
-    if (isDynamicImportError(payload) && recoverFromModuleImportError(pendingNavigationHash, env)) {
-      pendingNavigationHash = undefined
+    if (isDynamicImportError(payload) && recoverFromModuleImportError(pendingNavigation?.hash, env)) {
+      pendingNavigation = undefined
       event.preventDefault()
     }
   }
@@ -109,20 +109,20 @@ export function installRouterModuleRecovery(
   options: { enabled?: () => boolean; env?: ModuleRecoveryEnvironment } = {},
 ): () => void {
   const removeBefore = router.beforeEach(to => {
-    pendingNavigationHash = to.fullPath ? `#${to.fullPath}` : undefined
+    pendingNavigation = { to, hash: to.fullPath ? `#${to.fullPath}` : undefined }
   })
-  const removeAfter = router.afterEach(() => {
-    pendingNavigationHash = undefined
+  const removeAfter = router.afterEach(to => {
+    if (pendingNavigation?.to === to) pendingNavigation = undefined
   })
   const removeError = router.onError((error, to) => {
-    const targetHash = to?.fullPath ? `#${to.fullPath}` : pendingNavigationHash
-    pendingNavigationHash = undefined
+    const targetHash = to?.fullPath ? `#${to.fullPath}` : pendingNavigation?.hash
+    if (!to || pendingNavigation?.to === to) pendingNavigation = undefined
     if (options.enabled && !options.enabled()) return
     if (!isDynamicImportError(error)) return
     recoverFromModuleImportError(targetHash, options.env)
   })
   return () => {
-    pendingNavigationHash = undefined
+    pendingNavigation = undefined
     removeBefore()
     removeAfter()
     removeError()
