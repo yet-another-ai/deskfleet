@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { i18n } from "../../i18n/index.ts"
+import { AgentClient } from "../../services/agent-client.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { agentSnapshot } from "../../test/agent.ts"
@@ -80,6 +81,7 @@ beforeEach(() => {
   agents.sessions["30"] = agentSnapshot().session
   vi.spyOn(agents, "agentConfiguration").mockResolvedValue(configuration())
   vi.spyOn(agents, "releaseAgentConfiguration").mockResolvedValue()
+  vi.spyOn(agents, "agentUsage").mockResolvedValue([])
 })
 afterEach(() => {
   for (const view of wrappers.splice(0)) view.unmount()
@@ -783,7 +785,42 @@ test("reload after a rejected edit omits the previous confirmed restoration choi
   expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String), cache: true, refresh: true })
 })
 
-test("shows View usage submenu at the bottom for providers that support quota usage", async () => {
+test("places initial loading status at the top of the bottom-anchored menu", async () => {
+  const loaded = deferredConfiguration()
+  vi.mocked(agents.agentConfiguration).mockReturnValueOnce(loaded.promise)
+  const view = render()
+  await trigger(view).trigger("click"); await flushPromises()
+  const menu = content(view).get("[data-agent-configuration-menu]")
+  const loadingEl = menu.get("[data-agent-configuration-loading]").element
+  const firstControlEl = menu.get('[data-agent-control="agent"]').element
+  expect(Boolean(loadingEl.compareDocumentPosition(firstControlEl) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  loaded.resolve(configuration()); await flushPromises()
+  expect(menu.find("[data-agent-configuration-loading]").exists()).toBe(false)
+})
+
+test("refreshes healthy existing Sessions silently without showing loading or disabling known controls", async () => {
+  agents.configurations["30"] = configuration("sequoia", "medium")
+  const fresh = deferredConfiguration()
+  const read = vi.spyOn(agents, "sessionConfiguration").mockImplementationOnce(async id => {
+    const result = await fresh.promise
+    agents.configurations[id] = result
+    return result
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledExactlyOnceWith("30")
+  expect(content(view).find("[data-agent-configuration-loading]").exists()).toBe(false)
+  expect(row(view, "model").attributes("data-disabled")).toBeUndefined()
+  expect(row(view, "reasoning").attributes("data-disabled")).toBeUndefined()
+  // Closing and reopening while the silent refresh is in flight does not duplicate reads.
+  await trigger(view).trigger("click"); await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledTimes(1)
+  fresh.resolve(configuration("orbit", "high")); await flushPromises()
+  expect(row(view, "model").attributes("data-value")).toBe("orbit")
+  expect(row(view, "reasoning").attributes("data-value")).toBe("high")
+})
+
+test("prefetches View usage in parallel on menu open and caches quota across reopens", async () => {
   const providers = useProvidersStore()
   providers.providers = [
     { id: "cursor", name: "Cursor", template: "cursor" },
@@ -791,28 +828,34 @@ test("shows View usage submenu at the bottom for providers that support quota us
     { id: "agy", name: "Antigravity", template: "antigravity" },
   ]
   providers.selectedId = "cursor"
-  const usageApi = vi.spyOn(agents, "agentUsage").mockResolvedValue([
+  const quota = [
     { id: "gemini-weekly", label: "Weekly Limit Remaining", group: "Gemini Models", remaining: 0.32, resetsAt: "2026-11-14T05:07:24Z" },
     { id: "gemini-5h", label: "Five Hour Limit Remaining", group: "Gemini Models", remaining: 0.95 },
-  ])
+  ]
+  const usageApi = vi.mocked(agents.agentUsage).mockResolvedValue(quota)
 
   const view = render()
   await trigger(view).trigger("click"); await flushPromises()
   expect(content(view).find("[data-agent-view-usage]").exists()).toBe(false)
+  expect(usageApi).not.toHaveBeenCalled()
 
   providers.selectedId = "codex"
   await flushPromises()
   expect(content(view).find("[data-agent-view-usage]").exists()).toBe(true)
-  expect(usageApi).not.toHaveBeenCalled()
+  expect(usageApi).toHaveBeenCalledWith("codex")
 
   providers.selectedId = "agy"
   await flushPromises()
   const usageRow = content(view).get("[data-agent-view-usage]")
   expect(usageRow.text()).toContain("View usage")
-  expect(usageApi).not.toHaveBeenCalled()
+  // Usage for agy is prefetched immediately while the dropdown is open, before hovering View usage.
+  expect(usageApi).toHaveBeenCalledWith("agy")
+  const callsBeforeOpen = usageApi.mock.calls.filter(([id]) => id === "agy").length
+  expect(callsBeforeOpen).toBe(1)
 
   await usageRow.trigger("click"); await flushPromises()
-  expect(usageApi).toHaveBeenCalledExactlyOnceWith("agy")
+  // Opening View usage reuses the prefetched result without making a second request.
+  expect(usageApi.mock.calls.filter(([id]) => id === "agy")).toHaveLength(1)
   const menu = content(view).get("[data-agent-usage-menu]")
   expect(menu.text()).toContain("Gemini Models")
   expect(menu.text()).toContain("Weekly Limit Remaining")
@@ -820,4 +863,45 @@ test("shows View usage submenu at the bottom for providers that support quota us
   expect(menu.text()).toContain("Five Hour Limit Remaining")
   expect(menu.text()).toContain("95%")
   expect(menu.findAll("[data-agent-quota-item]")).toHaveLength(2)
+})
+
+test("useAgentSessionsStore caches and deduplicates agentUsage until provider revision changes", async () => {
+  vi.mocked(agents.agentUsage).mockRestore()
+  const quota = [{ id: "5h", label: "Five Hour", remaining: 0.8 }]
+  const refreshed = [{ id: "5h", label: "Five Hour", remaining: 0.75 }]
+  let resolveCall!: (value: unknown) => void
+  vi.spyOn(AgentClient.prototype, "connect").mockResolvedValue(undefined)
+  const rpc = vi.spyOn(AgentClient.prototype, "call")
+    .mockImplementation(async method => {
+      if (method === "initialize") return {}
+      if (method === "_deskfleet/session/list") return []
+      if (method === "_deskfleet/agent/usage") {
+        if (!resolveCall) return new Promise(done => { resolveCall = done })
+        return refreshed
+      }
+      return undefined
+    })
+
+  const first = agents.agentUsage("codex")
+  const second = agents.agentUsage("codex")
+  await flushPromises()
+  const usageCalls = () => rpc.mock.calls.filter(([method]) => method === "_deskfleet/agent/usage")
+  expect(usageCalls()).toHaveLength(1)
+  expect(usageCalls()[0]).toEqual(["_deskfleet/agent/usage", { provider: "codex" }])
+
+  resolveCall(quota)
+  expect(await Promise.all([first, second])).toEqual([quota, quota])
+  expect(agents.cachedAgentUsage("codex")).toEqual(quota)
+  expect(await agents.agentUsage("codex")).toEqual(quota)
+  expect(usageCalls()).toHaveLength(1)
+
+  // Explicit force refresh bypasses the warm cache.
+  expect(await agents.agentUsage("codex", { force: true })).toEqual(refreshed)
+  expect(usageCalls()).toHaveLength(2)
+  expect(agents.cachedAgentUsage("codex")).toEqual(refreshed)
+
+  // Changing providers.revision invalidates the cached usage snapshot.
+  useProvidersStore().revision = "registry-2"
+  await flushPromises()
+  expect(agents.cachedAgentUsage("codex")).toBeNull()
 })

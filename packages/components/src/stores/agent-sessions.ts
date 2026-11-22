@@ -17,7 +17,7 @@ import type { ComposerMention } from "../services/composer-mentions.ts"
 import type { ComposerReference, ComposerReferenceSearch } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
 import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import { isSnapshotReference } from "../../../../apps/daemon/src/agent-command-results.ts"
-import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
+import type { AgentConfiguration, AgentQuotaItem } from "../../../client/src/agent-configuration.ts"
 import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -117,6 +117,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const configurationSequences = new Map<string, string>()
   // A provider switch invalidates reads and merges started for the previous Agent.
   const configurationEpochs = new Map<string, number>()
+  const USAGE_CACHE_TTL_MS = 60_000
+  const usageCache = new Map<string, { items: AgentQuotaItem[]; expiresAt: number }>()
+  const usageReads = new Map<string, Promise<AgentQuotaItem[]>>()
+  let usageGeneration = 0
+  function clearUsageCache(): void {
+    usageGeneration++
+    usageCache.clear()
+    usageReads.clear()
+  }
   const commandSequences = new Map<string, string>()
   const unclassifiedCommands = new Map<string, Parameters<typeof agentComposerCatalog>[0]>()
   const state = ref<AgentConnectionState>("idle")
@@ -162,6 +171,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   watch(() => providers.providers, () => {
     for (const [sessionId, commands] of unclassifiedCommands) projectCommands(sessionId, commands)
+  })
+  watch(() => providers.revision, (current, previous) => {
+    if (previous !== undefined && current !== previous) clearUsageCache()
   })
 
   function view(id: string): AgentSessionView {
@@ -403,6 +415,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       clearPreviews()
       initialized = null
       connectionGeneration++
+      clearUsageCache()
       gitSubscriptions.clear()
       sessionPresence.value = {}
       live.clear()
@@ -774,7 +787,31 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function releaseAgentConfiguration(params: { provider: string; workspaceId?: string; probeId: string }): Promise<void> {
     await call("_deskfleet/agent/configuration", { ...params, release: true })
   }
-  const agentUsage = (provider: string) => call("_deskfleet/agent/usage", { provider })
+  function cachedAgentUsage(provider: string): AgentQuotaItem[] | null {
+    const cached = usageCache.get(provider)
+    return cached && cached.expiresAt > Date.now() ? cached.items : null
+  }
+  function agentUsage(provider: string, options?: { force?: boolean }): Promise<AgentQuotaItem[]> {
+    if (!options?.force) {
+      const cached = cachedAgentUsage(provider)
+      if (cached !== null) return Promise.resolve(cached)
+      const inflight = usageReads.get(provider)
+      if (inflight) return inflight
+    }
+    const generation = usageGeneration
+    const reading = call("_deskfleet/agent/usage", { provider })
+      .then(items => {
+        if (generation === usageGeneration) {
+          usageCache.set(provider, { items, expiresAt: Date.now() + USAGE_CACHE_TTL_MS })
+        }
+        return items
+      })
+      .finally(() => {
+        if (usageReads.get(provider) === reading) usageReads.delete(provider)
+      })
+    usageReads.set(provider, reading)
+    return reading
+  }
   function configurationEpoch(sessionId: string): number {
     return configurationEpochs.get(sessionId) ?? 0
   }
@@ -1042,5 +1079,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, readPreview, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, cachedAgentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, readPreview, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })
