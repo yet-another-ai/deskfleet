@@ -76,9 +76,9 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-/** Workspace Sessions share their Workspace; machine-scoped and Super Agent Sessions can delegate into any Workspace without seeing other machine-scoped Sessions. */
-function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope): boolean {
-  if (scope.workspaceId !== undefined && !scope.superAgent) return session.workspaceId === scope.workspaceId
+/** Workspace Sessions share their Workspace unless cross-workspace delegation is enabled; machine-scoped and Super Agent Sessions can delegate into any Workspace without seeing other machine-scoped Sessions. */
+function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope, crossWorkspace: boolean): boolean {
+  if (!crossWorkspace) return session.workspaceId === scope.workspaceId
   return session.id === scope.sessionId || session.workspaceId !== undefined
 }
 
@@ -86,13 +86,15 @@ function sameDelegation(session: { id: string; workspaceId?: string }, scope: Mc
 export async function dispatchMcp(
   operations: MachineOperations, method: string, value: unknown, actor: AgentActor, scope: McpScope,
   remote?: (request: RemoteMcpRequest) => Promise<unknown>,
+  allowLocalCrossWorkspace?: () => Promise<boolean> | boolean,
 ): Promise<unknown> {
   const params = object(value)
   const source = await operations.agents.requireActive(scope.sessionId)
   if (source.session.workspaceId !== scope.workspaceId || Boolean(source.session.superAgent) !== Boolean(scope.superAgent)) {
     throw new Error("MCP delegation scope no longer exists")
   }
-  const crossWorkspace = scope.workspaceId === undefined || scope.superAgent === true
+  const machineOrSuperScope = scope.workspaceId === undefined || scope.superAgent === true
+  const crossWorkspace = machineOrSuperScope || Boolean(await allowLocalCrossWorkspace?.())
   if (method.startsWith("remoteMcp/")) {
     const operation = method.slice("remoteMcp/".length)
     if (!["machines", "machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
@@ -132,23 +134,26 @@ export async function dispatchMcp(
     }
   }
   if (method === "workspaceCreate") {
-    if (!crossWorkspace) throw new Error("Workspace is outside this MCP delegation")
+    if (!machineOrSuperScope) throw new Error("Workspace is outside this MCP delegation")
     return createMcpWorkspace(operations.catalog, params)
   }
   if (method === "_deskfleet/session/list") {
-    return (await operations.agents.journal.list()).filter(session => sameDelegation(session, scope))
+    return (await operations.agents.journal.list()).filter(session => sameDelegation(session, scope, crossWorkspace))
   }
   if (method === "_deskfleet/session/subscribe" || method === "_deskfleet/session/history" || method === "_deskfleet/input/submit") {
     if (typeof params.sessionId !== "string") throw new Error("A Session ID is required")
     const snapshot = await operations.agents.journal.read(params.sessionId)
-    if (!sameDelegation(snapshot.session, scope)) throw new Error("Session is outside this MCP delegation")
+    if (!sameDelegation(snapshot.session, scope, crossWorkspace)) throw new Error("Session is outside this MCP delegation")
     return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
     if (!crossWorkspace && params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) {
       throw new Error("Session is outside this MCP delegation")
     }
-    const candidate = !crossWorkspace ? { ...params, workspaceId: scope.workspaceId } : params
+    // Workspace Sessions (including opt-in cross-workspace delegation) default to their own Workspace when workspaceId is omitted.
+    const candidate = !machineOrSuperScope && params.workspaceId === undefined
+      ? { ...params, workspaceId: scope.workspaceId }
+      : params
     const parsed = validateSessionCreate(candidate)
     const effectiveYolo = resolveChildYolo(parsed.yolo, source.session.yolo)
     const { yolo: _requestedYolo, ...rest } = candidate

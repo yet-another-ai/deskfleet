@@ -110,9 +110,18 @@ Provider shutdown, failed startup, archive, and daemon shutdown retire the
 grant. Tools expose the scoped catalog, Workspace creation (for machine-scoped
 Sessions), public provider identities, Session state/history/creation/prompting,
 and schedule list/create/update/delete/run operations. Workspace Sessions remain
-isolated to their own Workspace; machine-scoped Sessions can inspect all local
+isolated to their own Workspace by default; enabling **Allow Workspace sessions
+to delegate across local Workspaces** (`allowLocalCrossWorkspace` in
+`<host directory>/remote-agent-settings.json`, read live on every call) allows
+them to inspect sibling local Workspaces and list, inspect, create, or prompt
+Sessions in them while keeping Workspace creation and other machine-scoped
+Sessions isolated. Machine-scoped Sessions can inspect all local
 Workspaces, register new Workspaces, and inspect, create, or prompt Workspace
-Sessions without seeing other machine-scoped Sessions. Generated arguments
+Sessions without seeing other machine-scoped Sessions. When the built-in
+`deskfleet` server is attached and the provider supports system-prompt append
+(including Antigravity's `_meta.antigravity.systemPrompt.append`), the daemon
+appends concise instructions guiding the Agent to prefer DeskFleet MCP
+delegation over provider-native subagents. Generated arguments
 cannot replace the actor or retrieve provider launch secrets. Child Sessions
 created through `deskfleet_session_create` or `deskfleet_remote_session_create`
 inherit YOLO permission auto-approval by default when the issuing Session has

@@ -44,7 +44,7 @@ export class RemoteMcp {
       : actor.sourceMachine !== undefined)
       throw new Error("Remote MCP source does not match the delegated user")
     const readAccess = async () => {
-      const { allowSuperAgent, ...peerAccess } = await readRemoteAgentSettings(this.#directory)
+      const { allowSuperAgent, allowLocalCrossWorkspace: _allowLocalCrossWorkspace, ...peerAccess } = await readRemoteAgentSettings(this.#directory)
       if ("machineId" in source) {
         if (source.kind === "superAgent") {
           return {

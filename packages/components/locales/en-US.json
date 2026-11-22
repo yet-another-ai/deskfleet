@@ -817,7 +817,9 @@
       "allowSessions": "Allow Agents on other machines to start and message sessions on this computer",
       "allowSessionsDescription": "Agents in the same team can create new Agent sessions on this computer and send prompts to existing sessions.",
       "allowWorkspaces": "Allow Agents on other machines to create workspaces on this computer",
-      "allowWorkspacesDescription": "Agents in the same team can register existing directories on this computer as new Workspaces."
+      "allowWorkspacesDescription": "Agents in the same team can register existing directories on this computer as new Workspaces.",
+      "allowLocalCrossWorkspace": "Allow Workspace sessions to delegate across local Workspaces",
+      "allowLocalCrossWorkspaceDescription": "Workspace Agent sessions on this computer can inspect sibling local Workspaces and start or message sessions in them through DeskFleet MCP. Machine-scoped sessions remain isolated."
     },
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",

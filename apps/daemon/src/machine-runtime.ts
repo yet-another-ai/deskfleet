@@ -7,6 +7,7 @@ import { AgentSessions } from "./agent-sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { AgentMcp } from "./agent-mcp.ts"
 import { dispatchMcp } from "./mcp-dispatch.ts"
+import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 import { RemoteMcp } from "./remote-mcp.ts"
 import { ScheduledTasks } from "./scheduled-tasks.ts"
 import { McpServers } from "./mcp-servers.ts"
@@ -83,7 +84,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     mcp = new AgentMcp({
       servers: () => mcpServers.resolve(),
       authorize: async actor => { await authorize(actor) },
-      dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope, request => central!.remoteMcp(request)),
+      dispatch: (method, params, actor, scope) => dispatchMcp(
+        operations, method, params, actor, scope,
+        request => central!.remoteMcp(request),
+        async () => (await readRemoteAgentSettings(hostDirectory)).allowLocalCrossWorkspace,
+      ),
     })
     await mcp.init()
     const quotas = options.agentQuotas ?? new CentralAgentQuotas((method, path, body) => {

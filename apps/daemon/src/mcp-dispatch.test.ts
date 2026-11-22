@@ -328,4 +328,37 @@ test("MCP session creation inherits YOLO from YOLO parents, allows opt-down, and
   })
 })
 
+test("opt-in local cross-workspace delegation lets Workspace Sessions delegate across local Workspaces without exposing machine-scoped Sessions or workspace creation", async () => {
+  const { calls, operations } = fixture()
+  let enabled = false
+  const allowCrossWorkspace = () => enabled
 
+  // Disabled by default: sibling Workspace stays blocked.
+  await assert.rejects(
+    dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "20", provider: "codex" }, actor, scope, undefined, allowCrossWorkspace),
+    /outside/,
+  )
+
+  // Live opt-in opens sibling Workspace discovery and Session delegation.
+  enabled = true
+  assert.deepEqual(await dispatchMcp(operations, "catalogList", {}, actor, scope, undefined, allowCrossWorkspace), {
+    teamId: "1", machineId: "1", machineName: "host", sessionId: "1", workspaceId: "10",
+    workspaces: [{ id: "10" }, { id: "20" }], sessions: [],
+  })
+  assert.deepEqual(
+    ((await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, scope, undefined, allowCrossWorkspace)) as { id: string }[]).map(s => s.id),
+    ["1", "2"],
+  )
+  assert.equal(await dispatchMcp(operations, "_deskfleet/session/subscribe", { sessionId: "2" }, actor, scope, undefined, allowCrossWorkspace), "history")
+  await dispatchMcp(operations, "_deskfleet/input/submit", { sessionId: "2", prompt: "Build consumer" }, actor, scope, undefined, allowCrossWorkspace)
+  await dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "20", provider: "codex", context: "worktree" }, actor, scope, undefined, allowCrossWorkspace)
+  assert.equal((calls.at(-1) as [string, Record<string, unknown>])[1].workspaceId, "20")
+  // Omitting workspaceId still defaults to the issuing Session's own Workspace.
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", context: "worktree" }, actor, scope, undefined, allowCrossWorkspace)
+  assert.equal((calls.at(-1) as [string, Record<string, unknown>])[1].workspaceId, "10")
+
+  // Machine-scoped Sessions and local Workspace creation remain isolated.
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/session/subscribe", { sessionId: "40" }, actor, scope, undefined, allowCrossWorkspace), /outside/)
+  await assert.rejects(dispatchMcp(operations, "workspaceCreate", { name: "Blocked", directories: [{ path: "/srv/blocked" }] }, actor, scope, undefined, allowCrossWorkspace), /outside/)
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "999", provider: "codex" }, actor, scope, undefined, allowCrossWorkspace), /Unknown Workspace: 999/)
+})

@@ -10,6 +10,7 @@ const settingsSchema = z.strictObject({
   allowSessions: z.boolean().default(false),
   allowWorkspaces: z.boolean().default(false),
   allowSuperAgent: z.boolean().default(false),
+  allowLocalCrossWorkspace: z.boolean().default(false),
 })
 export type RemoteAgentSettings = z.input<typeof settingsSchema>
 
@@ -21,9 +22,13 @@ export function remoteAgentSettings(value: unknown) {
 export async function readRemoteAgentSettings(directory: string) {
   try {
     const value: unknown = JSON.parse(await readFile(join(directory, FILENAME), "utf8"))
-    // A headless host may configure hosted access without any peer Agent preferences.
-    if (value && typeof value === "object" && "allowSuperAgent" in value && Object.keys(value).length === 1)
-      return remoteAgentSettings({ allowRead: false, allowOperate: false, ...value })
+    // A headless host may configure hosted access or local cross-workspace delegation without peer Agent preferences.
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const keys = Object.keys(value)
+      if (keys.length > 0 && keys.every(key => key === "allowSuperAgent" || key === "allowLocalCrossWorkspace")) {
+        return remoteAgentSettings({ allowRead: false, allowOperate: false, ...value })
+      }
+    }
     return remoteAgentSettings(value)
   }
   catch (error) {

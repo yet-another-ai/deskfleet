@@ -47,9 +47,15 @@ test("Super Agent access defaults to off and can be changed independently", asyn
   await flushPromises()
   expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowSuperAgent: true })
   expect(superAgent.attributes("aria-checked")).toBe("true")
+  const crossWorkspace = wrapper.get('[aria-labelledby="remote-agents-allowLocalCrossWorkspace-label"]')
+  expect(crossWorkspace.attributes("aria-checked")).toBe("false")
+  await crossWorkspace.trigger("click")
+  await flushPromises()
+  expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowSuperAgent: true, allowLocalCrossWorkspace: true })
+  expect(crossWorkspace.attributes("aria-checked")).toBe("true")
   await wrapper.get('[aria-labelledby="remote-agents-allowRead-label"]').trigger("click")
   await flushPromises()
-  expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowRead: false, allowSuperAgent: true })
+  expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowRead: false, allowSuperAgent: true, allowLocalCrossWorkspace: true })
 })
 
 test("failed saves retain the confirmed permissions and failed loads can be retried", async () => {
@@ -77,5 +83,6 @@ test("Chinese preferences explain the separate permissions", async () => {
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 操作本机")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 在本机启动会话并发送消息")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 在本机创建工作区")
+  expect(wrapper.text()).toContain("允许工作区会话跨本地工作区委派任务")
   expect(wrapper.text()).toContain("读取对话由独立开关控制")
 })

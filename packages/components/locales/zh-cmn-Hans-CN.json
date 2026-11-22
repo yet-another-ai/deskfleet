@@ -817,7 +817,9 @@
       "allowSessions": "允许其它机器上的 Agent 在本机启动会话并发送消息",
       "allowSessionsDescription": "同一团队中的 Agent 可以在本机创建新的 Agent 会话，并向现有会话发送提示词。",
       "allowWorkspaces": "允许其它机器上的 Agent 在本机创建工作区",
-      "allowWorkspacesDescription": "同一团队中的 Agent 可以将本机上的现有目录注册为新的工作区。"
+      "allowWorkspacesDescription": "同一团队中的 Agent 可以将本机上的现有目录注册为新的工作区。",
+      "allowLocalCrossWorkspace": "允许工作区会话跨本地工作区委派任务",
+      "allowLocalCrossWorkspaceDescription": "本机上的工作区 Agent 会话可以通过 DeskFleet MCP 查看其它本地工作区，并在其中创建会话或发送消息。机器级会话仍保持隔离。"
     },
     "thisComputer": "本机",
     "launchAtStartup": "开机自启",
