@@ -30,6 +30,7 @@ beforeAll(async () => {
     import("./components/settings/PreferencesSettings.vue"),
     import("./components/settings/WorktreeSettings.vue"),
     import("./components/settings/AppearanceSettings.vue"),
+    import("./components/settings/NotificationsSettings.vue"),
     import("./components/settings/DeveloperSettings.vue"),
     import("./components/settings/NatSettings.vue"),
     import("./views/TeamSettingsView.vue"),
