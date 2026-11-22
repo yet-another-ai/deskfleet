@@ -820,6 +820,42 @@ test("refreshes healthy existing Sessions silently without showing loading or di
   expect(row(view, "reasoning").attributes("data-value")).toBe("high")
 })
 
+test("superseding an in-flight silent refresh with an explicit change does not block later refreshes", async () => {
+  agents.configurations["30"] = configuration("sequoia", "medium")
+  const firstRefresh = deferredConfiguration()
+  const secondRefresh = deferredConfiguration()
+  const read = vi.spyOn(agents, "sessionConfiguration")
+    .mockImplementationOnce(async id => {
+      const result = await firstRefresh.promise
+      agents.configurations[id] = result
+      return result
+    })
+    .mockImplementationOnce(async id => {
+      const result = await secondRefresh.promise
+      agents.configurations[id] = result
+      return result
+    })
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async id => {
+    const result = configuration("orbit", "medium")
+    agents.configurations[id] = result
+    return result
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledTimes(1)
+
+  // Make an explicit model change before the silent refresh settles.
+  await choose(view, "model", "orbit")
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", { model: "orbit" })
+  firstRefresh.resolve(configuration("sequoia", "medium")); await flushPromises()
+
+  // Reopening the menu must still trigger a new silent refresh.
+  await trigger(view).trigger("click"); await trigger(view).trigger("click"); await flushPromises()
+  expect(read).toHaveBeenCalledTimes(2)
+  secondRefresh.resolve(configuration("orbit", "high")); await flushPromises()
+  expect(row(view, "reasoning").attributes("data-value")).toBe("high")
+})
+
 test("prefetches View usage in parallel on menu open and caches quota across reopens", async () => {
   const providers = useProvidersStore()
   providers.providers = [

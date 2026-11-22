@@ -27,7 +27,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   const error = ref<string | null>(null)
   const requestedModel = ref<string>()
   let requestId = 0
-  let refreshing = false
+  let refreshingRequest: number | null = null
   let probe: ConfigurationProbe | undefined
   let confirmedTarget: { provider: string; workspaceId?: string } | undefined
 
@@ -120,7 +120,10 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
         return
       }
     }
-    if (!silent) loading.value = true
+    if (!silent) {
+      refreshingRequest = null
+      loading.value = true
+    }
     const changingModel = choices?.model !== undefined && choices.reasoningEffort === undefined && choices.mode === undefined
     requestedModel.value = !sessionId && changingModel && configuration.value?.models?.options.some(option => option.id === choices.model) ? choices.model : undefined
     if (!sessionId) {
@@ -137,7 +140,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
         void readDraft(current)
       })
     }
-    if (silent) refreshing = true
+    if (silent) refreshingRequest = currentRequest
     try {
       if (choices) await agents.configureSession(sessionId, choices)
       else if (composer) await agents.sessionConfiguration(sessionId, true)
@@ -145,16 +148,14 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     } catch (cause) {
       if (currentRequest === requestId) error.value = cause instanceof Error ? cause.message : String(cause)
     } finally {
-      if (currentRequest === requestId) {
-        if (silent) refreshing = false
-        else loading.value = false
-      }
+      if (refreshingRequest === currentRequest) refreshingRequest = null
+      if (!silent && currentRequest === requestId) loading.value = false
     }
   }
 
   function ensureLoaded(): void {
     const { sessionId } = target()
-    if (loading.value || refreshing) return
+    if (loading.value || refreshingRequest !== null) return
     if (sessionId) {
       const sessionError = agents.sessions[sessionId]?.error
       const silent = !sessionError && hasPopulatedControls(configuration.value)
@@ -194,7 +195,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   }
   function invalidate(): void {
     ++requestId
-    refreshing = false
+    refreshingRequest = null
     retire()
     discovered.value = null
     confirmedTarget = undefined
