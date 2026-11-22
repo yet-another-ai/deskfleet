@@ -1,10 +1,7 @@
-import { defineAsyncComponent, defineComponent, h, inject, provide, ref, type AsyncComponentLoader, type Component, type InjectionKey } from "vue"
 import type { Router } from "vue-router"
-import AsyncLoadError from "../components/common/AsyncLoadError.vue"
 
 const STORAGE_KEY = "deskfleet:module-import-reload"
 const RELOAD_COOLDOWN_MS = 30_000
-const RETRY_DELAY_MS = 250
 
 const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /importing a module script failed/i,
@@ -14,6 +11,8 @@ const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /loading (?:css )?chunk [^\s]+ failed/i,
 ]
 
+let pendingNavigationHash: string | undefined
+
 export interface ModuleRecoveryEnvironment {
   now?: () => number
   storage?: Pick<Storage, "getItem" | "setItem"> | null
@@ -22,17 +21,6 @@ export interface ModuleRecoveryEnvironment {
   hash?: string
   setHash?: (hash: string) => void
   reload?: () => void
-}
-
-export interface AsyncLoadErrorActions {
-  retry(): void
-  reload(): void
-}
-
-export const asyncLoadErrorActionsKey: InjectionKey<AsyncLoadErrorActions> = Symbol("deskfleet:async-load-error-actions")
-
-export function useAsyncLoadErrorActions(): AsyncLoadErrorActions | undefined {
-  return inject(asyncLoadErrorActionsKey, undefined)
 }
 
 function errorMessage(error: unknown): string {
@@ -107,7 +95,8 @@ export function installVitePreloadRecovery(
   if (!target) return () => {}
   const onPreloadError = (event: Event) => {
     const payload = "payload" in event ? (event as Event & { payload?: unknown }).payload : event
-    if (isDynamicImportError(payload) && recoverFromModuleImportError(undefined, env)) {
+    if (isDynamicImportError(payload) && recoverFromModuleImportError(pendingNavigationHash, env)) {
+      pendingNavigationHash = undefined
       event.preventDefault()
     }
   }
@@ -116,65 +105,26 @@ export function installVitePreloadRecovery(
 }
 
 export function installRouterModuleRecovery(
-  router: Pick<Router, "onError">,
+  router: Pick<Router, "beforeEach" | "afterEach" | "onError">,
   options: { enabled?: () => boolean; env?: ModuleRecoveryEnvironment } = {},
-): void {
-  router.onError((error, to) => {
+): () => void {
+  const removeBefore = router.beforeEach(to => {
+    pendingNavigationHash = to.fullPath ? `#${to.fullPath}` : undefined
+  })
+  const removeAfter = router.afterEach(() => {
+    pendingNavigationHash = undefined
+  })
+  const removeError = router.onError((error, to) => {
+    const targetHash = to?.fullPath ? `#${to.fullPath}` : pendingNavigationHash
+    pendingNavigationHash = undefined
     if (options.enabled && !options.enabled()) return
     if (!isDynamicImportError(error)) return
-    const targetHash = to?.fullPath ? `#${to.fullPath}` : undefined
     recoverFromModuleImportError(targetHash, options.env)
   })
-}
-
-export interface RecoverableAsyncComponentOptions {
-  /** Automatically attempt a guarded page reload on stale dynamic import errors. */
-  allowReload?: () => boolean
-  /** Retry delay before the automatic transient retry attempt. */
-  retryDelayMs?: number
-  /** Custom recovery environment (for tests). */
-  env?: ModuleRecoveryEnvironment
-}
-
-export function defineRecoverableAsyncComponent<T extends Component = Component>(
-  loader: AsyncComponentLoader<T>,
-  options: RecoverableAsyncComponentOptions = {},
-): Component {
-  const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS
-  const Inner = defineAsyncComponent({
-    loader,
-    errorComponent: AsyncLoadError,
-    onError(error, retry, fail, attempts) {
-      if (!isDynamicImportError(error)) {
-        fail()
-        return
-      }
-      if (attempts <= 1) {
-        if (retryDelayMs <= 0) retry()
-        else setTimeout(retry, retryDelayMs)
-        return
-      }
-      const reloadAllowed = options.allowReload ? options.allowReload() : true
-      if (reloadAllowed && recoverFromModuleImportError(undefined, options.env)) {
-        return
-      }
-      fail()
-    },
-  })
-
-  return defineComponent({
-    name: "RecoverableAsyncComponent",
-    inheritAttrs: false,
-    setup(_, { attrs, slots }) {
-      const attempt = ref(0)
-      provide(asyncLoadErrorActionsKey, {
-        retry: () => { attempt.value += 1 },
-        reload: () => {
-          const reload = options.env?.reload ?? (typeof window !== "undefined" ? () => window.location.reload() : undefined)
-          reload?.()
-        },
-      })
-      return () => h(Inner, { ...attrs, key: attempt.value }, slots)
-    },
-  })
+  return () => {
+    pendingNavigationHash = undefined
+    removeBefore()
+    removeAfter()
+    removeError()
+  }
 }

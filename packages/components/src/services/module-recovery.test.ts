@@ -3,8 +3,8 @@ import { defineComponent } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { afterEach, expect, test, vi } from "vitest"
 import { i18n } from "../i18n/index.ts"
+import { defineRecoverableAsyncComponent } from "./async-component.ts"
 import {
-  defineRecoverableAsyncComponent,
   installRouterModuleRecovery,
   installVitePreloadRecovery,
   isDynamicImportError,
@@ -19,7 +19,10 @@ function memoryStorage() {
   }
 }
 
+const cleanups: (() => void)[] = []
+
 afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup()
   vi.restoreAllMocks()
   i18n.global.locale.value = "en-US"
 })
@@ -75,27 +78,53 @@ test("recoverFromModuleImportError refuses to loop when sessionStorage is unavai
   expect(reload).not.toHaveBeenCalled()
 })
 
-test("installVitePreloadRecovery prevents default and triggers guarded reload on vite:preloadError", () => {
+test("installVitePreloadRecovery prevents default and preserves the destination hash during route navigation", async () => {
   const storage = memoryStorage()
+  let hash = "#/sessions/1"
   const reload = vi.fn()
   const target = new EventTarget() as unknown as Window
-  const stop = installVitePreloadRecovery(target, { storage, reload, pathname: "/", search: "", hash: "#/machines/1/control" })
+  const env = {
+    storage,
+    pathname: "/",
+    search: "",
+    get hash() { return hash },
+    setHash: (next: string) => { hash = next },
+    reload,
+  }
+  cleanups.push(installVitePreloadRecovery(target, env))
 
-  const first = Object.assign(new Event("vite:preloadError", { cancelable: true }), {
-    payload: new TypeError("Importing a module script failed."),
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/", component: defineComponent({ template: "<div />" }) },
+      {
+        path: "/machines/:machineId/control",
+        component: () => {
+          // Simulate Vite's __vitePreload dispatching vite:preloadError and resolving undefined when prevented.
+          const event = Object.assign(new Event("vite:preloadError", { cancelable: true }), {
+            payload: new TypeError("Importing a module script failed."),
+          })
+          target.dispatchEvent(event)
+          if (event.defaultPrevented) return Promise.resolve(undefined as never)
+          return Promise.reject(event.payload)
+        },
+      },
+    ],
   })
-  target.dispatchEvent(first)
-  expect(first.defaultPrevented).toBe(true)
+  cleanups.push(installRouterModuleRecovery(router, { enabled: () => true, env }))
+  await router.push("/")
+
+  await router.push("/machines/7/control").catch(() => {})
+  expect(hash).toBe("#/machines/7/control")
   expect(reload).toHaveBeenCalledTimes(1)
 
+  // A second preload error for the same target is loop-protected and does not preventDefault.
   const second = Object.assign(new Event("vite:preloadError", { cancelable: true }), {
     payload: new TypeError("Importing a module script failed."),
   })
   target.dispatchEvent(second)
   expect(second.defaultPrevented).toBe(false)
   expect(reload).toHaveBeenCalledTimes(1)
-
-  stop()
 })
 
 test("installRouterModuleRecovery reloads toward the failed route only when enabled", async () => {
@@ -113,7 +142,7 @@ test("installRouterModuleRecovery reloads toward the failed route only when enab
       },
     ],
   })
-  installRouterModuleRecovery(router, {
+  cleanups.push(installRouterModuleRecovery(router, {
     enabled: () => enabled,
     env: {
       storage,
@@ -123,7 +152,7 @@ test("installRouterModuleRecovery reloads toward the failed route only when enab
       setHash: next => { hash = next },
       reload,
     },
-  })
+  }))
   await router.push("/")
 
   await expect(router.push("/machines/7/control")).rejects.toThrow(/Importing a module script failed/)
@@ -135,54 +164,60 @@ test("installRouterModuleRecovery reloads toward the failed route only when enab
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
-test("defineRecoverableAsyncComponent retries transient failures automatically", async () => {
-  const Loaded = defineComponent({ template: '<div data-loaded="ok">Loaded</div>' })
-  let calls = 0
-  const AsyncView = defineRecoverableAsyncComponent(async () => {
-    calls += 1
-    if (calls === 1) throw new TypeError("Importing a module script failed.")
-    return Loaded
-  }, { allowReload: () => false, retryDelayMs: 0 })
-
-  const wrapper = mount(AsyncView, { global: { plugins: [i18n] } })
-  await flushPromises()
-  expect(calls).toBe(2)
-  expect(wrapper.find('[data-loaded="ok"]').exists()).toBe(true)
-  wrapper.unmount()
-})
-
-test("defineRecoverableAsyncComponent renders retry and reload actions when reload is suppressed", async () => {
-  const Loaded = defineComponent({ template: '<div data-loaded="recovered">Recovered</div>' })
+test("defineRecoverableAsyncComponent reloads immediately on dynamic import error without a futile in-place retry", async () => {
   const storage = memoryStorage()
   const reload = vi.fn()
   let calls = 0
-  let shouldFail = true
-  // Pre-seed the cooldown marker so auto-reload is suppressed and fallback UI renders.
-  const now = 10_000
-  storage.setItem("deskfleet:module-import-reload", JSON.stringify({ target: "/#/machines/1/control", at: now }))
-
   const AsyncView = defineRecoverableAsyncComponent(async () => {
     calls += 1
-    if (shouldFail) throw new TypeError("Importing a module script failed.")
-    return Loaded
+    throw new TypeError("Importing a module script failed.")
   }, {
     allowReload: () => true,
-    retryDelayMs: 0,
-    env: { now: () => now + 1_000, storage, pathname: "/", search: "", hash: "#/machines/1/control", reload },
+    env: { storage, pathname: "/", search: "", hash: "#/machines/1/control", reload },
   })
 
   const wrapper = mount(AsyncView, { global: { plugins: [i18n] } })
   await flushPromises()
-  expect(calls).toBe(2)
-  expect(reload).not.toHaveBeenCalled()
-  expect(wrapper.find("[data-async-load-error]").exists()).toBe(true)
-
-  await wrapper.get("[data-async-reload]").trigger("click")
+  expect(calls).toBe(1)
   expect(reload).toHaveBeenCalledTimes(1)
-
-  shouldFail = false
-  await wrapper.get("[data-async-retry]").trigger("click")
-  await flushPromises()
-  expect(wrapper.find('[data-loaded="recovered"]').exists()).toBe(true)
   wrapper.unmount()
+})
+
+test("defineRecoverableAsyncComponent renders reload-only fallback for suppressed module import errors and retry for non-import errors", async () => {
+  const storage = memoryStorage()
+  const reload = vi.fn()
+  const now = 10_000
+  storage.setItem("deskfleet:module-import-reload", JSON.stringify({ target: "/#/machines/1/control", at: now }))
+
+  const FailedImport = defineRecoverableAsyncComponent(async () => {
+    throw new TypeError("Importing a module script failed.")
+  }, {
+    allowReload: () => true,
+    env: { now: () => now + 1_000, storage, pathname: "/", search: "", hash: "#/machines/1/control", reload },
+  })
+
+  const importWrapper = mount(FailedImport, { global: { plugins: [i18n] } })
+  await flushPromises()
+  expect(reload).not.toHaveBeenCalled()
+  expect(importWrapper.find("[data-async-load-error]").exists()).toBe(true)
+  expect(importWrapper.find("[data-async-retry]").exists()).toBe(false)
+  await importWrapper.get("[data-async-reload]").trigger("click")
+  expect(reload).toHaveBeenCalledTimes(1)
+  importWrapper.unmount()
+
+  const Loaded = defineComponent({ template: '<div data-loaded="recovered">Recovered</div>' })
+  let shouldFail = true
+  const TransientNonImport = defineRecoverableAsyncComponent(async () => {
+    if (shouldFail) throw new Error("Temporary initialization failure")
+    return Loaded
+  }, { allowReload: () => true, env: { storage, pathname: "/", search: "", hash: "#/machines/1/control", reload } })
+
+  const retryWrapper = mount(TransientNonImport, { global: { plugins: [i18n] } })
+  await flushPromises()
+  expect(retryWrapper.find("[data-async-retry]").exists()).toBe(true)
+  shouldFail = false
+  await retryWrapper.get("[data-async-retry]").trigger("click")
+  await flushPromises()
+  expect(retryWrapper.find('[data-loaded="recovered"]').exists()).toBe(true)
+  retryWrapper.unmount()
 })

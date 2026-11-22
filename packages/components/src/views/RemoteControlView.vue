@@ -14,7 +14,7 @@ import UiScrollArea from "../components/common/UiScrollArea.vue"
 import UiTabTitle from "../components/common/UiTabTitle.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useScrollFade } from "../composables/useScrollFade.ts"
-import { defineRecoverableAsyncComponent } from "../services/module-recovery.ts"
+import { defineRecoverableAsyncComponent } from "../services/async-component.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 
