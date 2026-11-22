@@ -153,12 +153,12 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
   }
 
-  function ensureLoaded(): void {
+  function ensureLoaded(allowSilent = false): void {
     const { sessionId } = target()
-    if (loading.value || refreshingRequest !== null) return
+    if (loading.value || (allowSilent && refreshingRequest !== null)) return
     if (sessionId) {
       const sessionError = agents.sessions[sessionId]?.error
-      const silent = !sessionError && hasPopulatedControls(configuration.value)
+      const silent = allowSilent && !sessionError && hasPopulatedControls(configuration.value)
       void configure(undefined, false, false, silent)
       return
     }
@@ -166,7 +166,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   }
   function toggle(): void {
     expanded.value = !expanded.value
-    if (expanded.value) ensureLoaded()
+    if (expanded.value) ensureLoaded(true)
   }
   function changeModel(model: string): Promise<void> {
     // The provider owns dependent effort/mode choices after a model change.
@@ -202,7 +202,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     error.value = null
     loading.value = false
     requestedModel.value = undefined
-    if (expanded.value || open?.()) ensureLoaded()
+    if (expanded.value || open?.()) ensureLoaded(expanded.value && !open?.())
   }
   watch(() => [target().workspaceId, target().sessionId, target().providerId, providers.revision], (current, previous) => {
     const targetChanged = current.slice(0, 3).some((value, index) => value !== previous[index])
