@@ -53,6 +53,9 @@ beforeAll(async () => {
     import("./views/WorktreeView.vue"),
     import("./views/ArchivedSessionsView.vue"),
     import("./views/RemoteControlView.vue"),
+    // Sidebar "open terminal" pushes the terminal route first; TerminalView then
+    // redirects machine-owned shells to machine-control.
+    import("./views/TerminalView.vue"),
     import("./components/terminal/TerminalShellWindow.vue"),
     import("./views/SettingsView.vue"),
     import("./components/settings/PreferencesSettings.vue"),
@@ -354,7 +357,9 @@ test("the workspace sidebar opens a terminal in its default directory and retain
   const dial = vi.spyOn(platformClient.terminal, "dial").mockImplementation(async options => ({ id: options.terminalId, title: "shell", cwd, cols: 80, rows: 24, status: "running" }))
   const wrapper = await mountApp()
   await wrapper.get('button[aria-label="Open terminal in default directory"]').trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("machine-control"))
+  // create → terminal route → TerminalView redirect to machine-control needs headroom
+  // when Linux CI shares the runner with rustc (default waitFor is too tight).
+  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("machine-control"), { timeout: 3_000 })
   expect(dial).toHaveBeenCalledWith({ mode: "create", terminalId: expect.any(String), cols: 80, rows: 24, cwd })
   expect(router.currentRoute.value.query).toEqual({ tab: "terminal", terminal: dial.mock.calls[0]![0].terminalId })
   expect(wrapper.get('[role="tablist"][aria-label="Local control"] [aria-selected="true"]').text()).toBe("Terminal")
