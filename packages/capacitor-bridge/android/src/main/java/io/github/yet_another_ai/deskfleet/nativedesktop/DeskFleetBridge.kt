@@ -28,8 +28,9 @@ import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
 import java.util.UUID
-import org.json.JSONObject
+import java.util.concurrent.Executors
 import com.longbridge.nsh.NshView
+import org.json.JSONObject
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -39,6 +40,9 @@ class DeskFleetBridge : Plugin() {
     private var speechInput: SpeechInput? = null
     private var nativeFiles: NativeFilesBridge? = null
     private var firebaseTelemetry: FirebaseTelemetryBridge? = null
+    private val portsExecutor = Executors.newCachedThreadPool()
+    private val portsLock = Any()
+    @Volatile private var portsInitialized = false
 
     private fun files(): NativeFilesBridge = nativeFiles ?: NativeFilesBridge(context).also { nativeFiles = it }
     private fun telemetry(): FirebaseTelemetryBridge =
@@ -172,6 +176,31 @@ class DeskFleetBridge : Plugin() {
             activeActivity?.get()?.applyRemoteClipboard(payload)
         }
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
+    }
+
+    @Suppress("unused")
+    fun onPortsEvent(payload: String) {
+        notifyListeners("portsEvent", JSObject().put("payload", payload))
+    }
+
+    @PluginMethod
+    fun portsCall(call: PluginCall) {
+        val request = call.getString("request")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing port forwarding request")
+        portsExecutor.execute {
+            runCatching {
+                synchronized(portsLock) {
+                    if (!portsInitialized) {
+                        nativePortsInit(this)
+                        portsInitialized = true
+                    }
+                }
+                nativePortsCall(request)
+            }.fold(
+                { response -> call.resolve(JSObject().put("response", response)) },
+                { call.reject(it.message ?: "Failed to invoke port forwarding") },
+            )
+        }
     }
 
     @PluginMethod
@@ -325,6 +354,8 @@ class DeskFleetBridge : Plugin() {
         Handler(Looper.getMainLooper()).post { speechInput?.dispose() }
         nativeFiles?.dispose()
         stopSession()
+        runCatching { nativePortsCloseAll() }
+        portsExecutor.shutdown()
         OutlineAudioCaptureService.stop(context)
         super.handleOnDestroy()
     }
@@ -391,5 +422,8 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativeUpdateControls(handle: Long, stateJson: String)
         @JvmStatic external fun nativeDetachControls(handle: Long)
         @JvmStatic external fun nativeTestNat(server: String): String
+        @JvmStatic external fun nativePortsInit(callback: Any)
+        @JvmStatic external fun nativePortsCall(requestJson: String): String
+        @JvmStatic external fun nativePortsCloseAll()
     }
 }

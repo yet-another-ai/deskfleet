@@ -25,10 +25,12 @@ test.each([true, false])("renderers allow bundled and embedded fonts (production
     .toBe("font-src 'self' data:")
 })
 
-test.each([true, false])("sandboxed HTML previews may frame only the bootstrap host and Blob documents (production: %s)", (production) => {
+test.each([true, false])("renderers may frame only app/Blob previews and loopback HTTP dev servers (production: %s)", (production) => {
   const policy = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, production)
-  expect(policy.split("; ").find(directive => directive.startsWith("frame-src ")))
-    .toBe("frame-src 'self' blob:")
+  const frameSrc = policy.split("; ").find(directive => directive.startsWith("frame-src "))
+  expect(frameSrc).toBe("frame-src 'self' blob: http://localhost:* http://127.0.0.1:*")
+  expect(frameSrc).not.toContain("https:")
+  expect(frameSrc).not.toContain("[::1]")
 })
 
 test("development renderers may reach only the Vite HMR socket", () => {

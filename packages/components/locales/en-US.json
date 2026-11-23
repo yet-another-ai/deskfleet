@@ -2362,5 +2362,23 @@
     "showAllSessions": "Show all",
     "showMoreSessions": "Show {count} more",
     "showFewerSessions": "Show less"
+  },
+  "webPreview": {
+    "title": "Web Preview",
+    "new": "New web preview",
+    "reload": "Reload",
+    "addressLabel": "Preview address or port",
+    "addressPlaceholder": "Enter port or localhost URL (e.g. 5173)",
+    "open": "Open",
+    "openExternal": "Open in browser",
+    "invalidAddress": "Enter a loopback port or HTTP URL (localhost, 127.0.0.1, or [::1]).",
+    "emptyTitle": "Preview a local web server",
+    "emptyDescription": "Connect to a development server running on this Session’s machine by port or loopback URL.",
+    "offlineTitle": "Machine is offline",
+    "offlineDescription": "Reconnect this machine to load its loopback web preview.",
+    "connecting": "Connecting preview tunnel…",
+    "connectErrorTitle": "Could not connect preview",
+    "retry": "Retry",
+    "unavailable": "Web preview is unavailable on this platform."
   }
 }

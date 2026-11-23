@@ -35,6 +35,10 @@ fn error(message: &'static str) -> PeerError {
     PeerError::PortForwarding(message)
 }
 
+pub(super) fn validate_target(host: &str, port: u16) -> Result<()> {
+    Target::new(host, port).map(|_| ())
+}
+
 #[derive(Clone, Copy)]
 struct Deadline(Option<u64>);
 
@@ -289,18 +293,7 @@ impl Bridge {
                             "authorization expired",
                         ))
                     } else {
-                        match tokio::time::timeout(
-                            CONNECT_TIMEOUT,
-                            TcpStream::connect(target.address()),
-                        )
-                        .await
-                        {
-                            Ok(value) => value,
-                            Err(_) => Err(std::io::Error::new(
-                                std::io::ErrorKind::TimedOut,
-                                "connect timed out",
-                            )),
-                        }
+                        connect_target(target).await
                     };
                     let _ = commands.send(Command::Connected { id, socket }).await;
                 });
@@ -404,6 +397,32 @@ impl Bridge {
         self.receiver.close();
         while self.receiver.try_recv().is_ok() {}
     }
+}
+
+async fn connect_target(target: Target) -> std::io::Result<TcpStream> {
+    let connect = async {
+        let mut last_error = None;
+        for addr in target.addresses().into_iter().flatten() {
+            match TcpStream::connect(addr).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "no loopback addresses for target",
+            )
+        }))
+    };
+    tokio::time::timeout(CONNECT_TIMEOUT, connect)
+        .await
+        .unwrap_or_else(|_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "connect timed out",
+            ))
+        })
 }
 
 async fn send_frame(channel: &dyn DataChannel, frame: Frame, deadline: Deadline) -> Result<()> {

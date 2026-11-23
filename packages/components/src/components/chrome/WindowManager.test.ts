@@ -15,6 +15,11 @@ import WindowManager from "./WindowManager.vue"
 
 const mounted: Array<{ wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }> = []
 const desktopStub = { props: ["sessionId", "active"], template: '<div data-session-desktops :data-session-id="sessionId" :data-active="String(active)" />' }
+const webPreviewStub = {
+  props: ["sessionId", "initialUrl"],
+  emits: ["change"],
+  template: '<div data-session-web-preview :data-session-id="sessionId" :data-url="initialUrl ?? \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', \'http://localhost:5173/docs\')" /></div>',
+}
 
 afterEach(async () => {
   for (const { wrapper, pinia } of mounted.splice(0)) { wrapper.unmount(); disposePinia(pinia) }
@@ -22,16 +27,27 @@ afterEach(async () => {
   await router.replace("/")
 })
 
-async function setup(platform: DeskfleetDesktopApi["platform"] = "linux") {
+interface SetupOptions {
+  platform?: DeskfleetDesktopApi["platform"]
+  mobile?: boolean
+  ports?: DeskfleetDesktopApi["ports"]
+}
+
+async function setup(platformOrOptions: DeskfleetDesktopApi["platform"] | SetupOptions = "linux") {
+  const options: SetupOptions = typeof platformOrOptions === "string"
+    ? { platform: platformOrOptions }
+    : platformOrOptions
+  const platform = options.platform ?? "linux"
   const pinia = createPinia()
   useFleetStore(pinia).catalog = catalogFixture()
   useTerminalsStore(pinia).loaded = true
   await router.replace(`/sessions/${sessionId}`)
   const wrapper = mount(WindowManager, {
     props: { sessionId }, attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform } }, stubs: {
+    global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform, mobile: options.mobile, ports: options.ports ?? getClient().ports } }, stubs: {
       AppMainWindow: true, ChangesPanel: true, GithubPanel: true, SessionPreviewWindow: true, WindowToolbar: true,
       SessionDesktopPanel: desktopStub,
+      SessionWebPreviewPanel: webPreviewStub,
     } },
   })
   mounted.push({ wrapper, pinia })
@@ -194,4 +210,71 @@ test("restoring a Chat-only layout never starts newly introduced desktop preview
   const second = await setup()
   expect(second.api.getPanel("desktops")!.api.group.api.isVisible).toBe(false)
   expect(second.wrapper.find('[data-session-desktops][data-active="true"]').exists()).toBe(false)
+})
+
+test("offers web preview creation in + menu for desktop and mobile, and omits it on pure web", async () => {
+  for (const [opts, expected] of [
+    ["linux", true],
+    [{ platform: "web", mobile: true, ports: { start: vi.fn(), stop: vi.fn(), list: vi.fn() } }, true],
+    [{ platform: "web", mobile: false, ports: undefined }, false],
+  ] as const) {
+    const view = await setup(opts)
+    const changesGroup = view.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
+    ;(changesGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(new DOMWrapper(document.body).find('[data-window-type="web-preview"]').exists()).toBe(expected)
+    view.wrapper.unmount()
+    disposePinia(view.pinia)
+    mounted.splice(mounted.findIndex(value => value.wrapper === view.wrapper), 1)
+  }
+})
+
+test("opens multiple web previews, persists URLs lazily across reload, and closes individual tabs", async () => {
+  const first = await setup("linux")
+  const openFromMenu = async () => {
+    const group = first.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
+    ;(group.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
+    await flushPromises()
+    await new DOMWrapper(document.body).get('[data-window-type="web-preview"]').trigger("click")
+    await flushPromises()
+  }
+
+  await openFromMenu()
+  await openFromMenu()
+  expect(first.api.panels.filter(panel => panel.id.startsWith("web-preview:"))).toHaveLength(2)
+
+  await first.wrapper.get("[data-stub-commit]").trigger("click")
+  await flushPromises()
+  const committedPanel = first.api.panels.find(panel => panel.id.startsWith("web-preview:") && Boolean(panel.params?.url))!
+  expect(committedPanel.api.title).toBe("localhost:5173")
+
+  // Move focus back to Changes so restored web preview tabs stay inactive until clicked.
+  first.api.getPanel("changes")!.api.setActive()
+  await flushPromises()
+
+  expect(window.localStorage.getItem(`deskfleet.window-layout-v4:${sessionId}`)).toContain("http://localhost:5173/docs")
+
+  first.wrapper.unmount()
+  disposePinia(first.pinia)
+  mounted.splice(mounted.findIndex(value => value.wrapper === first.wrapper), 1)
+
+  const second = await setup("linux")
+  const restored = second.api.panels.filter(panel => panel.id.startsWith("web-preview:"))
+  expect(restored).toHaveLength(2)
+  expect(second.wrapper.findAll("[data-session-web-preview]")).toHaveLength(0)
+
+  const persistedPanel = restored.find(panel => Boolean(panel.params?.url))!
+  expect(persistedPanel.api.title).toBe("localhost:5173")
+  persistedPanel.api.setActive()
+  await flushPromises()
+  expect(second.wrapper.get("[data-session-web-preview]").attributes("data-url")).toBe("http://localhost:5173/docs")
+
+  // Switching away keeps an already-opened web preview mounted.
+  second.api.getPanel("changes")!.api.setActive()
+  await flushPromises()
+  expect(second.wrapper.findAll("[data-session-web-preview]")).toHaveLength(1)
+
+  await second.wrapper.get(`[data-window-tab-id="${restored[0]!.id}"] button`).trigger("click")
+  await flushPromises()
+  expect(second.api.panels.filter(panel => panel.id.startsWith("web-preview:"))).toHaveLength(1)
 })

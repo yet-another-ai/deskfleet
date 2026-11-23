@@ -1773,5 +1773,23 @@
     "showAllSessions": "すべて表示",
     "showMoreSessions": "さらに {count} 件を表示",
     "showFewerSessions": "折りたたむ"
+  },
+  "webPreview": {
+    "title": "Web プレビュー",
+    "new": "新しい Web プレビュー",
+    "reload": "再読み込み",
+    "addressLabel": "プレビューのアドレスまたはポート",
+    "addressPlaceholder": "ポートまたは localhost URL を入力（例: 5173）",
+    "open": "開く",
+    "openExternal": "ブラウザーで開く",
+    "invalidAddress": "ループバックポートまたは HTTP URL（localhost、127.0.0.1、[::1]）を入力してください。",
+    "emptyTitle": "ローカル Web サーバーをプレビュー",
+    "emptyDescription": "このセッションのマシンの開発サーバーにポートまたはループバック URL で接続します。",
+    "offlineTitle": "マシンがオフラインです",
+    "offlineDescription": "ループバックの Web プレビューを読み込むには、このマシンを再接続してください。",
+    "connecting": "プレビュートンネルに接続中…",
+    "connectErrorTitle": "プレビューに接続できませんでした",
+    "retry": "再試行",
+    "unavailable": "このプラットフォームでは Web プレビューを利用できません。"
   }
 }

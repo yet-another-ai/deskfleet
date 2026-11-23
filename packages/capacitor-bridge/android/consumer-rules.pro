@@ -5,6 +5,7 @@
 }
 -keep class io.github.yet_another_ai.deskfleet.nativedesktop.DeskFleetBridge {
     public void onViewerEvent(java.lang.String);
+    public void onPortsEvent(java.lang.String);
     native <methods>;
 }
 -keep class io.github.yet_another_ai.deskfleet.nativedesktop.DeskFleetBridge$Companion {
