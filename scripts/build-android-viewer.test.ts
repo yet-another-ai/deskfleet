@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -11,6 +11,7 @@ import {
   nshJniExports,
   verifyAndroidJniExports,
   verifyElfLoadAlignment,
+  viewerJniExports,
 } from "./build-android-viewer.ts"
 
 function writeNdk(sdkDir: string, folder: string, revision: string): string {
@@ -53,6 +54,18 @@ test("combined Android library retains all defined NSH JNI exports and rejects u
   verifyAndroidJniExports(exported, names)
   assert.throws(() => verifyAndroidJniExports(exported.replace("DEFAULT 12 Java_", "DEFAULT UND Java_"), names), /Native_create/)
   assert.throws(() => verifyAndroidJniExports(exported.replace("DEFAULT 12 Java_", "HIDDEN 12 Java_"), names), /Native_create/)
+})
+
+test("combined Android library requires the clipboard owner and preserves controller exports", () => {
+  const sourceDirectory = join(import.meta.dirname, "../packages/capacitor-bridge/android/src/main/java/io/github/yet_another_ai/deskfleet/nativedesktop")
+  const clipboard = viewerJniExports("NativeClipboard", readFileSync(join(sourceDirectory, "NativeClipboard.kt"), "utf8"))
+  const prefix = "Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeClipboard_"
+  assert.deepEqual(clipboard, ["nativeCreate", "nativeUpdate", "nativeDestroy"].map(name => prefix + name))
+  const bridge = viewerJniExports("DeskFleetBridge", readFileSync(join(sourceDirectory, "DeskFleetBridge.kt"), "utf8"))
+  assert.ok(bridge.some(name => name.endsWith("_nativeStart")))
+  const exports = [...bridge, ...clipboard].map((name, index) => ` ${index + 1}: 00000001 20 FUNC GLOBAL DEFAULT 12 ${name}`).join("\n")
+  verifyAndroidJniExports(exports, [...bridge, ...clipboard])
+  assert.throws(() => verifyAndroidJniExports(exports.replace(`${prefix}nativeUpdate`, "missing"), [...bridge, ...clipboard]), /NativeClipboard_nativeUpdate/)
 })
 
 test("buildAndroidViewerEnv enforces 16 KB page alignment, Android 14 API, and release debug symbols", () => {

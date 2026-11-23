@@ -10,8 +10,15 @@ mod android_keyboard;
 mod android_window;
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod av1_config;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod clipboard;
+#[cfg(target_os = "android")]
+mod clipboard_android;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod clipboard_gpui;
+#[cfg(any(target_os = "ios", test))]
+mod clipboard_ios;
+#[cfg(any(target_os = "android", test))]
+mod clipboard_mobile;
 #[cfg(test)]
 mod codec_tests;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -24,12 +31,18 @@ mod input_configuration;
 mod input_queue;
 mod input_reply;
 mod input_text;
+#[cfg(any(target_os = "ios", test))]
+mod ios_clipboard_delivery;
+#[cfg(any(target_os = "ios", test))]
+mod ios_control_effects;
 #[cfg(target_os = "ios")]
 mod ios_controls;
 #[cfg(any(target_os = "ios", test))]
 mod ios_key_state;
 #[cfg(target_os = "ios")]
 mod ios_keyboard;
+#[cfg(target_os = "ios")]
+mod ios_pasteboard;
 #[cfg(target_os = "ios")]
 mod ios_pointer;
 #[cfg(target_os = "ios")]

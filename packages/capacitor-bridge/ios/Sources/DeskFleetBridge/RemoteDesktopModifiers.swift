@@ -5,8 +5,10 @@ struct RemoteDesktopModifiers {
     private(set) var selected = Set<String>()
     private static let order = ["ControlLeft", "AltLeft", "ShiftLeft", "MetaLeft"]
 
-    mutating func toggle(_ code: String) {
-        if !selected.insert(code).inserted { selected.remove(code) }
+    var flags: [Bool] { Self.order.map { selected.contains($0) } }
+
+    mutating func apply(_ flags: [Bool]) {
+        selected = Set(zip(Self.order, flags).compactMap { code, down in down ? code : nil })
     }
 
     mutating func take() -> [String] {

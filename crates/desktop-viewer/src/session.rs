@@ -79,6 +79,8 @@ pub(crate) async fn run_peer(
             codec,
             width,
             height,
+            #[cfg(target_os = "ios")]
+            clipboard,
         } = start
         else {
             return Err("expected viewer start command".into());
@@ -253,6 +255,10 @@ pub(crate) async fn run_peer(
                                     }
                                     Reply::Clipboard { text } => {
                                         if control && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
+                                            #[cfg(target_os = "ios")]
+                                            if let Some(clipboard) = &clipboard {
+                                                clipboard.receive(&text);
+                                            }
                                             #[cfg(any(target_os = "android", target_os = "ios"))]
                                             protocol::emit(json!({"type":"clipboard", "text":text}))?;
                                             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -277,6 +283,10 @@ pub(crate) async fn run_peer(
                 }
                 Ok(())
             }.await;
+            #[cfg(target_os = "ios")]
+            if let Some(clipboard) = &clipboard {
+                clipboard.stop();
+            }
             #[cfg(any(target_os = "android", target_os = "ios"))]
             let _ = proxy.send_event(WindowEvent::InputEnabled(false));
             if input_open {
@@ -291,6 +301,10 @@ pub(crate) async fn run_peer(
             Ok(())
         }.await;
         // Also close if negotiation failed before entering the command loop.
+        #[cfg(target_os = "ios")]
+        if let Some(clipboard) = &clipboard {
+            clipboard.stop();
+        }
         let closed = peer.close().await;
         result?;
         closed?;

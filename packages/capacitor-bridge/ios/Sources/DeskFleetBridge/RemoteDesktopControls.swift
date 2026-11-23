@@ -12,6 +12,10 @@ private func controlsOwnFocus(_ handle: UnsafeMutableRawPointer) -> Bool
 private func updateControls(_ handle: UnsafeMutableRawPointer, _ json: UnsafePointer<CChar>)
 @_silgen_name("deskfleet_ios_controls_destroy")
 private func destroyControls(_ handle: UnsafeMutableRawPointer)
+@_silgen_name("deskfleet_ios_control_effects")
+private func controlEffects(_ state: UnsafePointer<CChar>, _ action: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("deskfleet_ios_control_effects_free")
+private func freeControlEffects(_ effects: UnsafeMutablePointer<CChar>)
 
 private final class WeakControls {
     weak var value: RemoteDesktopControls?
@@ -62,17 +66,26 @@ final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
         if let handle { destroyControls(handle); self.handle = nil }
     }
 
-    func update(state: [String: Any], relative: Bool, paused: Bool, dragging: Bool,
-                keyboard: Bool, hacker: Bool, terminalPaste: Bool, modifiers: Set<String>,
-                reverseScroll: Bool, clipboardSharing: Bool, fullscreen: Bool, pinchZoom: Bool) {
-        var ui: [String: Any] = ["status": "starting", "title": "", "displays": [], "displayId": 0,
-                                 "control": false, "inputReady": false, "secureAttention": false]
-        ui.merge(state) { _, next in next }
-        snapshot = ["ui": ui, "mobile": true, "relativeMouse": relative, "paused": paused,
-                    "dragging": dragging, "fullscreen": fullscreen, "keyboardOpen": keyboard, "hackerOpen": hacker,
-                    "pasteShift": terminalPaste, "reverseScroll": reverseScroll, "clipboardSharing": clipboardSharing, "pinchZoom": pinchZoom,
-                    "modifiers": ["ControlLeft", "AltLeft", "ShiftLeft", "MetaLeft"].map { modifiers.contains($0) }]
+    func update(state: RemoteDesktopControlState) {
+        snapshot = state.snapshot
         setNeedsLayout()
+    }
+
+    func effects(for action: [String: Any], state: RemoteDesktopControlState) -> [[String: Any]] {
+        precondition(Thread.isMainThread)
+        // Use the controller's live state, never the last layout's snapshot.
+        guard let stateData = try? JSONSerialization.data(withJSONObject: state.snapshot),
+              let stateJSON = String(data: stateData, encoding: .utf8),
+              let actionData = try? JSONSerialization.data(withJSONObject: action),
+              let actionJSON = String(data: actionData, encoding: .utf8) else { return [] }
+        return stateJSON.withCString { statePointer in
+            actionJSON.withCString { actionPointer in
+                guard let result = controlEffects(statePointer, actionPointer) else { return [] }
+                defer { freeControlEffects(result) }
+                let data = Data(String(cString: result).utf8)
+                return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+            }
+        }
     }
 
     override func layoutSubviews() {

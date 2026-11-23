@@ -4,20 +4,29 @@ import XCTest
 final class RemoteDesktopModifiersTests: XCTestCase {
     func testChordUsesStableOrderAndConsumesOneShotModifiers() {
         var modifiers = RemoteDesktopModifiers()
-        modifiers.toggle("MetaLeft")
-        modifiers.toggle("ShiftLeft")
-        modifiers.toggle("ControlLeft")
+        modifiers.apply([true, false, true, true])
         XCTAssertEqual(modifiers.take(), ["ControlLeft", "ShiftLeft", "MetaLeft"])
         XCTAssertTrue(modifiers.selected.isEmpty)
         XCTAssertTrue(modifiers.take().isEmpty)
     }
 
-    func testToggleAndFocusResetCancelSelectionWithoutSendingHeldKeys() {
+    func testReducerFlagsReplaceSelectionInControlAltShiftMetaOrder() {
         var modifiers = RemoteDesktopModifiers()
-        modifiers.toggle("AltLeft")
-        modifiers.toggle("AltLeft")
+        modifiers.apply([true, false, true, false])
+        XCTAssertEqual(modifiers.flags, [true, false, true, false])
+        XCTAssertEqual(modifiers.selected, Set(["ControlLeft", "ShiftLeft"]))
+        modifiers.apply([false, true, false, true])
+        XCTAssertEqual(modifiers.flags, [false, true, false, true])
+        XCTAssertEqual(modifiers.take(), ["AltLeft", "MetaLeft"])
+        XCTAssertEqual(modifiers.flags, [false, false, false, false])
+    }
+
+    func testReducerAndFocusResetCancelSelectionWithoutSendingHeldKeys() {
+        var modifiers = RemoteDesktopModifiers()
+        modifiers.apply([false, true, false, false])
+        modifiers.apply([false, false, false, false])
         XCTAssertTrue(modifiers.take().isEmpty)
-        modifiers.toggle("ControlLeft")
+        modifiers.apply([true, false, false, false])
         modifiers.reset()
         XCTAssertNil(modifiers.code(for: "c"))
     }
@@ -25,7 +34,7 @@ final class RemoteDesktopModifiersTests: XCTestCase {
     func testSystemKeyboardShortcutsRequireOneAsciiCharacter() {
         var modifiers = RemoteDesktopModifiers()
         XCTAssertNil(modifiers.code(for: "c"))
-        modifiers.toggle("ControlLeft")
+        modifiers.apply([true, false, false, false])
         XCTAssertEqual(modifiers.code(for: "c"), "KeyC")
         XCTAssertEqual(modifiers.code(for: "C"), "KeyC")
         XCTAssertEqual(modifiers.code(for: "1"), "Digit1")

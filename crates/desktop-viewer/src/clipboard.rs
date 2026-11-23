@@ -1,93 +1,108 @@
-//! Bidirectional plain-text clipboard synchronization for the native GPUI viewer.
+//! Clipboard policy shared by desktop and mobile viewers. Hosts own OS access.
 
-use deskfleet_input::{InputEvent, MAX_CLIPBOARD_BYTES};
-use gpui::{App, ClipboardItem};
+#[cfg(any(not(target_os = "android"), test))]
+use deskfleet_input::InputEvent;
+use deskfleet_input::MAX_CLIPBOARD_BYTES;
+use serde::Deserialize;
 
-pub(crate) struct ClipboardSync {
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) use crate::clipboard_gpui::ClipboardSync;
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ClipboardIntent {
+    Focus,
+    Changed,
+    Paste,
+    Explicit,
+}
+
+/// Text is compared after sanitization, and the limit counts UTF-8 bytes.
+pub(crate) fn sanitize(text: &str) -> Option<String> {
+    let text = text.replace('\0', "");
+    (!text.is_empty() && text.len() <= MAX_CLIPBOARD_BYTES).then_some(text)
+}
+
+#[derive(Default)]
+pub(crate) struct ClipboardPolicy {
+    baseline_seeded: bool,
     baseline: Option<String>,
     last_synced: Option<String>,
 }
 
-impl ClipboardSync {
-    pub(crate) fn new(cx: &App) -> Self {
-        Self {
-            baseline: read_local_text(cx),
-            last_synced: None,
-        }
+impl ClipboardPolicy {
+    /// Discard the previous peer's dedup state. A host that can read immediately
+    /// may seed its new baseline; otherwise the first focus observation seeds it.
+    pub(crate) fn reset_session(&mut self) {
+        *self = Self::default();
     }
 
-    pub(crate) fn reset_session(&mut self, cx: &App) {
-        self.baseline = read_local_text(cx);
-        self.last_synced = None;
+    pub(crate) fn seed_baseline(&mut self, text: Option<&str>) {
+        self.baseline = text.and_then(sanitize);
+        self.baseline_seeded = true;
     }
 
-    /// Syncs local clipboard on window focus when the user copied new text
-    /// outside the viewer after it opened.
-    pub(crate) fn on_window_active(&mut self, enabled: bool, cx: &App) -> Option<InputEvent> {
-        if !enabled {
-            return None;
-        }
-        let text = read_local_text(cx)?;
-        if self.baseline.as_deref() == Some(text.as_str())
-            || self.last_synced.as_deref() == Some(text.as_str())
-        {
-            return None;
-        }
-        self.baseline = Some(text.clone());
-        self.last_synced = Some(text.clone());
-        Some(InputEvent::Clipboard { text })
-    }
-
-    /// Syncs local clipboard right before a potential paste shortcut (`KeyV`,
-    /// `Insert`) or context/middle click (`button != 0`), including text that
-    /// was already on the clipboard before the viewer window opened.
-    pub(crate) fn before_events(
+    pub(crate) fn local(
         &mut self,
-        enabled: bool,
-        events: &[InputEvent],
-        cx: &App,
-    ) -> Option<InputEvent> {
-        if !enabled || !events.iter().any(is_paste_candidate) {
+        intent: ClipboardIntent,
+        input_enabled: bool,
+        sharing: bool,
+        raw_text: Option<&str>,
+    ) -> Option<String> {
+        // Focus establishes the opening baseline even before control is ready.
+        // It must never overwrite the remote clipboard merely by opening a view.
+        if intent == ClipboardIntent::Focus && !self.baseline_seeded {
+            self.seed_baseline(raw_text);
             return None;
         }
-        let text = read_local_text(cx)?;
-        if self.last_synced.as_deref() == Some(text.as_str()) {
+        if !input_enabled || (!sharing && intent != ClipboardIntent::Explicit) {
             return None;
         }
+        let text = raw_text.and_then(sanitize)?;
+        if intent == ClipboardIntent::Focus && self.baseline.as_deref() == Some(&text) {
+            return None;
+        }
+        self.baseline_seeded = true;
         self.baseline = Some(text.clone());
+        if self.last_synced.as_deref() == Some(&text) {
+            return None;
+        }
         self.last_synced = Some(text.clone());
-        Some(InputEvent::Clipboard { text })
+        Some(text)
     }
 
-    pub(crate) fn apply_remote(&mut self, enabled: bool, text: String, cx: &mut App) {
-        if !enabled || text.is_empty() || text.len() > MAX_CLIPBOARD_BYTES {
-            return;
+    pub(crate) fn remote(
+        &mut self,
+        input_enabled: bool,
+        sharing: bool,
+        raw_text: &str,
+    ) -> Option<String> {
+        if !input_enabled || !sharing {
+            return None;
         }
-        let sanitized = text.replace('\0', "");
-        if sanitized.is_empty() {
-            return;
+        let text = sanitize(raw_text)?;
+        self.baseline_seeded = true;
+        self.baseline = Some(text.clone());
+        if self.last_synced.as_deref() == Some(&text) {
+            return None;
         }
-        self.baseline = Some(sanitized.clone());
-        if self.last_synced.as_deref() == Some(sanitized.as_str()) {
-            return;
-        }
-        self.last_synced = Some(sanitized.clone());
-        cx.write_to_clipboard(ClipboardItem::new_string(sanitized));
+        self.last_synced = Some(text.clone());
+        Some(text)
     }
 }
 
-fn read_local_text(cx: &App) -> Option<String> {
-    let text = cx.read_from_clipboard()?.text()?.replace('\0', "");
-    (!text.is_empty() && text.len() <= MAX_CLIPBOARD_BYTES).then_some(text)
-}
-
-fn is_paste_candidate(event: &InputEvent) -> bool {
+/// Synchronize before paste keys and context/middle clicks, preserving ordering
+/// with the subsequent input events. Repeats and releases are not new pastes.
+#[cfg(any(not(target_os = "android"), test))]
+pub(crate) fn is_paste_candidate(event: &InputEvent) -> bool {
     match event {
         InputEvent::Key {
             code,
             pressed: true,
             repeat: false,
-        } => matches!(code.as_str(), "KeyV" | "Insert"),
+        } => {
+            matches!(code.as_str(), "KeyV" | "Insert")
+        }
         InputEvent::PointerButton {
             button,
             pressed: true,
@@ -98,37 +113,5 @@ fn is_paste_candidate(event: &InputEvent) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn identifies_paste_keys_and_non_primary_clicks() {
-        assert!(is_paste_candidate(&InputEvent::Key {
-            code: "KeyV".into(),
-            pressed: true,
-            repeat: false,
-        }));
-        assert!(is_paste_candidate(&InputEvent::Key {
-            code: "Insert".into(),
-            pressed: true,
-            repeat: false,
-        }));
-        assert!(!is_paste_candidate(&InputEvent::Key {
-            code: "KeyA".into(),
-            pressed: true,
-            repeat: false,
-        }));
-        assert!(is_paste_candidate(&InputEvent::PointerButton {
-            button: 2,
-            pressed: true,
-            x: 0.5,
-            y: 0.5,
-        }));
-        assert!(!is_paste_candidate(&InputEvent::PointerButton {
-            button: 0,
-            pressed: true,
-            x: 0.5,
-            y: 0.5,
-        }));
-    }
-}
+#[path = "clipboard_tests.rs"]
+mod tests;

@@ -2870,6 +2870,8 @@ dependencies = [
  "deskfleet-gstreamer-media",
  "deskfleet-input",
  "deskfleet-native",
+ "deskfleet-viewer-controls",
+ "dispatch2",
  "gpui-fast",
  "gpui-fast-platform",
  "image",
@@ -3109,6 +3111,15 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "deskfleet-viewer-controls"
+version = "0.22.0"
+dependencies = [
+ "nsh-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

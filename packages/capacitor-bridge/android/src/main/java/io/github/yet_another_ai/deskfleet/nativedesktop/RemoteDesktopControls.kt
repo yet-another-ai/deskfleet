@@ -19,7 +19,7 @@ internal class RemoteDesktopControls(
     private val emit: (JSONObject) -> Unit,
     private val clipboard: () -> Unit,
     private val close: () -> Unit,
-    private val toggleFullscreen: () -> Unit,
+    private val setFullscreen: (Boolean) -> Unit,
 ) {
     private val density get() = context.resources.displayMetrics.density
     val input = RemoteDesktopInput(send) { events -> DeskFleetBridge.nativeInputSequence(JSONArray(events).toString()) }
@@ -77,101 +77,72 @@ internal class RemoteDesktopControls(
 
     fun applyState(value: JSONObject) {
         if (destroyed) return
+        val wasEnabled = input.enabled
         val oldDisplay = ui.optInt("displayId", -1)
         ui = value
         input.pasteCode = if (ui.optString("platform") == "darwin") "MetaLeft" else "ControlLeft"
         if (input.pasteCode == "MetaLeft") input.pasteShift = false
-        if (oldDisplay != ui.optInt("displayId", -1)) {
-            release()
-            resetPointer()
-        }
-        if (!ui.optBoolean("control") || !ui.optBoolean("inputReady") || !connected()) {
-            if (paused) send(JSONObject().put("type", "pauseInput").put("paused", false).toString())
-            paused = false
-        }
-        updateEnabled()
-        publish()
+        dispatchAction(JSONObject().put("type", "sessionChanged").put("value", JSONObject()
+            .put("wasEnabled", wasEnabled).put("displayChanged", oldDisplay != ui.optInt("displayId", -1))).toString())
     }
 
     /** Called by Rust on its engine thread, with all Android work queued on the UI thread. */
     @Suppress("unused")
     fun onControlsAction(payload: String) {
         root.post {
-            if (!destroyed) handleAction(JSONObject(payload))
+            if (!destroyed) dispatchAction(payload)
         }
     }
 
-    private fun handleAction(action: JSONObject) {
-        when (action.getString("type")) {
-            "toggleControl" -> if (available()) {
-                release()
-                paused = !paused
+    /** Evaluate and execute on the UI thread so each action sees the preceding effects. */
+    private fun dispatchAction(payload: String) {
+        val effects = JSONArray(DeskFleetBridge.nativeControlEffects(snapshot().toString(), payload))
+        for (index in 0 until effects.length()) executeEffect(effects.getJSONObject(index))
+        input.enabled = available() && !paused
+        publish()
+    }
+
+    private fun executeEffect(effect: JSONObject) {
+        when (effect.getString("type")) {
+            "release" -> release(effect.getBoolean("value"))
+            "paused" -> {
+                paused = effect.getBoolean("value")
                 send(JSONObject().put("type", "pauseInput").put("paused", paused).toString())
-                updateEnabled()
             }
-            "toggleFullscreen" -> { fullscreen = !fullscreen; toggleFullscreen() }
-            "togglePanel" -> {
-                release()
-                hackerOpen = false
+            "relativeMouse" -> relative = effect.getBoolean("value")
+            "dragButton" -> {
+                dragging = effect.getBoolean("value")
+                DeskFleetBridge.nativeTouch(if (dragging) 11 else 12, 0.0, 0.0, 0.0, 0.0)
             }
-            "selectDisplay" -> {
-                release()
-                emit(JSONObject().put("type", "selectDisplay").put("displayId", action.getInt("value")))
+            "resetPointer" -> resetPointer()
+            "hackerOpen" -> hackerOpen = effect.getBoolean("value")
+            "modifiers" -> {
+                val values = effect.getJSONArray("value")
+                input.setModifiers(List(values.length()) { values.getBoolean(it) })
             }
-            "setControl" -> {
-                release()
-                if (paused) {
-                    paused = false
-                    send(JSONObject().put("type", "pauseInput").put("paused", false).toString())
-                }
-                emit(JSONObject().put("type", "setControl").put("control", action.getBoolean("value")))
-            }
-            "setReverseScroll" -> reverseScroll = action.getBoolean("value")
-            "setClipboardSharing" -> clipboardSharing = action.getBoolean("value")
-            "secureAttention" -> input.secureAttention()
-            "shortcut" -> {
-                val codes = action.getJSONArray("value")
+            "chord" -> {
+                val codes = effect.getJSONArray("value")
+                // The ordered chord batch releases the remote; only reset local gestures here.
                 onRelease()
-                stopDrag()
+                dragging = false
+                keyboard.cancelComposition()
                 input.chord(List(codes.length()) { codes.getString(it) })
             }
-            "setPinchZoom" -> {
-                pinchZoom = action.getBoolean("value")
-                if (!pinchZoom) resetZoom()
+            "fullscreen" -> {
+                fullscreen = effect.getBoolean("value")
+                setFullscreen(fullscreen)
             }
+            "keyboard" -> setKeyboardOpen(effect.getBoolean("value"))
+            "pasteShift" -> input.pasteShift = effect.getBoolean("value")
+            "reverseScroll" -> reverseScroll = effect.getBoolean("value")
+            "clipboardSharing" -> clipboardSharing = effect.getBoolean("value")
+            "syncClipboard" -> clipboard()
+            "pinchZoom" -> pinchZoom = effect.getBoolean("value")
             "resetZoom" -> resetZoom()
-            "reconnect", "disconnect" -> {
-                release()
-                emit(JSONObject().put("type", action.getString("type")))
-            }
-            "toggleMouseMode" -> { release(); relative = !relative; resetPointer() }
-            "toggleKeyboard" -> toggleKeyboard()
-            "toggleHackerKeyboard" -> if (input.enabled) {
-                release()
-                hackerOpen = !hackerOpen
-            }
-            "setPasteShift" -> input.pasteShift = action.getBoolean("value")
-            "toggleModifier" -> input.toggleModifier(action.getString("value"))
-            "key" -> input.stroke(action.getString("value"))
-            "toggleDrag" -> if (input.enabled) {
-                if (dragging) stopDrag()
-                else {
-                    release()
-                    if (!relative) { relative = true; resetPointer() }
-                    dragging = true
-                    DeskFleetBridge.nativeTouch(11, 0.0, 0.0, 0.0, 0.0)
-                }
-            }
-            "syncClipboard" -> if (input.enabled) clipboard()
+            "secureAttention" -> input.secureAttention()
+            "emit" -> emit(effect.getJSONObject("value"))
             "close" -> close()
-            "toggleCollapsed" -> {
-                release()
-                hackerOpen = false
-                input.clearModifiers()
-            }
-            "selectOpen" -> if (action.getBoolean("value")) release()
         }
-        publish()
     }
 
     fun release(preserveModifiers: Boolean = false) {
@@ -220,24 +191,12 @@ internal class RemoteDesktopControls(
     fun connected() = ui.optString("status") == "connected"
     private fun available() = connected() && ui.optBoolean("control") && ui.optBoolean("inputReady")
 
-    private fun updateEnabled() {
-        input.enabled = available() && !paused
-        if (!input.enabled) {
-            onRelease()
-            stopDrag()
-            hideKeyboard()
-            hackerOpen = false
-        }
-    }
-
     private fun resetPointer() = DeskFleetBridge.nativeTouch(14, 0.0, 0.0, 0.0, 0.0)
 
     private fun resetZoom() = DeskFleetBridge.nativeTouch(17, 0.0, 0.0, 0.0, 0.0)
 
-    private fun toggleKeyboard() {
-        if (!input.enabled) return
-        release(preserveModifiers = true)
-        if (keyboard.hasFocus()) hideKeyboard()
+    private fun setKeyboardOpen(open: Boolean) {
+        if (!open) hideKeyboard()
         else {
             keyboard.requestFocus()
             context.getSystemService(InputMethodManager::class.java)?.showSoftInput(keyboard, InputMethodManager.SHOW_IMPLICIT)

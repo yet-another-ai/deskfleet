@@ -18,6 +18,10 @@ pub(crate) enum Command {
         codec: Codec,
         width: u32,
         height: u32,
+        /// Bound to this exact in-process Start when the mobile bridge submits it.
+        #[cfg(target_os = "ios")]
+        #[serde(skip)]
+        clipboard: Option<crate::ios_clipboard_delivery::Receiver>,
     },
     Answer {
         sdp: String,
@@ -54,16 +58,7 @@ pub(crate) enum Command {
     Close,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum Status {
-    #[default]
-    Connecting,
-    Starting,
-    Connected,
-    Disconnected,
-    Error,
-}
+pub(crate) use deskfleet_viewer_controls::Status;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -183,7 +178,7 @@ pub(crate) fn set_emitter(emitter: Option<Emitter>) {
     }
 }
 
-pub(crate) fn emit(event: serde_json::Value) -> io::Result<()> {
+pub(crate) fn emit(event: impl Serialize) -> io::Result<()> {
     if let Some(mutex) = EMITTER.get()
         && let Ok(guard) = mutex.lock()
         && let Some(emitter) = guard.as_ref()

@@ -11,3 +11,9 @@
 -keep class io.github.yet_another_ai.deskfleet.nativedesktop.DeskFleetBridge$Companion {
     native <methods>;
 }
+-keep class io.github.yet_another_ai.deskfleet.nativedesktop.NativeClipboard {
+    native <methods>;
+}
+-keep class io.github.yet_another_ai.deskfleet.nativedesktop.NativeClipboard$Companion {
+    native <methods>;
+}

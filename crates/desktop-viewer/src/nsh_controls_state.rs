@@ -1,19 +1,9 @@
 //! Platform-neutral state and action contract for embedded native controls.
 
-use crate::protocol::{Status, UiState};
-use serde::{Deserialize, Serialize};
-
-/// The toolbar's three dropdowns. At most one is open.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Panel {
-    /// Input: pointer mode, keyboards, shortcuts, clipboard, and zoom.
-    Control,
-    /// Session: display, control permission, and connection.
-    Config,
-    /// Stream health: bitrate, frame rate, loss, and jitter.
-    Monitor,
-}
+use crate::protocol::UiState;
+use deskfleet_viewer_controls::InputAvailability;
+pub(crate) use deskfleet_viewer_controls::{Panel, ToolbarAction};
+use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
@@ -85,45 +75,32 @@ impl ToolbarState {
     }
 
     pub(crate) fn controls_enabled(&self) -> bool {
-        self.ui.status == Status::Connected
-            && self.ui.control
-            && self.ui.input_ready
-            && !self.paused
+        self.input_availability().available() && !self.paused
+    }
+
+    pub(crate) fn input_availability(&self) -> InputAvailability {
+        InputAvailability {
+            status: self.ui.status,
+            control: self.ui.control,
+            input_ready: self.ui.input_ready,
+            secure_attention: self.ui.secure_attention,
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
-#[serde(tag = "type", content = "value", rename_all = "camelCase")]
-pub(crate) enum ToolbarAction {
-    ToggleControl,
-    ToggleMouseMode,
-    ToggleDrag,
-    ToggleCollapsed,
-    SyncClipboard,
-    Close,
-    ToggleKeyboard,
-    ToggleHackerKeyboard,
-    SetPasteShift(bool),
-    ToggleModifier(&'static str),
-    Key(&'static str),
-    KeyboardMeasured(f32, f32),
-    /// One complete chord. Earlier codes are held while the last is pressed.
-    Shortcut(&'static [&'static str]),
-    ToggleFullscreen,
-    /// Opens a panel, or closes it when it is already open.
-    TogglePanel(Panel),
-    SelectDisplay(u32),
-    SetControl(bool),
-    SetReverseScroll(bool),
-    SetClipboardSharing(bool),
-    SetPinchZoom(bool),
-    ResetZoom,
-    SecureAttention,
-    Reconnect,
-    Disconnect,
-    Measured(f32, f32),
-    PanelMeasured(f32),
-    FocusHandle,
-    BlurHandle,
-    SelectOpen(bool),
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+impl From<&ToolbarState> for deskfleet_viewer_controls::ControlState {
+    fn from(state: &ToolbarState) -> Self {
+        Self {
+            ui: state.input_availability(),
+            mobile: state.mobile,
+            paused: state.paused,
+            relative_mouse: state.relative_mouse,
+            dragging: state.dragging,
+            hacker_open: state.hacker_open,
+            keyboard_open: state.keyboard_open,
+            modifiers: state.modifiers,
+            fullscreen: state.fullscreen,
+        }
+    }
 }

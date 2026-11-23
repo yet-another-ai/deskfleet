@@ -1,6 +1,6 @@
 //! Committed mobile IME text uses the existing bounded clipboard contract.
 
-use deskfleet_input::{InputEvent, MAX_CLIPBOARD_BYTES};
+use deskfleet_input::InputEvent;
 use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -9,13 +9,17 @@ pub(crate) enum PasteCode {
     MetaLeft,
 }
 
+/// Mobile IMEs clear their local held-input state when submitting a text commit.
+/// Keep the matching remote release in the input queue even if the text is rejected.
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+pub(crate) fn mobile_commit_events(text: String, code: PasteCode, shift: bool) -> Vec<InputEvent> {
+    paste_events(text, code, shift).unwrap_or_else(|| vec![InputEvent::ReleaseAll])
+}
+
 /// Keep the text and its paste chord together on the ordered channel. In
 /// particular, a sticky Hacker Keyboard modifier must not modify the paste.
 pub(crate) fn paste_events(text: String, code: PasteCode, shift: bool) -> Option<Vec<InputEvent>> {
-    let text = text.replace('\0', "");
-    if text.is_empty() || text.len() > MAX_CLIPBOARD_BYTES {
-        return None;
-    }
+    let text = crate::clipboard::sanitize(&text)?;
     let code = match code {
         PasteCode::ControlLeft => "ControlLeft",
         PasteCode::MetaLeft => "MetaLeft",
@@ -44,10 +48,11 @@ pub(crate) fn paste_events(text: String, code: PasteCode, shift: bool) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskfleet_input::MAX_CLIPBOARD_BYTES;
 
     #[test]
     fn composed_unicode_is_pasted_after_releasing_sticky_modifiers() {
-        let events = paste_events("你好👋\0".into(), PasteCode::MetaLeft, false).unwrap();
+        let events = mobile_commit_events("你好👋\0".into(), PasteCode::MetaLeft, false);
         assert_eq!(events[0], InputEvent::ReleaseAll);
         assert_eq!(
             events[1],
@@ -91,6 +96,16 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn rejected_mobile_commits_only_release_held_input() {
+        for rejected in [String::from("\0"), "你".repeat(MAX_CLIPBOARD_BYTES / 3 + 1)] {
+            assert_eq!(
+                mobile_commit_events(rejected, PasteCode::ControlLeft, true),
+                [InputEvent::ReleaseAll]
+            );
+        }
     }
 
     #[test]
