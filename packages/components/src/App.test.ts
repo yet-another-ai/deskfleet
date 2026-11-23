@@ -10,6 +10,7 @@ import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
+import { deferred } from "./test/desktop-media.ts"
 import type { LocalAgentState } from "@deskfleet/client/local-agent"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
 import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
@@ -121,6 +122,82 @@ test("the archive route retains the sidebar without tiled windows", async () => 
   expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
   expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
   expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
+})
+
+test("the first-task guide waits for configured Agents before offering setup or dismissal", async () => {
+  const catalog = catalogFixture()
+  catalog.sessionIds = []
+  catalog.workspaces[0]!.worktrees = catalog.workspaces[0]!.worktrees.filter(worktree => !worktree.sessionId)
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(catalog)
+  const configured = await platformClient.providers.list()
+  const providers = deferred<typeof configured>()
+  vi.spyOn(platformClient.providers, "list").mockReturnValue(providers.promise)
+  const wrapper = await mountApp()
+
+  expect(wrapper.get('main [role="status"]').text()).toBe("Checking available Agents…")
+  expect(link(wrapper, "Set up an Agent")).toBeUndefined()
+  expect(button(wrapper, "Skip guide")).toBeUndefined()
+
+  providers.resolve(configured)
+  await flushPromises()
+  expect(button(wrapper, "Use suggested task")?.exists()).toBe(true)
+  expect(button(wrapper, "Skip guide")?.exists()).toBe(true)
+})
+
+test("the first-task guide drafts a task for a real workspace and offers handoff after completion", async () => {
+  vi.mocked(platformClient.catalog.list).mockResolvedValue({ ...catalogFixture(), workspaces: [], sessionIds: [] })
+  const createWorkspace = vi.spyOn(platformClient.catalog, "createWorkspace").mockResolvedValue({
+    id: workspaceId, name: "code",
+    worktrees: [{ id: mainWorktreeId, workspaceId, directories: [{ path: "/code" }] }],
+  })
+  const pinia = createPinia()
+  const agents = useAgentSessionsStore(pinia)
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, id: sessionId, workspaceId, context: "directory" }
+  const createSession = vi.spyOn(agents, "create").mockImplementation(async () => {
+    agents.sessions[sessionId] = snapshot.session
+    agents.views[sessionId] = { snapshot, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+    return snapshot
+  })
+  const submit = vi.spyOn(agents, "submit").mockResolvedValue({ sessionId, operationId: "operation", commandId: "50", inputId: "40" })
+  vi.spyOn(agents, "open").mockResolvedValue()
+  vi.spyOn(agents, "refresh").mockResolvedValue()
+  const wrapper = await mountApp("/", pinia)
+
+  expect(wrapper.get("main").text()).toContain("Run your first Agent task")
+  await button(wrapper, "Choose project folder").trigger("click")
+  await wrapper.get('button[name="directory-path-0"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[role="dialog"] [data-path="/code"]').trigger("click")
+  await flushPromises()
+  await button(wrapper, "Select folder").trigger("click")
+  await vi.waitFor(() => expect(wrapper.get('button[name="directory-path-0"]').text()).toContain("/code"))
+  await wrapper.get('[role="dialog"] form').trigger("submit")
+  await vi.waitFor(() => expect(button(wrapper, "Use suggested task")?.exists()).toBe(true))
+  expect(createWorkspace).toHaveBeenCalledExactlyOnceWith("code", [{ path: "/code" }])
+  expect(wrapper.get("[data-composer-workspace]").text()).toBe("code")
+
+  await button(wrapper, "Use suggested task").trigger("click")
+  await flushPromises()
+  const prompt = wrapper.get<HTMLTextAreaElement>("textarea").element.value
+  expect(prompt).toMatch(/^Look through this repository/)
+  expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(false)
+  expect(createSession).not.toHaveBeenCalled()
+  expect(submit).not.toHaveBeenCalled()
+  expect(router.currentRoute.value.name).toBe("new-session")
+
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await vi.waitFor(() => expect(submit).toHaveBeenCalledExactlyOnceWith(sessionId, prompt, "backlog", undefined, prompt, { mentions: [], attachmentIds: [] }))
+  expect(createSession).toHaveBeenCalledExactlyOnceWith(workspaceId, expect.any(String), "directory", "codex", undefined, undefined, undefined, { deferStartup: true })
+  expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
+  const handoff = "Continue from another device"
+  expect(wrapper.text()).not.toContain(handoff)
+
+  agents.views[sessionId]!.snapshot!.turns = [{
+    id: "70", sessionId, initialInputId: "40", dispatchCommandId: "50", runGeneration: 1,
+    state: "completed", startedAt: "2026-04-10T10:00:00Z", endedAt: "2026-04-10T10:00:15Z",
+  }]
+  await vi.waitFor(() => expect(wrapper.text()).toContain(handoff))
 })
 
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {

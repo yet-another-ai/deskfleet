@@ -905,6 +905,35 @@
     "heading": "开始智能体会话",
     "noTarget": "连接到一台机器以启动会话。"
   },
+  "firstTask": {
+    "heading": "开始你的第一个 Agent 任务",
+    "progress": "首次任务进度",
+    "steps": { "workspace": "项目目录", "agent": "Agent", "task": "首次任务" },
+    "skip": "跳过引导",
+    "workspace": {
+      "title": "打开一个你正在做的项目",
+      "description": "选择这台机器上的项目目录，为 Agent 创建工作区。",
+      "existing": "在输入框下方选择一个工作区，让 Agent 获得项目的文件和上下文。",
+      "choose": "选择项目目录"
+    },
+    "agent": {
+      "title": "为这台机器设置 Agent",
+      "checking": "正在检查可用的 Agent…",
+      "description": "选择你常用的 Agent，例如 Codex 或 Claude Code。完成设置和登录后，回到这里开始任务。",
+      "setup": "设置 Agent"
+    },
+    "task": {
+      "title": "给 Agent 布置一个实际任务",
+      "description": "写一个与项目有关的任务，或试用下方可编辑的建议。发送消息后，Agent 就会开始工作。",
+      "suggest": "使用建议任务",
+      "prompt": "请查看这个仓库并解释它的用途。告诉我主要入口在哪里、如何运行或测试，以及下一步可以做什么。请不要修改文件。"
+    },
+    "handoff": {
+      "title": "在另一台设备上继续",
+      "description": "保持这台机器在线，用手机或另一台电脑登录 DeskFleet，选择同一个团队并打开这条会话，即可接着工作。",
+      "dismiss": "关闭提示"
+    }
+  },
   "worktree": {
     "notFound": "该工作树不存在。",
     "directories": "目录",
@@ -1777,7 +1806,7 @@
     "joinAction": "加入团队",
     "joining": "正在加入…",
     "welcome": "欢迎，{name}",
-    "welcomeDescription": "团队共享机器及其智能体会话。创建一个团队，或加入已有团队。",
+    "welcomeDescription": "创建或加入团队，就可以接入机器并运行第一个智能体任务。",
     "youAreAdmin": "你是此团队的管理员。",
     "youAreOwner": "你是此团队的所有者。",
     "youAreMember": "你是此团队的成员。",
@@ -1877,7 +1906,7 @@
     "credentialsStep": "将以下凭据粘贴到命令中，然后按 Ctrl-D",
     "credentialsWarning": "这些凭据只显示一次。持有凭据的任何人都可以冒充此机器。",
     "emptyTitle": "向 {team} 添加机器",
-    "emptyDescription": "团队成员在团队机器上运行智能体和打开终端。连接此电脑或一台服务器即可开始。"
+    "emptyDescription": "添加存有代码仓库的电脑或服务器。接下来，用它创建工作区并运行第一个智能体任务。"
   },
   "files": {
     "title": "文件传输",
@@ -1919,7 +1948,7 @@
   },
   "welcome": {
     "title": "欢迎使用 DeskFleet",
-    "description": "登录后，选择如何使用这台电脑。",
+    "description": "在自己常用的代码仓库中运行第一个智能体任务。先登录，再选择如何使用这台电脑。",
     "telemetryConsent": "帮助改进 DeskFleet（分享使用统计与营销归因）",
     "telemetryConsentDescription": "可选。开启后将分享匿名产品事件与推广归因统计，绝不收集提示词、代码或文件内容。",
     "notificationsTitle": "及时了解任务动态",
