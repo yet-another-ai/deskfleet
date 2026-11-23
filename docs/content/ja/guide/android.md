@@ -65,3 +65,15 @@ export DESKFLEET_ANDROID_SCRCPY_SERVER=/root/scrcpy-server-v3.1
    sv-enable deskfleet
    ```
 2. **Termux:Boot** をインストールし、`~/.termux/boot/deskfleet.sh`（`chmod +x`）に `termux-wake-lock` を記載すると、再起動後のロック解除時にバックグラウンドで自動起動します。
+
+## 5. ホスト設定を構成する（任意）
+
+Android アプリと Web クライアントには Termux デーモン向けのホスト設定画面がありません。リモートエージェント権限やワークツリー設定を変更するには、Ubuntu コンテナ内で `./deskfleet-daemon settings` を実行してください（再起動不要で即時反映）：
+
+```sh
+./deskfleet-daemon settings
+./deskfleet-daemon settings set remoteAgents.allowOperate true
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+```
+
+全キーは `./deskfleet-daemon settings --help` または [ホスト設定を構成する](./getting-started#ホスト設定を構成する) を参照してください。

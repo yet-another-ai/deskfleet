@@ -111,8 +111,9 @@ use their own model account with unlimited credits.
 ## Dispatch work to a Machine
 
 On the target desktop, open **Settings → Preferences → This computer** and
-enable **Allow Super Agent to use this computer**. On a headless daemon, set
-`"allowSuperAgent": true` in `<host directory>/remote-agent-settings.json`.
+enable **Allow Super Agent to use this computer**. On a headless daemon, run
+`deskfleet-daemon settings set remoteAgents.allowSuperAgent true` (or set
+`"allowSuperAgent": true` in `<host directory>/remote-agent-settings.json`).
 This single switch grants all hosted machine tools. Super Agent can inspect
 Workspaces and providers, create Workspaces and Sessions, send follow-ups,
 read Session history, and invoke the machine's configured MCP tools. Turn the

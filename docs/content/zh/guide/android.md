@@ -65,3 +65,15 @@ export DESKFLEET_ANDROID_SCRCPY_SERVER=/root/scrcpy-server-v3.1
    sv-enable deskfleet
    ```
 2. 安装 **Termux:Boot** 后，在 `~/.termux/boot/deskfleet.sh`（赋予 `chmod +x`）中写入 `termux-wake-lock`，手机重启解锁后即可自动在后台拉起服务。
+
+## 5. 配置本机权限与设置（可选）
+
+Android 客户端与 Web 端不显示桌面版的本机设置项，如需开启远程 Agent / Super Agent 权限或调整 worktree 设置，请在 Ubuntu 容器内执行 `./deskfleet-daemon settings`（无需重启即刻生效）：
+
+```sh
+./deskfleet-daemon settings
+./deskfleet-daemon settings set remoteAgents.allowOperate true
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+```
+
+运行 `./deskfleet-daemon settings --help` 或参阅 [配置本机设置](./getting-started#配置本机设置) 查看全部配置键。

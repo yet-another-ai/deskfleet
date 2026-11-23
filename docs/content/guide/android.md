@@ -65,3 +65,15 @@ To avoid starting the daemon manually after opening Termux or rebooting:
    sv-enable deskfleet
    ```
 2. With **Termux:Boot** installed, create `~/.termux/boot/deskfleet.sh` (`chmod +x`) containing `termux-wake-lock` so Termux starts its services automatically after the device unlocks following a reboot.
+
+## 5. Configure host settings (optional)
+
+The Android and Web clients do not show desktop host settings for a Termux daemon. Run `./deskfleet-daemon settings` inside the Ubuntu container to configure remote Agent permissions or worktree options (changes apply immediately without restarting):
+
+```sh
+./deskfleet-daemon settings
+./deskfleet-daemon settings set remoteAgents.allowOperate true
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+```
+
+Run `./deskfleet-daemon settings --help` or see [Configure host settings](./getting-started#configure-host-settings) for all keys.
