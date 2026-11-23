@@ -12,31 +12,51 @@ on:
 permissions:
   contents: read
 
-# Reusable workflows inherit the caller's concurrency group. PR updates
-# replace running CI for the same PR. Main, scheduled, and manual runs can
-# finish and save compiled caches once started. GitHub can still replace an
-# older queued run in the same group.
+# Reusable workflows inherit the caller's group. PR updates and rapid main
+# pushes cancel superseded runs so only the latest commit finishes, saves
+# caches, and deploys Pages. Scheduled and manual runs finish once started.
 concurrency:
   group: ci-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 jobs:
   changes:
     name: Classify changes
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       specs_only: ${{ steps.classify.outputs.specs_only }}
       run_build: ${{ steps.classify.outputs.run_build }}
+      run_nix_server: ${{ steps.classify.outputs.run_nix_server }}
+      run_super_agent: ${{ steps.classify.outputs.run_super_agent }}
+      run_android: ${{ steps.classify.outputs.run_android }}
+      run_ios: ${{ steps.classify.outputs.run_ios }}
       all_platforms: ${{ steps.classify.outputs.all_platforms }}
       run_backend: ${{ steps.classify.outputs.run_backend }}
+      skip_schedule: ${{ steps.schedule_check.outputs.skip_schedule || 'false' }}
     steps:
       - name: Check out complete history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Check whether scheduled HEAD was already validated
+        id: schedule_check
+        if: ${{ github.event_name == 'schedule' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "skip_schedule=false" >> "$GITHUB_OUTPUT"
+          if ! node scripts/ci-check-existing-run.ts schedule; then
+            echo "::warning::Scheduled run deduplication failed; running full CI."
+            echo "skip_schedule=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Classify documentation-only changes
         id: classify
@@ -47,6 +67,10 @@ jobs:
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
           echo "specs_only=false" >> "$GITHUB_OUTPUT"
           echo "run_build=true" >> "$GITHUB_OUTPUT"
+          echo "run_nix_server=true" >> "$GITHUB_OUTPUT"
+          echo "run_super_agent=true" >> "$GITHUB_OUTPUT"
+          echo "run_android=true" >> "$GITHUB_OUTPUT"
+          echo "run_ios=true" >> "$GITHUB_OUTPUT"
           echo "all_platforms=true" >> "$GITHUB_OUTPUT"
           echo "run_backend=true" >> "$GITHUB_OUTPUT"
           if ! node scripts/ci-docs-only.ts; then
@@ -54,6 +78,10 @@ jobs:
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
             echo "specs_only=false" >> "$GITHUB_OUTPUT"
             echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "run_nix_server=true" >> "$GITHUB_OUTPUT"
+            echo "run_super_agent=true" >> "$GITHUB_OUTPUT"
+            echo "run_android=true" >> "$GITHUB_OUTPUT"
+            echo "run_ios=true" >> "$GITHUB_OUTPUT"
             echo "all_platforms=true" >> "$GITHUB_OUTPUT"
             echo "run_backend=true" >> "$GITHUB_OUTPUT"
           fi
@@ -61,7 +89,7 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.skip_schedule == 'true') }}
     uses: ./.github/workflows/test.yml
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
@@ -70,6 +98,8 @@ jobs:
       # Classification failure must expand coverage (same fail-safe direction as docs_only=false).
       all_platforms: ${{ needs.changes.result != 'success' || needs.changes.outputs.all_platforms == 'true' }}
       run_backend: ${{ needs.changes.result != 'success' || needs.changes.outputs.run_backend == 'true' }}
+      run_android: ${{ needs.changes.result != 'success' || needs.changes.outputs.run_android == 'true' }}
+      run_ios: ${{ needs.changes.result != 'success' || needs.changes.outputs.run_ios == 'true' }}
     permissions:
       contents: read
 
@@ -77,21 +107,25 @@ jobs:
     name: Build
     # Run in parallel with Test. #390 staged Build after Test; that serialization
     # is rolled back so packaging smoke can overlap runtime tests. Classification
-    # still skips Build when docs-only or when packaging paths are unchanged.
+    # still skips Build when docs-only or when packaging/mobile paths are unchanged.
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.skip_schedule != 'true' && (needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_android == 'true' || needs.changes.outputs.run_ios == 'true') }}
     uses: ./.github/workflows/build.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+      run_package: ${{ needs.changes.outputs.run_build == 'true' }}
+      run_super_agent: ${{ needs.changes.outputs.run_super_agent == 'true' }}
+      run_android: ${{ needs.changes.outputs.run_android == 'true' }}
+      run_ios: ${{ needs.changes.outputs.run_ios == 'true' }}
     permissions:
       contents: read
 
   nix_server:
     name: Nix server
-    # Independent of Test (same packaging gate as Build). Source image build does
-    # not consume Test artifacts.
+    # Independent of Test. Source image build runs only when Nix/lockfile inputs
+    # change, plus scheduled and manual runs.
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.skip_schedule != 'true' && needs.changes.outputs.run_nix_server == 'true' }}
     uses: ./.github/workflows/nix-server.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -103,7 +137,7 @@ jobs:
     # True dependency: downloads deskfleet-desktop-* from Build. Does not wait on
     # Test; once Build finishes, DEB/RPM validation can overlap remaining tests.
     needs: [changes, build]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.build.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.skip_schedule != 'true' && needs.build.result == 'success' && needs.changes.outputs.run_build == 'true' }}
     uses: ./.github/workflows/linux-packages.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -121,30 +155,58 @@ jobs:
         shell: bash
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
+          SKIP_SCHEDULE: ${{ needs.changes.outputs.skip_schedule }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          SPECS_ONLY: ${{ needs.changes.outputs.specs_only }}
           RUN_BUILD: ${{ needs.changes.outputs.run_build }}
+          RUN_NIX_SERVER: ${{ needs.changes.outputs.run_nix_server }}
+          RUN_ANDROID: ${{ needs.changes.outputs.run_android }}
+          RUN_IOS: ${{ needs.changes.outputs.run_ios }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           NIX_SERVER_RESULT: ${{ needs.nix_server.result }}
           LINUX_PACKAGES_RESULT: ${{ needs.linux_packages.result }}
         run: |
-          expected_build=success
-          # Packaging skip is classification-driven only. Test failure must not
-          # rewrite expected packaging results now that Build runs independently.
-          if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false") ]]; then
-            expected_build=skipped
+          if [[ "$CHANGES_RESULT" == "success" && "$SKIP_SCHEDULE" == "true" ]]; then
+            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" || "$NIX_SERVER_RESULT" != "skipped" || "$LINUX_PACKAGES_RESULT" != "skipped" ]]; then
+              echo "::error::Scheduled deduplication expected all downstream jobs to be skipped (Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT, Linux packages: $LINUX_PACKAGES_RESULT)."
+              exit 1
+            fi
+            exit 0
           fi
-          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_build" || "$LINUX_PACKAGES_RESULT" != "$expected_build" ]]; then
-            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT, Linux packages: $LINUX_PACKAGES_RESULT)."
+          expected_build=success
+          expected_nix_server=success
+          expected_linux_packages=success
+          # Packaging skips are classification-driven only. Test failure must not
+          # rewrite expected packaging results while Build runs independently.
+          if [[ "$CHANGES_RESULT" == "success" ]]; then
+            if [[ "$DOCS_ONLY" == "true" || "$SPECS_ONLY" == "true" ]]; then
+              expected_build=skipped
+              expected_nix_server=skipped
+              expected_linux_packages=skipped
+            else
+              if [[ "$RUN_BUILD" != "true" && "$RUN_ANDROID" != "true" && "$RUN_IOS" != "true" ]]; then
+                expected_build=skipped
+              fi
+              if [[ "$RUN_NIX_SERVER" != "true" ]]; then
+                expected_nix_server=skipped
+              fi
+              if [[ "$RUN_BUILD" != "true" ]]; then
+                expected_linux_packages=skipped
+              fi
+            fi
+          fi
+          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_nix_server" || "$LINUX_PACKAGES_RESULT" != "$expected_linux_packages" ]]; then
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, specs-only: $SPECS_ONLY, run-build: $RUN_BUILD, run-nix-server: $RUN_NIX_SERVER, run-android: $RUN_ANDROID, run-ios: $RUN_IOS, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT, Linux packages: $LINUX_PACKAGES_RESULT)."
             exit 1
           fi
 
   prune_caches:
     name: Prune caches
-    needs: gate
+    needs: [changes, gate]
     # Only main writes caches, so only main's runs leave superseded entries.
     # Run after every job has saved, whatever Gate decided.
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.changes.outputs.skip_schedule != 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:

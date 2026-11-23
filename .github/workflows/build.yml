@@ -25,6 +25,26 @@ on:
         type: boolean
         required: false
         default: false
+      run_package:
+        description: Build desktop, server, and standalone daemon packages.
+        type: boolean
+        required: false
+        default: true
+      run_super_agent:
+        description: Build and smoke-test the Nix Super Agent container image on Linux.
+        type: boolean
+        required: false
+        default: true
+      run_android:
+        description: Build the Android App Bundle and APK.
+        type: boolean
+        required: false
+        default: true
+      run_ios:
+        description: Build the iOS archive.
+        type: boolean
+        required: false
+        default: true
     secrets:
       SENTRY_AUTH_TOKEN:
         required: false
@@ -64,7 +84,7 @@ permissions:
 
 jobs:
   package:
-    if: ${{ !inputs.signed_ios }}
+    if: ${{ !inputs.signed_ios && (inputs.production_release || inputs.run_package) }}
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     environment: ${{ inputs.production_release && 'production' || '' }}
@@ -255,7 +275,7 @@ jobs:
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
 
       - name: Install Nix for the Super Agent image
-        if: runner.os == 'Linux'
+        if: ${{ runner.os == 'Linux' && (inputs.production_release || inputs.run_super_agent) }}
         uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
         with:
           github_access_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
@@ -263,11 +283,11 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Build the Super Agent image with Nix
-        if: runner.os == 'Linux'
+        if: ${{ runner.os == 'Linux' && (inputs.production_release || inputs.run_super_agent) }}
         run: nix build .#super-agent-image --print-build-logs --out-link "$RUNNER_TEMP/result-super-agent-image"
 
       - name: Smoke test the Nix-built Super Agent image
-        if: runner.os == 'Linux'
+        if: ${{ runner.os == 'Linux' && (inputs.production_release || inputs.run_super_agent) }}
         shell: bash
         run: |
           docker load --input "$RUNNER_TEMP/result-super-agent-image"
@@ -354,7 +374,7 @@ jobs:
           retention-days: 14
 
   android:
-    if: ${{ !inputs.signed_ios }}
+    if: ${{ !inputs.signed_ios && (inputs.production_release || inputs.run_android) }}
     name: Build (android-arm64)
     runs-on: ubuntu-26.04
     environment: ${{ inputs.production_release && 'production' || '' }}
@@ -484,6 +504,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: ${{ inputs.signed_ios || inputs.production_release || inputs.run_ios }}
     name: Build (ios-arm64)
     runs-on: macos-26
     environment: ${{ (inputs.production_release || inputs.signed_ios) && 'production' || '' }}
