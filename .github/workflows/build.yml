@@ -108,7 +108,8 @@ jobs:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     environment: ${{ inputs.production_release && 'production' || '' }}
-    timeout-minutes: 60
+    # Intel releases compile Rust from scratch before signing and notarizing the app.
+    timeout-minutes: ${{ inputs.production_release && matrix.platform == 'macos-x64' && 90 || 60 }}
     strategy:
       fail-fast: false
       matrix:
