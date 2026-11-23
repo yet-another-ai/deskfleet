@@ -96,6 +96,8 @@ test("remote tools are discoverable and retain the remote MCP result, including 
   const listed = await client.listTools()
   const tools = listed.tools.map(tool => tool.name)
   assert.ok(tools.includes("deskfleet_remote_machines"))
+  assert.ok(tools.includes("deskfleet_remote_provider_configuration"))
+  assert.ok(tools.includes("deskfleet_provider_configuration"))
   assert.ok(tools.includes("deskfleet_remote_session_history"))
   assert.ok(tools.includes("deskfleet_remote_session_create"))
   assert.ok(tools.includes("deskfleet_remote_session_send"))
@@ -106,7 +108,22 @@ test("remote tools are discoverable and retain the remote MCP result, including 
   assert.ok(tools.includes("deskfleet_remote_files"))
   assert.ok(tools.includes("deskfleet_remote_file_upload"))
   assert.ok(tools.includes("deskfleet_remote_file_download"))
-  assert.equal(listed.tools.find(tool => tool.name === "deskfleet_session_create")?.inputSchema.properties?.yolo && (listed.tools.find(tool => tool.name === "deskfleet_session_create")!.inputSchema.properties!.yolo as { type?: string }).type, "boolean")
-  assert.equal(listed.tools.find(tool => tool.name === "deskfleet_remote_session_create")?.inputSchema.properties?.yolo && (listed.tools.find(tool => tool.name === "deskfleet_remote_session_create")!.inputSchema.properties!.yolo as { type?: string }).type, "boolean")
+  const findTool = (name: string) => listed.tools.find(tool => tool.name === name)
+  for (const name of ["deskfleet_session_create", "deskfleet_remote_session_create"]) {
+    const props = findTool(name)?.inputSchema.properties as Record<string, { type?: string; properties?: Record<string, { type?: string }> }> | undefined
+    assert.equal(props?.yolo?.type, "boolean")
+    assert.equal(props?.configuration?.properties?.configValues?.type, "object")
+  }
+  for (const name of ["deskfleet_session_send", "deskfleet_remote_session_send"]) {
+    const props = findTool(name)?.inputSchema.properties as Record<string, { type?: string; properties?: Record<string, { type?: string }> }> | undefined
+    assert.equal(props?.provider?.type, "string")
+    assert.equal(props?.configuration?.properties?.model?.type, "string")
+    assert.equal(props?.configuration?.properties?.configValues?.type, "object")
+  }
+  for (const name of ["deskfleet_provider_configuration", "deskfleet_remote_provider_configuration"]) {
+    const props = findTool(name)?.inputSchema.properties as Record<string, { type?: string; properties?: Record<string, { type?: string }> }> | undefined
+    assert.equal(props?.provider?.type, "string")
+    assert.equal(props?.configuration?.properties?.model?.type, "string")
+  }
   assert.deepEqual(await client.callTool({ name: "deskfleet_remote_mcp_call", arguments: { machineId: "target", serverId: "server", name: "tool", arguments: {} } }), result)
 })

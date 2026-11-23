@@ -5,7 +5,17 @@ const id = { type: "string", minLength: 1 }
 const object = (properties: Record<string, object>, required: string[] = []) => ({
   type: "object" as const, properties, required, additionalProperties: false,
 })
-const configuration = object({ model: id, reasoningEffort: id, mode: id })
+const configValues = {
+  type: "object",
+  additionalProperties: {
+    oneOf: [
+      { type: "string", minLength: 1 },
+      { type: "boolean" },
+    ],
+  },
+  description: "Additional provider-specific configuration options keyed by configOption id.",
+}
+const configuration = object({ model: id, reasoningEffort: id, mode: id, configValues })
 const trigger = { oneOf: [
   object({ kind: { const: "manual" } }, ["kind"]),
   object({ kind: { const: "daily" }, time: { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }, timeZone: id }, ["kind", "time", "timeZone"]),
@@ -48,12 +58,13 @@ export const DESKFLEET_TOOLS: (Tool & { method: string })[] = [
   { name: "deskfleet_remote_file_download", method: "remoteMcp/fileDownload", description: "Download a file or directory from another machine into a local destination directory. Requires the target's read or operate permission.", inputSchema: object({ machineId: id, sourcePath: id, destinationDirectory: id, conflict: { enum: ["ask", "replace", "rename", "skip"] } }, ["machineId", "sourcePath", "destinationDirectory"]) },
   { name: "deskfleet_context", method: "catalogList", description: "Read this Agent's authorized machine and Workspace context, including available directories.", inputSchema: object({}) },
   { name: "deskfleet_workspace_create", method: "workspaceCreate", description: "Create a Workspace on this machine from one or more existing absolute directory paths; the first path is the default directory. Available to machine-scoped Sessions.", inputSchema: object({ name: id, directories }, ["name", "directories"]) },
-  { name: "deskfleet_providers", method: "providerList", description: "List available Agent provider identities for creating Sessions and scheduled tasks on this machine.", inputSchema: object({}) },
+  { name: "deskfleet_providers", method: "providerList", description: "List available Agent provider identities for creating Sessions and scheduled tasks on this machine. Use deskfleet_provider_configuration to inspect a provider's available models, reasoning efforts, modes, and configuration options.", inputSchema: object({}) },
+  { name: "deskfleet_provider_configuration", method: "_deskfleet/agent/configuration", description: "Inspect an Agent provider's available models, reasoning efforts, modes, and configuration options on this machine before creating or messaging a Session. Optionally pass workspaceId or partial configuration (such as model) to inspect model-dependent options.", inputSchema: object({ provider: id, workspaceId: id, configuration }, ["provider"]) },
   { name: "deskfleet_sessions", method: "_deskfleet/session/list", description: "List Sessions in this Agent's delegation scope (its Workspace, or itself and all Workspace Sessions when machine-scoped or cross-workspace delegation is enabled).", inputSchema: object({}) },
   { name: "deskfleet_session", method: "_deskfleet/session/subscribe", description: "Inspect a Session in this Agent's delegation scope, including its latest execution state.", inputSchema: object({ sessionId: id }, ["sessionId"]) },
   { name: "deskfleet_session_history", method: "_deskfleet/session/history", description: "Read a page of recorded events for a Session in this Agent's delegation scope. Continue with the last event's seq as afterSeq.", inputSchema: object({ sessionId: id, afterSeq: { type: "string", pattern: "^[0-9]+$" }, limit: { type: "integer", minimum: 1, maximum: 200 } }, ["sessionId", "afterSeq"]) },
-  { name: "deskfleet_session_create", method: "_deskfleet/session/create", description: "Create a Session on this machine and optionally submit its first prompt. Workspace Sessions default to their own Workspace (and can target sibling Workspaces when cross-workspace delegation is enabled); machine-scoped Sessions can target a Workspace or omit workspaceId to use the home directory.", inputSchema: object({ workspaceId: id, ...sessionFields }, ["provider"]) },
-  { name: "deskfleet_session_send", method: "_deskfleet/input/submit", description: "Submit a prompt to a Session in this Agent's delegation scope. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn.", inputSchema: object({ sessionId: id, prompt: id, delivery: { enum: ["backlog", "steer"] }, turnId: id }, ["sessionId", "prompt"]) },
+  { name: "deskfleet_session_create", method: "_deskfleet/session/create", description: "Create a Session on this machine for task orchestration (not lightweight in-task subagent work) and optionally submit its first prompt. Select an Agent provider from deskfleet_providers and optional model/reasoningEffort/mode/configValues from deskfleet_provider_configuration. Workspace Sessions default to their own Workspace (and can target sibling Workspaces when cross-workspace delegation is enabled); machine-scoped Sessions can target a Workspace or omit workspaceId to use the home directory.", inputSchema: object({ workspaceId: id, ...sessionFields }, ["provider"]) },
+  { name: "deskfleet_session_send", method: "_deskfleet/input/submit", description: "Submit a prompt to a Session in this Agent's delegation scope. Optionally switch the Agent provider or update configuration (model, reasoningEffort, mode, configValues) before submitting; changing provider or configuration requires backlog delivery and an idle Session. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn.", inputSchema: object({ sessionId: id, prompt: id, delivery: { enum: ["backlog", "steer"] }, turnId: id, provider: id, configuration }, ["sessionId", "prompt"]) },
   { name: "deskfleet_schedules", method: "scheduleList", description: "List scheduled tasks and recent runs in this Agent's Workspace.", inputSchema: object({}) },
   { name: "deskfleet_schedule_create", method: "scheduleCreate", description: "Create a scheduled task in this Agent's Workspace. Use an explicit IANA time zone for daily or weekly times. New runs create a Session; existing targets append a prompt to that Session. Optional yolo auto-approves permission requests on dispatched Sessions.", inputSchema: object({ schedule: object(fields, ["title", "prompt", "enabled", "target", "trigger"]) }, ["schedule"]) },
   { name: "deskfleet_schedule_update", method: "scheduleUpdate", description: "Update a Workspace scheduled task. Set enabled to false to pause it. Optional yolo controls permission auto-approval for future dispatches.", inputSchema: object({ scheduleId: id, changes: object(fields) }, ["scheduleId", "changes"]) },

@@ -27,7 +27,25 @@ function fixture() {
       journal: { list: async () => sessions, read: async (id: string) => ({ session: sessions.find(session => session.id === id)! }) },
       handle: async (method: string, params: Record<string, unknown>, ...args: unknown[]) => {
         calls.push([method, params, ...args])
+        if (method === "_deskfleet/agent/configuration") {
+          return {
+            provider: { id: params.provider, name: "Codex" },
+            models: { id: "model", currentValue: (params.model as string | undefined) ?? "gpt-5", options: [{ id: "gpt-5", name: "GPT-5" }, { id: "gpt-5-mini", name: "GPT-5 Mini" }] },
+            reasoningEfforts: { id: "reasoning_effort", currentValue: "medium", options: [{ id: "low", name: "Low" }, { id: "medium", name: "Medium" }] },
+            modes: { id: "mode", currentValue: "agent", options: [{ id: "agent", name: "Agent" }, { id: "plan", name: "Plan" }] },
+            configOptions: [
+              { id: "model", category: "model", name: "Model", type: "select", currentValue: "gpt-5", options: [] },
+              { id: "fast_mode", name: "Fast mode", type: "boolean", currentValue: false },
+            ],
+            promptCapabilities: { image: true },
+            commands: [{ name: "help", description: "Help" }],
+            skills: [{ id: "s1", name: "skill", description: "Skill", invocation: "/skill" }],
+            matrix: { configurations: [], transitions: [], complete: true },
+          }
+        }
         if (method === "_deskfleet/session/create") return { session: { id: "50", workspaceId: params.workspaceId, lifecycle: "ready" } }
+        if (method === "_deskfleet/session/switch-agent") return { session: { id: params.sessionId, provider: params.provider, lifecycle: "ready" } }
+        if (method === "_deskfleet/session/configure") return { provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null }
         if (method === "_deskfleet/input/submit") return { operationId: params.operationId, commandId: "cmd-1", sessionId: params.sessionId, inputId: "in-1" }
         return "history"
       },
@@ -361,4 +379,100 @@ test("opt-in local cross-workspace delegation lets Workspace Sessions delegate a
   await assert.rejects(dispatchMcp(operations, "_deskfleet/session/subscribe", { sessionId: "40" }, actor, scope, undefined, allowCrossWorkspace), /outside/)
   await assert.rejects(dispatchMcp(operations, "workspaceCreate", { name: "Blocked", directories: [{ path: "/srv/blocked" }] }, actor, scope, undefined, allowCrossWorkspace), /outside/)
   await assert.rejects(dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "999", provider: "codex" }, actor, scope, undefined, allowCrossWorkspace), /Unknown Workspace: 999/)
+})
+
+test("MCP provider configuration discovery enforces Workspace scope and strips matrix/composer noise", async () => {
+  const { calls, operations } = fixture()
+  const config = await dispatchMcp(operations, "_deskfleet/agent/configuration", {
+    provider: "codex",
+    configuration: { model: "gpt-5-mini", configValues: { fast_mode: true } },
+  }, actor, scope)
+  assert.deepEqual(config, {
+    provider: { id: "codex", name: "Codex" },
+    models: { id: "model", currentValue: "gpt-5-mini", options: [{ id: "gpt-5", name: "GPT-5" }, { id: "gpt-5-mini", name: "GPT-5 Mini" }] },
+    reasoningEfforts: { id: "reasoning_effort", currentValue: "medium", options: [{ id: "low", name: "Low" }, { id: "medium", name: "Medium" }] },
+    modes: { id: "mode", currentValue: "agent", options: [{ id: "agent", name: "Agent" }, { id: "plan", name: "Plan" }] },
+    configOptions: [{ id: "fast_mode", name: "Fast mode", type: "boolean", currentValue: false }],
+    promptCapabilities: { image: true },
+  })
+  assert.deepEqual(calls[0], ["_deskfleet/agent/configuration", {
+    provider: "codex", workspaceId: "10", model: "gpt-5-mini", configValues: { fast_mode: true }, cache: true,
+  }, actor])
+
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/agent/configuration", { provider: "codex", workspaceId: "20" }, actor, scope), /outside/)
+  await dispatchMcp(operations, "_deskfleet/agent/configuration", { provider: "codex", workspaceId: "20" }, actor, scope, undefined, () => true)
+  assert.equal((calls.at(-1) as [string, Record<string, unknown>])[1].workspaceId, "20")
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/agent/configuration", { provider: "codex", workspaceId: "999" }, actor, machineScope), /Unknown Workspace: 999/)
+  await dispatchMcp(operations, "_deskfleet/agent/configuration", { provider: "codex" }, actor, machineScope)
+  assert.equal("workspaceId" in (calls.at(-1) as [string, Record<string, unknown>])[1], false)
+
+  const remoteRequests: unknown[] = []
+  const remote = async (request: unknown) => { remoteRequests.push(request); return "remote-config" }
+  assert.equal(await dispatchMcp(operations, "remoteMcp/providerConfiguration", {
+    machineId: "target", provider: "codex", workspaceId: "20", configuration: { model: "gpt-5" },
+  }, actor, scope, remote), "remote-config")
+  assert.deepEqual(remoteRequests, [{
+    userId: "creator", deviceId: "login", sessionId: "1", operation: "providerConfiguration", machineId: "target",
+    arguments: { provider: "codex", workspaceId: "20", configuration: { model: "gpt-5" } },
+  }])
+})
+
+test("MCP session create and send support configurable Agent provider, model, and configValues", async () => {
+  const { calls, operations } = fixture()
+  await dispatchMcp(operations, "_deskfleet/session/create", {
+    provider: "codex",
+    configuration: { model: "gpt-5", reasoningEffort: "high", mode: "plan", configValues: { fast_mode: true } },
+  }, actor, scope)
+  assert.deepEqual({ ...(calls[0] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    workspaceId: "10", operationId: "op", provider: "codex", context: "directory",
+    model: "gpt-5", reasoningEffort: "high", mode: "plan", configValues: { fast_mode: true },
+  })
+
+  await dispatchMcp(operations, "_deskfleet/input/submit", {
+    sessionId: "1",
+    prompt: "Switch and run",
+    provider: "claude-code",
+    configuration: { model: "claude-sonnet", reasoningEffort: "high", mode: "agent", configValues: { fast_mode: false } },
+  }, actor, scope)
+  assert.equal((calls[1] as unknown[])[0], "_deskfleet/session/switch-agent")
+  assert.deepEqual({ ...(calls[1] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "1", operationId: "op", provider: "claude-code",
+  })
+  assert.equal((calls[2] as unknown[])[0], "_deskfleet/session/configure")
+  assert.deepEqual({ ...(calls[2] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "1", operationId: "op", model: "claude-sonnet", reasoningEffort: "high", mode: "agent", configValues: { fast_mode: false },
+  })
+  assert.equal((calls[3] as unknown[])[0], "_deskfleet/input/submit")
+  assert.deepEqual({ ...(calls[3] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "1", operationId: "op", content: [{ type: "text", text: "Switch and run" }], delivery: "backlog",
+  })
+
+  // Empty configuration object does not trigger a configure command.
+  const beforeEmpty = calls.length
+  await dispatchMcp(operations, "_deskfleet/input/submit", {
+    sessionId: "1", prompt: "No config change", configuration: {},
+  }, actor, scope)
+  assert.equal(calls.length, beforeEmpty + 1)
+  assert.equal((calls.at(-1) as unknown[])[0], "_deskfleet/input/submit")
+
+  // Steering cannot switch Agent or change configuration.
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/input/submit", {
+    sessionId: "1", prompt: "Steer", delivery: "steer", provider: "claude-code",
+  }, actor, scope), /backlog delivery/)
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/input/submit", {
+    sessionId: "1", prompt: "Steer", delivery: "steer", configuration: { model: "gpt-5" },
+  }, actor, scope), /backlog delivery/)
+
+  const remoteRequests: unknown[] = []
+  const remote = async (request: unknown) => { remoteRequests.push(request); return "remote-sent" }
+  await assert.rejects(dispatchMcp(operations, "remoteMcp/sessionSend", {
+    machineId: "target", sessionId: "remote-1", prompt: "Steer", delivery: "steer", configuration: { model: "gpt-5" },
+  }, actor, scope, remote), /backlog delivery/)
+  await dispatchMcp(operations, "remoteMcp/sessionSend", {
+    machineId: "target", sessionId: "remote-1", prompt: "Run remotely", provider: "claude-code", configuration: { model: "claude-sonnet" },
+  }, actor, scope, remote)
+  assert.deepEqual(remoteRequests, [{
+    userId: "creator", deviceId: "login", sessionId: "1", operation: "sessionSend", machineId: "target",
+    arguments: { sessionId: "remote-1", prompt: "Run remotely", provider: "claude-code", configuration: { model: "claude-sonnet" } },
+  }])
 })

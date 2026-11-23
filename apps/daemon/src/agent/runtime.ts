@@ -346,7 +346,7 @@ export class AgentRuntime {
       }
       if (hasDeskfleetMcp) {
         appendedInstructions.push(
-          "When delegating subagent, parallel, or cross-workspace work, prefer the DeskFleet MCP tools (such as deskfleet_session_create, deskfleet_session_send, deskfleet_sessions, deskfleet_session, and deskfleet_session_history, plus their remote equivalents) over provider-native subagents so delegated Sessions remain observable, auditable, and follow DeskFleet permissions.",
+          "Use the DeskFleet MCP Session tools (deskfleet_session_create, deskfleet_session_send, deskfleet_sessions, deskfleet_session, and deskfleet_session_history, plus their remote equivalents) for task orchestration—such as coordinating independent tasks, cross-workspace or cross-machine workflows, or dispatching work to specific Agents and models—not for subagent scenarios; keep routine in-task subagent work in your native subagents instead of spawning separate DeskFleet Sessions. Inspect available Agents and model parameters with deskfleet_providers and deskfleet_provider_configuration (or deskfleet_remote_machine and deskfleet_remote_provider_configuration) before selecting provider or model configuration.",
         )
       }
       const systemPrompt = appendedInstructions.length && capabilities?.sessionCapabilities?.systemPrompt

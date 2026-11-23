@@ -37,7 +37,19 @@ async function fixture(t: TestContext) {
       journal: { list: async () => [{ id: "session", workspaceId: "workspace" }, { id: "standalone" }] },
       handle: async (method: string, params: Record<string, unknown>, ...args: unknown[]) => {
         calls.push([method, params, ...args])
+        if (method === "_deskfleet/agent/configuration") {
+          return {
+            provider: { id: params.provider, name: "Agent" },
+            models: { id: "model", currentValue: (params.model as string | undefined) ?? "m1", options: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }] },
+            reasoningEfforts: null,
+            modes: null,
+            configOptions: [{ id: "model", category: "model", name: "Model", type: "select", currentValue: "m1", options: [] }],
+            matrix: { configurations: [], transitions: [], complete: true },
+          }
+        }
         if (method === "_deskfleet/session/create") return { session: { id: "created-session", workspaceId: params.workspaceId, lifecycle: "ready" } }
+        if (method === "_deskfleet/session/switch-agent") return { session: { id: params.sessionId, provider: params.provider, lifecycle: "ready" } }
+        if (method === "_deskfleet/session/configure") return { provider: { id: "agent", name: "Agent" }, models: null, reasoningEfforts: null, modes: null }
         if (method === "_deskfleet/input/submit") return { operationId: params.operationId, commandId: "cmd-1", sessionId: params.sessionId, inputId: "in-1" }
         return { conversation: "hello" }
       },
@@ -53,15 +65,21 @@ test("remote access defaults off, persists across readers, and disabling immedia
   const f = await fixture(t)
   assert.deepEqual(await readRemoteAgentSettings(f.directory), { ...noAccess, allowSuperAgent: false, allowLocalCrossWorkspace: false })
   assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), noAccess)
-  for (const method of ["machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
+  for (const method of ["machine", "providerConfiguration", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
   await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: false })
   await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
   await assert.rejects(f.call("sessionSend", { sessionId: "session", prompt: "hello" }), /start or message Sessions/)
   await assert.rejects(f.call("workspaceCreate", { name: "Repo", directories: [{ path: "/srv/repo" }] }), /create Workspaces/)
+  assert.deepEqual(await f.call("providerConfiguration", { provider: "agent", configuration: { model: "m2" } }), {
+    provider: { id: "agent", name: "Agent" },
+    models: { id: "model", currentValue: "m2", options: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }] },
+    reasoningEfforts: null,
+    modes: null,
+  })
   assert.deepEqual(await f.call("sessions", { workspaceId: "workspace" }), [{ id: "session", workspaceId: "workspace" }])
   assert.deepEqual(await f.call("session", { sessionId: "session" }), { conversation: "hello" })
   await f.call("history", { sessionId: "session", afterSeq: "17", limit: 10 })
-  assert.deepEqual(f.calls[1], ["_deskfleet/session/history", { sessionId: "session", afterSeq: "17", limit: 10 }, actor])
+  assert.deepEqual(f.calls[2], ["_deskfleet/session/history", { sessionId: "session", afterSeq: "17", limit: 10 }, actor])
   assert.deepEqual(await f.call("mcpServers"), [{ id: f.config.id, name: "fixture", transport: "stdio" }])
   assert.doesNotMatch(JSON.stringify(await f.call("machine")), /never-disclose|PRIVATE_SECRET/)
   await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false })
@@ -114,11 +132,29 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   const sent = await f.call("sessionSend", { sessionId: "created-session", prompt: "Continue" }) as { sessionId: string; inputId: string }
   assert.equal(sent.sessionId, "created-session")
   assert.equal(sent.inputId, "in-1")
+  // Session permission also permits inspecting provider configuration and configuring/switching on send.
+  assert.deepEqual(await f.call("providerConfiguration", { provider: "agent", workspaceId: "workspace" }), {
+    provider: { id: "agent", name: "Agent" },
+    models: { id: "model", currentValue: "m1", options: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }] },
+    reasoningEfforts: null,
+    modes: null,
+  })
+  const configuredSendIndex = f.calls.length
+  await f.call("sessionSend", {
+    sessionId: "created-session",
+    prompt: "Use new model",
+    provider: "claude-code",
+    configuration: { model: "m2", configValues: { fast: true } },
+  })
+  assert.equal((f.calls[configuredSendIndex] as unknown[])[0], "_deskfleet/session/switch-agent")
+  assert.equal((f.calls[configuredSendIndex + 1] as unknown[])[0], "_deskfleet/session/configure")
+  assert.equal((f.calls[configuredSendIndex + 2] as unknown[])[0], "_deskfleet/input/submit")
   await assert.rejects(f.call("sessionCreate", { provider: "agent", context: "worktree" }), /home directory/)
   await assert.rejects(f.call("sessionSend", { sessionId: "created-session", prompt: "Steer", turnId: "t1" }), /steer/)
   await assert.rejects(f.call("workspaceCreate", { name: "Repo", directories: [{ path: "/srv/repo" }] }), /create Workspaces/)
 
   await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: true })
+  await assert.rejects(f.call("providerConfiguration", { provider: "agent" }), /does not allow/)
   assert.deepEqual(await f.call("machine"), {
     catalog: { machineId: "local-target", workspaces: [{ id: "workspace" }] },
     providers: { providers: [{ id: "agent", name: "Agent" }] },
@@ -126,10 +162,11 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   })
   await assert.rejects(f.call("sessions"), /read it/)
   await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
+  const workspaceCallIndex = f.calls.length
   assert.deepEqual(await f.call("workspaceCreate", { name: "Remote repo", directories: [{ path: "/srv/repo" }] }), {
     id: "created-workspace", name: "Remote repo", directories: [{ path: "/srv/repo" }],
   })
-  assert.deepEqual(f.calls[6], ["catalog", { method: "workspaceCreate", params: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } }])
+  assert.deepEqual(f.calls[workspaceCallIndex], ["catalog", { method: "workspaceCreate", params: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } }])
   await assert.rejects(f.call("workspaceCreate", { name: "Dupes", directories: [{ path: "/srv/repo" }, { path: "/srv/repo" }] }), /unique/)
 })
 
