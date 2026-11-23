@@ -43,7 +43,7 @@ export interface DesktopMediaApi {
   connectionFailure?(sessionId: string): string | undefined
   /** The grant's structured reason, consulted only after a transport failure. */
   connectionFailureReason?(sessionId: string): RelayDeniedReason | null | undefined
-  target(): Promise<LocalDesktopTarget>
+  target(options?: { background?: boolean }): Promise<LocalDesktopTarget>
   capabilities(): Promise<DesktopCapabilities>
   offer(options: DesktopOffer): Promise<{ sdp: string }>
   candidate(sessionId: string, candidate: IceCandidate): Promise<void>

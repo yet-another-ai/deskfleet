@@ -21,8 +21,13 @@ export class CentralRequestReports {
     const background = trigger === "background" && (kind === "network" || kind === "timeout" || kind === "http" && (status === 429 || status! >= 500))
     if (!background) { this.emit(error, { occurrences: 1, window_ms: 0, summary: false }); return }
     // Keep API codes separate so summaries describe every counted failure;
-    // hidden network failures also have a different severity from visible ones.
-    const key = JSON.stringify([...centralRequestFingerprint(error.diagnostics), error.diagnostics.apiErrorCode ?? "", error.diagnostics.visibility ?? "unknown"])
+    // hidden and suspend-spanning network failures also have a different severity.
+    const key = JSON.stringify([
+      ...centralRequestFingerprint(error.diagnostics),
+      error.diagnostics.apiErrorCode ?? "",
+      error.diagnostics.visibility ?? "unknown",
+      error.diagnostics.spannedSuspend ? "suspended" : "active",
+    ])
     const existing = this.buckets.get(key)
     if (existing) { existing.latest = error; existing.suppressed++; return }
     if (this.buckets.size >= maxBuckets) this.finish(this.buckets.keys().next().value!)

@@ -140,3 +140,37 @@ test("a successful empty response is accepted without masking malformed JSON", a
   await expect(apiRequest("https://fleet.example/api/teams", { fetch })).rejects.toMatchObject({ diagnostics: { kind: "decode", phase: "response_body", status: 200 } })
   expect(fetch).toHaveBeenCalledTimes(2)
 })
+
+test("records spannedSuspend only when the host suspend epoch advances while a request is in flight", async () => {
+  let epoch = 0
+  const fetch = vi.fn<typeof globalThis.fetch>()
+    .mockImplementationOnce(async () => {
+      epoch++
+      throw new DOMException("timed out", "TimeoutError")
+    })
+    .mockRejectedValueOnce(new DOMException("timed out", "TimeoutError"))
+  const spanned = await apiRequest("https://fleet.example/api/teams", { method: "POST", fetch, suspendEpoch: () => epoch }).catch(error => error)
+  const fresh = await apiRequest("https://fleet.example/api/teams", { method: "POST", fetch, suspendEpoch: () => epoch }).catch(error => error)
+  expect(spanned).toMatchObject({ diagnostics: { kind: "timeout", spannedSuspend: true } })
+  expect(fresh).toBeInstanceOf(CentralRequestError)
+  if (!(fresh instanceof CentralRequestError)) throw fresh
+  expect(fresh.diagnostics.spannedSuspend).toBeUndefined()
+})
+
+test("retains only valid UUID X-Request-Id response headers on HTTP and decode failures", async () => {
+  const validId = "550e8400-e29b-41d4-a716-446655440000"
+  const fetch = vi.fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(Response.json({ error: { code: "internal", message: "boom" } }, { status: 500, headers: { "X-Request-Id": validId.toUpperCase() } }))
+    .mockResolvedValueOnce(Response.json({ error: { code: "internal", message: "boom" } }, { status: 500, headers: { "X-Request-Id": "private-header-value" } }))
+    .mockResolvedValueOnce(new Response("<html>bad</html>", { status: 200, headers: { "X-Request-Id": validId } }))
+  const withValid = await apiRequest("https://fleet.example/api/me", { method: "POST", fetch }).catch(error => error)
+  const withInvalid = await apiRequest("https://fleet.example/api/me", { method: "POST", fetch }).catch(error => error)
+  const withDecode = await apiRequest("https://fleet.example/api/me", { method: "POST", fetch }).catch(error => error)
+  for (const failure of [withValid, withInvalid, withDecode]) expect(failure).toBeInstanceOf(CentralRequestError)
+  if (!(withValid instanceof CentralRequestError) || !(withInvalid instanceof CentralRequestError) || !(withDecode instanceof CentralRequestError)) {
+    throw new Error("Expected CentralRequestError failures")
+  }
+  expect(withValid.diagnostics.requestId).toBe(validId)
+  expect(withInvalid.diagnostics.requestId).toBeUndefined()
+  expect(withDecode.diagnostics.requestId).toBe(validId)
+})

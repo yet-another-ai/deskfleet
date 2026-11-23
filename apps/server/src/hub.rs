@@ -58,6 +58,10 @@ pub struct Hub {
     registration: Arc<Mutex<()>>,
     cluster: Option<cluster::Cluster>,
 }
+/// Leave headroom below common 60-second reverse-proxy read timeouts so
+/// structured `daemon_timeout` 504 responses reach clients instead of bare proxy 504s.
+const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(55);
+
 impl Hub {
     pub(crate) async fn connect(store: ControlStore) -> Result<(Self, Router)> {
         cluster::connect(store).await
@@ -278,14 +282,8 @@ impl Hub {
         params: Value,
         actor: Option<PeerActor>,
     ) -> Result<Value> {
-        self.request_with_timeout(
-            registration_id,
-            method,
-            params,
-            actor,
-            Duration::from_secs(60),
-        )
-        .await
+        self.request_with_timeout(registration_id, method, params, actor, DEFAULT_RPC_TIMEOUT)
+            .await
     }
     pub(crate) async fn request_with_timeout(
         &self,
@@ -296,6 +294,8 @@ impl Hub {
         timeout: Duration,
     ) -> Result<Value> {
         let id = uuid::Uuid::new_v4().to_string();
+        let mut stage = "route";
+        let mut remote_route = false;
         let result = tokio::time::timeout(timeout, async {
             let expires_at = deskfleet_control_store::now_ms().saturating_add(
                 i64::try_from(timeout.as_millis()).map_err(|_| ApiError::internal())?,
@@ -322,6 +322,8 @@ impl Hub {
             if let Some(cluster) = &self.cluster
                 && route.node_id != cluster.id
             {
+                stage = "dispatch_remote";
+                remote_route = true;
                 if !self
                     .publish(
                         &route.node_id,
@@ -338,15 +340,29 @@ impl Hub {
                     return Err(ApiError::unavailable());
                 }
             } else {
+                stage = "dispatch_local";
                 self.send_request(registration_id, &route.connection_id, message)
                     .await?;
             }
+            stage = "await_response";
             receive.await.map_err(|_| ApiError::unavailable())?
         })
         .await;
         // Keep cleanup outside the timed future so discovery timeouts retire pending RPCs.
         self.inner.lock().await.pending.remove(&id);
-        result.map_err(|_| timeout_error())?
+        match result {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                tracing::warn!(
+                    rpc_method = method,
+                    stage,
+                    remote_route,
+                    timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                    "daemon RPC timed out"
+                );
+                Err(timeout_error())
+            }
+        }
     }
     pub(crate) async fn response(
         &self,
@@ -442,6 +458,10 @@ fn timeout_error() -> ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn default_rpc_timeout_stays_below_sixty_second_proxy_budgets() {
+        assert!(DEFAULT_RPC_TIMEOUT < Duration::from_secs(60));
+    }
     #[tokio::test]
     async fn saturated_revocation_requests_reconciliation_and_preserves_machine_presence() {
         let hub = Hub::default();

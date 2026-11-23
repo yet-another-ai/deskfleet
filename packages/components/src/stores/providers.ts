@@ -30,16 +30,21 @@ export const useProvidersStore = defineStore("providers", () => {
   const error = ref<string | null>(null)
   let refreshing: Promise<void> | null = null
   let refreshRequested = false
+  let refreshBackground = true
   let disposed = false
 
-  function refresh(): Promise<void> {
+  function refresh(options?: { background?: boolean }): Promise<void> {
     refreshRequested = true
+    refreshBackground = refreshBackground && options?.background === true
     refreshing ??= (async () => {
       loading.value = true
       try {
         do {
+          const background = refreshBackground
           refreshRequested = false
-          const snapshot = await (platformClient.providers.display?.() ?? platformClient.providers.list())
+          refreshBackground = true
+          const readOptions = background ? { background: true } : undefined
+          const snapshot = await (platformClient.providers.display?.(readOptions) ?? platformClient.providers.list(readOptions))
           if (disposed) return
           if (refreshRequested) continue
           providers.value = snapshot.providers
@@ -65,7 +70,7 @@ export const useProvidersStore = defineStore("providers", () => {
     return refreshing
   }
 
-  const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
+  const unsubscribe = platformClient.providers.onChanged(() => { void refresh({ background: true }) })
   onScopeDispose(() => { disposed = true; unsubscribe() })
   return { providers, revision, selectedId, ready, loaded, loading, error, refresh }
 })

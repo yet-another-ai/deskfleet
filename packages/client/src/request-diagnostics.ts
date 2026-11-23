@@ -14,6 +14,8 @@ export interface CentralRequestDiagnostics {
   phase: "fetch" | "response_body"
   status?: number
   apiErrorCode?: string
+  requestId?: string
+  spannedSuspend?: boolean
   trigger?: RequestTrigger
   online?: boolean
   visibility?: "visible" | "hidden"
@@ -89,6 +91,13 @@ const apiErrorCodes = new Set([
   "super_agent_disabled", "super_agent_unavailable", "super_agent_conflict",
 ])
 const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])
+// Server correlation headers are UUIDs; reject arbitrary values before telemetry.
+const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+
+function sanitizeRequestId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed && requestIdPattern.test(trimmed) ? trimmed.toLowerCase() : undefined
+}
 
 function errorName(value: unknown): string {
   return typeof value === "string" && errorNames.has(value) ? value : "Error"
@@ -145,7 +154,7 @@ export class HttpError extends CentralRequestError {
 interface RequestDetails {
   method: string; path: string; body?: unknown; elapsedMs: number
   transport?: RequestTransport; phase?: CentralRequestDiagnostics["phase"]; status?: number
-  kind?: RequestFailureKind; signal?: AbortSignal
+  kind?: RequestFailureKind; signal?: AbortSignal; requestId?: string; spannedSuspend?: boolean
 }
 
 export function requestDiagnostics(cause: unknown, request: RequestDetails): CentralRequestDiagnostics {
@@ -156,11 +165,14 @@ export function requestDiagnostics(cause: unknown, request: RequestDetails): Cen
   const causes = causesOf(cause)
   const timeout = request.signal?.reason?.name === "TimeoutError" || causes.some(value => value.name === "TimeoutError" || value.code === "ETIMEDOUT" || value.code?.endsWith("_TIMEOUT"))
   const kind = request.kind ?? (timeout ? "timeout" : request.signal?.aborted ? "cancelled" : request.phase === "response_body" && cause instanceof SyntaxError ? "decode" : "network")
+  const requestId = sanitizeRequestId(request.requestId)
   return {
     method: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(request.method) ? request.method : "unknown",
     route, ...(rpcMethod && { rpcMethod }), elapsedMs: Math.max(0, Math.round(request.elapsedMs)), causes,
     kind, transport: request.transport ?? (typeof window === "undefined" ? "node_fetch" : "browser_fetch"),
     phase: request.phase ?? "fetch", ...(request.status !== undefined ? { status: request.status } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(request.spannedSuspend ? { spannedSuspend: true } : {}),
   }
 }
 

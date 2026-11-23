@@ -44,9 +44,9 @@ useTitle(() => {
   return sessionLabel({ id: sessionId, title })
 }, { restoreOnUnmount: defaultTitle })
 whenever(() => fleet.localDesktopTarget.online, () => { void terminals.refresh() })
-const refresh = () => { void fleet.refreshLocal().then(() => {
-  if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh()
-  if (fleet.localDesktopTarget.online || platformClient.providers.display) void providers.refresh()
+const refresh = () => { void fleet.refreshLocal({ background: true }).then(() => {
+  if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh(undefined, { background: true })
+  if (fleet.localDesktopTarget.online || platformClient.providers.display) void providers.refresh({ background: true })
 }) }
 const unsubscribeSettings = platformClient.settings.onChanged(({ status }) => {
   if (status === "running" || status === "stopped" || status === "error") {

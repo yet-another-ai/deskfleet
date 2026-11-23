@@ -153,7 +153,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     catalog: {
       list: async options => {
         if (options?.live) return { ...await userRpc<CatalogSnapshot>("catalogList"), machineName: name }
-        const { snapshot } = await central.catalog(machine.teamId, machine.id)
+        const { snapshot } = await (options?.background ? automatic : central).catalog(machine.teamId, machine.id)
         name = snapshot.machineName
         return snapshot
       },
@@ -165,8 +165,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     filesystem: { listDirectories: path => rpc("directoryList", path === undefined ? {} : { path }) },
     system: { status: () => rpc("systemStatus") },
     providers: {
-      display: async () => (await central.catalog(machine.teamId, machine.id)).providers ?? { providers: [] },
-      list: () => rpc("providerList"), create: provider => userRpc("providerCreate", { provider }),
+      display: async options => (await (options?.background ? automatic : central).catalog(machine.teamId, machine.id)).providers ?? { providers: [] },
+      list: options => (options?.background ? automatic : central).rpc(machine.teamId, machine.id, "providerList", {}), create: provider => userRpc("providerCreate", { provider }),
       update: (providerId, changes) => userRpc("providerUpdate", { providerId, changes }),
       remove: providerId => userRpc("providerRemove", { providerId }), test: provider => userRpc("providerTest", { provider }),
       probe: provider => userRpc("providerProbe", { provider }),
@@ -181,7 +181,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       history: {
         parallel: () => !local,
         available: () => online,
-        list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({
+        list: async options => (await (options?.background ? automatic : central).sessions(machine.teamId, machine.id)).map(snapshot => ({
           ...snapshot.session,
           lastMessageAt: snapshot.session.lastMessageAt ?? snapshot.turns.reduce<string | undefined>((latest, t) => t.endedAt && (!latest || t.endedAt > latest) ? t.endedAt : latest, undefined),
           working: snapshot.permissions?.some(permission => permission.state === "pending") ? "permission" as const
@@ -208,10 +208,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         if (disposed) return Promise.reject(new Error("Machine connection was closed"))
         return host.nativeDesktop!.open({ ...options, target: { teamId: machine.teamId, machineId: machine.id } })
       } } : {}),
-      target: async () => {
+      target: async options => {
         // Enrollment precedes the daemon's first capability report. Read the
         // current record so discovery also sees later capture-permission changes.
-        const current = (await central.machines(machine.teamId)).find(value => value.id === machine.id)
+        const current = (await (options?.background ? automatic : central).machines(machine.teamId)).find(value => value.id === machine.id)
         if (!current) throw new Error("Machine is no longer available in this team")
         return {
           id: machine.id, name, online, desktop: current.capabilities.desktop === true,

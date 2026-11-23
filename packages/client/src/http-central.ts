@@ -190,7 +190,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       ...options,
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
       headers: { Accept: options.accept ?? "application/json", ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      json: body, signal, fetch: this.#options.fetch, transport: this.#options.transport,
+      json: body, signal, fetch: this.#options.fetch, transport: this.#options.transport, suspendEpoch: this.#options.suspendEpoch,
     })
     if (result?.csrfToken) this.#csrf = result.csrfToken
     return result as T

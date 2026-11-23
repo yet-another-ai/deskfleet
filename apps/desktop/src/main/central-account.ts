@@ -99,7 +99,8 @@ async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment"
 
 export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<HttpCentralClient> {
   const path = join(app.getPath("userData"), "account.json")
-  const client = new HttpCentralClient({ ...desktopCentralTransport, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
+  let suspendEpoch = 0
+  const client = new HttpCentralClient({ ...desktopCentralTransport, suspendEpoch: () => suspendEpoch, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
   const localEnrollment = () => daemonCall("centralStatus", {})
   const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,
@@ -125,6 +126,8 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   // File and port peers live in main; the renderer owns the analytics SDK.
   const stopTelemetry = setPeerTelemetrySink(event => broadcast({ type: "peerTelemetry", event }))
   const wake = () => client.wake()
+  const onSuspend = () => { suspendEpoch++ }
+  const onResume = () => { suspendEpoch++; wake() }
   // Initial window creation and duplicate focus notifications are not a resume.
   let blurred = false
   const blur = () => { blurred = true }
@@ -133,11 +136,13 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
     blurred = false
     wake()
   }
-  powerMonitor.on("resume", wake)
+  powerMonitor.on("suspend", onSuspend)
+  powerMonitor.on("resume", onResume)
   app.on("browser-window-blur", blur)
   app.on("browser-window-focus", focus)
   app.once("will-quit", () => {
-    powerMonitor.removeListener("resume", wake)
+    powerMonitor.removeListener("suspend", onSuspend)
+    powerMonitor.removeListener("resume", onResume)
     app.removeListener("browser-window-blur", blur)
     app.removeListener("browser-window-focus", focus)
     stopTelemetry(); client.dispose()

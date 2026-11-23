@@ -153,6 +153,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   let attendanceAttempt = 0
   let initialized: Promise<void> | null = null
   let refreshPending = false
+  let refreshBackground = true
   let refreshFailed = false
   let refreshing: Promise<void> | null = null
   let activeSessionId: string | undefined
@@ -492,13 +493,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     await initialize()
     return client.call<AgentMethods[M]["result"]>(method, requestParams)
   }
-  function refresh(sessionId?: string): Promise<void> {
+  function refresh(sessionId?: string, options?: { background?: boolean }): Promise<void> {
     refreshPending = true
+    refreshBackground = refreshBackground && options?.background === true
     const list = (refreshing ??= (async () => {
       do {
+        const background = refreshBackground
         refreshPending = false
+        refreshBackground = true
         try {
-          await refreshList()
+          await refreshList(background)
           if (refreshFailed) {
             refreshFailed = false
             error.value = null
@@ -520,17 +524,18 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (id && id === activeSessionId && sessions.value[id]) return open(id, false)
     })
   }
-  async function refreshList(): Promise<void> {
+  async function refreshList(background = false): Promise<void> {
     const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
+    const readOptions = background ? { background: true } : undefined
     // Catalog activity must not depend on opening every conversation's live channel.
-    const records: (AgentSessionRecord & { working?: boolean | SessionActivity })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
+    const records: (AgentSessionRecord & { working?: boolean | SessionActivity })[] = await (api.history ? api.history.list(readOptions) : call("_deskfleet/session/list", {}))
     if (disposed) return
     const listed = new Set(records.map(session => session.id))
     let catalogSessions = new Set<string>()
     if (api.history && Object.keys(sessions.value).some(id => !listed.has(id))) {
       // Catalog and history uploads are independent. Missing retained history
       // cannot erase live metadata while the catalog still owns the Session.
-      const catalog = await platformClient.catalog.list()
+      const catalog = await platformClient.catalog.list(readOptions)
       if (disposed) return
       catalogSessions = new Set(catalog.sessionIds)
     }

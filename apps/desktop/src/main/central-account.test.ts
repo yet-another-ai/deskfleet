@@ -294,6 +294,7 @@ test("desktop recovery follows blur then focus, ignores initial and repeated foc
   const f = await setup()
   const client = await f.install()
   const wake = vi.spyOn(client, "wake")
+  const suspended = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "suspend")![1]
   const resumed = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "resume")![1]
   const focused = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-focus")![1]
   focused()
@@ -311,9 +312,33 @@ test("desktop recovery follows blur then focus, ignores initial and repeated foc
   expect(wake).toHaveBeenCalledTimes(3)
   const quitting = vi.mocked(app.once).mock.calls.find(([event]) => String(event) === "will-quit")![1]
   quitting()
+  expect(powerMonitor.removeListener).toHaveBeenCalledWith("suspend", suspended)
   expect(powerMonitor.removeListener).toHaveBeenCalledWith("resume", resumed)
   expect(app.removeListener).toHaveBeenCalledWith("browser-window-focus", focused)
   expect(app.removeListener).toHaveBeenCalledWith("browser-window-blur", blurred)
+})
+
+test("desktop central requests failing across powerMonitor suspend carry spannedSuspend through IPC", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  await f.install()
+  const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  const suspended = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "suspend")![1]
+  const resumed = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "resume")![1]
+  let failInFlight!: (error: unknown) => void
+  f.fetch.mockImplementationOnce(() => new Promise((_resolve, reject) => { failInFlight = reject }))
+  const pending = invoke({} as Electron.IpcMainInvokeEvent, "rpc", ["team", "machine", "terminalList", {}])
+  await vi.waitFor(() => expect(failInFlight).toBeDefined())
+  suspended()
+  resumed()
+  failInFlight(new DOMException("timed out", "TimeoutError"))
+  await expect(pending).resolves.toMatchObject({
+    ok: false,
+    error: { request: { diagnostics: { kind: "timeout", spannedSuspend: true } } },
+  })
+  f.fetch.mockRejectedValueOnce(new DOMException("timed out", "TimeoutError"))
+  const afterResume = await invoke({} as Electron.IpcMainInvokeEvent, "rpc", ["team", "machine", "terminalList", {}]) as CentralIpcResult
+  expect(afterResume.ok).toBe(false)
+  if (!afterResume.ok) expect(afterResume.error.request?.diagnostics.spannedSuspend).toBeUndefined()
 })
 
 
