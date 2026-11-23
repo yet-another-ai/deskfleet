@@ -5,11 +5,13 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
 import {
+  debBuildArgs,
   linuxPackageFilename,
   linuxPackageVersion,
   packageLinuxRelease,
   renderDebControl,
   renderRpmSpec,
+  rpmBuildArgs,
 } from "./package-linux-release.ts"
 
 const repository = join(import.meta.dirname, "..")
@@ -107,12 +109,25 @@ test("release publication verifies every generated package asset", () => {
   }
 })
 
+test("fast compression selects low-overhead gzip payloads while release keeps defaults", () => {
+  assert.deepEqual(debBuildArgs("/tmp/root", "/tmp/out.deb", "fast"), ["-Zgzip", "-z1", "--root-owner-group", "--build", "/tmp/root", "/tmp/out.deb"])
+  assert.deepEqual(debBuildArgs("/tmp/root", "/tmp/out.deb", "release"), ["--root-owner-group", "--build", "/tmp/root", "/tmp/out.deb"])
+  assert.deepEqual(rpmBuildArgs("x86_64", "/tmp/top", "/tmp/src", "/tmp/spec", "fast"), [
+    "-bb", "--target", "x86_64", "--define", "_topdir /tmp/top", "--define", "_sourcedir /tmp/src",
+    "--define", "_binary_payload w1.gzdio", "/tmp/spec",
+  ])
+  assert.deepEqual(rpmBuildArgs("x86_64", "/tmp/top", "/tmp/src", "/tmp/spec", "release"), [
+    "-bb", "--target", "x86_64", "--define", "_topdir /tmp/top", "--define", "_sourcedir /tmp/src", "/tmp/spec",
+  ])
+})
+
 test("linux package validation enables Chromium user namespaces before GUI smoke", () => {
   const yaml = readFileSync(join(repository, ".github/workflows/linux-packages.yml"), "utf8")
   const enable = yaml.indexOf("kernel.apparmor_restrict_unprivileged_userns=0")
   const smoke = yaml.indexOf("scripts/check-linux-release.ts")
   assert.ok(enable >= 0, "linux-packages.yml must disable AppArmor userns restriction")
   assert.ok(smoke > enable, "AppArmor userns must be enabled before the package smoke")
+  assert.match(yaml, /inputs\.smoke_build && '--compression fast' \|\| ''/)
 })
 
 test("builds installable deb and rpm packages from desktop archives", { skip: !buildable }, async context => {
@@ -181,6 +196,7 @@ test("rejects mismatched, duplicate, incomplete and invalid desktop archives bef
   }
   await assert.rejects(packageLinuxRelease(directory, output, [valid, valid]), /Duplicate desktop archive for x64/)
   await assert.rejects(packageLinuxRelease(directory, output, [valid], { formats: ["pacman" as never] }), /Linux package formats/)
+  await assert.rejects(packageLinuxRelease(directory, output, [valid], { compression: "ultra" as never }), /Linux package compression/)
   await assert.rejects(packageLinuxRelease(directory, output, [valid], { version: "1.2.3'; touch unsafe" }), /Release tag must be/)
   const incomplete = archive(directory, "arm64", "1.2.3", "resources/app.asar.unpacked/out/main/deskfleet.node")
   await assert.rejects(packageLinuxRelease(directory, output, [incomplete]), /missing .*deskfleet\.node/)

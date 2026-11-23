@@ -8,12 +8,16 @@ import { runInNewContext } from "node:vm"
 import {
   classifyChanges,
   classifyDocumentation,
+  isAndroidPath,
   isBackendPath,
   isDocumentationDiff,
+  isIosPath,
+  isNixServerPath,
   isPackagingPath,
   isPlatformPath,
   isSpecPath,
   isSpecsOnlyDiff,
+  isSuperAgentPath,
 } from "./ci-docs-only.ts"
 
 const sha = "a".repeat(40)
@@ -83,7 +87,7 @@ test("classifies complete PR and push changes, including removals during renames
   assert.equal(push(sha, docs), false)
 })
 
-test("packaging detector covers desktop builder configs, staging scripts, and build inputs", () => {
+test("packaging, Nix server, Super Agent, and mobile detectors route to their owning workflows", () => {
   for (const file of [
     "apps/desktop/package.json",
     "apps/server/Dockerfile",
@@ -94,18 +98,8 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "apps/desktop/scripts/stage-native-viewer.ts",
     "apps/desktop/scripts/stage-windows-service.ts",
     "apps/desktop/scripts/stage-auv.ts",
-    "apps/web/capacitor.config.ts",
-    "apps/web/android/app/build.gradle.kts",
-    "apps/web/ios/App/App.xcodeproj/project.pbxproj",
-    "packages/capacitor-bridge/package.json",
-    "packages/capacitor-bridge/android/build.gradle",
-    "scripts/build-android-viewer.ts",
-    "scripts/build-ios-viewer.ts",
-    "scripts/package-ios-release.ts",
-    "scripts/app-store-connect.ts",
-    "scripts/prepare-ios-signing.ts",
-    "scripts/publish-ios-release.ts",
     "scripts/stage-native-binaries.ts",
+    "scripts/windows-service-signing.ts",
     "scripts/smoke-super-agent-image.ts",
     "scripts/smoke-server-image.ts",
     "scripts/fixtures/image-smoke.ts",
@@ -120,12 +114,9 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "packaging/linux/deb-control.in",
     ".github/workflows/build.yml",
     ".github/workflows/publish.yml",
-    ".github/actions/setup-gradle-mirror/ci-maven-mirror.gradle",
     ".github/workflows/linux-packages.yml",
-    ".github/workflows/nix-server.yml",
     "flake.nix",
     "flake.lock",
-    // `nix/web.nix` installs from these pnpm dependency inputs.
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -134,24 +125,114 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "apps/daemon/package.json",
     "packages/client/package.json",
     "packages/components/package.json",
-    // `nix/toolchain.nix` reads the mise toolchain metadata.
     "mise.toml",
     "mise.lock",
-    // CI release profile overrides.
     "mise.ci.toml",
-  ]) assert.equal(isPackagingPath(file), true, file)
+  ]) assert.equal(isPackagingPath(file), true, `packaging:${file}`)
+
   for (const file of [
     "apps/desktop/src/main/index.ts",
     "apps/desktop/scripts/dev.ts",
     "apps/desktop/README.md",
     "apps/web/src/App.vue",
     "apps/web/README.md",
+    "apps/web/android/app/build.gradle.kts",
+    "apps/web/ios/App/App.xcodeproj/project.pbxproj",
+    "scripts/build-android-viewer.ts",
+    "scripts/build-ios-viewer.ts",
+    "scripts/package-ios-release.ts",
     "scripts/check.ts",
     ".github/workflows/ci.yml",
-  ]) assert.equal(isPackagingPath(file), false, file)
+    ".github/workflows/nix-server.yml",
+  ]) assert.equal(isPackagingPath(file), false, `not-packaging:${file}`)
+
+  for (const file of [
+    "flake.nix",
+    "flake.lock",
+    "nix/server.nix",
+    "nix/web.nix",
+    ".github/workflows/nix-server.yml",
+    "scripts/smoke-server-image.ts",
+    "Cargo.toml",
+    "Cargo.lock",
+    "apps/server/src/main.rs",
+    "crates/control-store/src/lib.rs",
+    "crates/model/src/session.rs",
+    "crates/protocol/src/control/mod.rs",
+    "crates/capture/Cargo.toml",
+    "packages/mcp/src/remote-tools.json",
+    "vendor/portable-pty/src/lib.rs",
+    "packages/capacitor-bridge/package.json",
+    "packages/protocol/package.json",
+    "apps/web/vite.config.ts",
+    "tsconfig.json",
+    "pnpm-lock.yaml",
+    "mise.toml",
+    "mise.lock",
+  ]) assert.equal(isNixServerPath(file), true, `nix-server:${file}`)
+  for (const file of [
+    "apps/desktop/electron-builder.yml",
+    "apps/super-agent/agent/agent.ts",
+    "apps/daemon/src/main.ts",
+    "crates/capture/src/x11.rs",
+    "apps/web/ios/App/Info.plist",
+    "packaging/linux/deb-control.in",
+  ]) assert.equal(isNixServerPath(file), false, `not-nix-server:${file}`)
+
+  for (const file of [
+    "apps/super-agent/agent/agent.ts",
+    "apps/server/src/cloud_agent/client.rs",
+    "nix/super-agent.nix",
+    "nix/super-agent-image.nix",
+    "scripts/smoke-super-agent-image.ts",
+    "pnpm-lock.yaml",
+    "flake.nix",
+  ]) assert.equal(isSuperAgentPath(file), true, `super-agent:${file}`)
+  for (const file of [
+    "apps/desktop/electron-builder.yml",
+    "packaging/linux/deb-control.in",
+    "apps/web/android/app/build.gradle.kts",
+  ]) assert.equal(isSuperAgentPath(file), false, `not-super-agent:${file}`)
+
+  for (const file of [
+    "apps/web/android/app/build.gradle.kts",
+    "apps/web/capacitor.config.ts",
+    "packages/capacitor-bridge/android/build.gradle",
+    "crates/desktop-viewer/src/lib.rs",
+    "crates/viewer-controls/src/lib.rs",
+    "scripts/build-android-viewer.ts",
+    ".github/actions/setup-gradle-mirror/ci-maven-mirror.gradle",
+    "Cargo.lock",
+  ]) assert.equal(isAndroidPath(file), true, `android:${file}`)
+  for (const file of [
+    "apps/web/ios/App/Info.plist",
+    "apps/desktop/src/main/index.ts",
+    "apps/server/src/main.rs",
+    "apps/web/src/App.vue",
+  ]) assert.equal(isAndroidPath(file), false, `not-android:${file}`)
+
+  for (const file of [
+    "apps/web/ios/App/App.xcodeproj/project.pbxproj",
+    "apps/web/capacitor.config.ts",
+    "packages/capacitor-bridge/ios/Sources/DeskFleetBridge/Plugin.swift",
+    "crates/desktop-viewer/src/lib.rs",
+    "crates/viewer-controls/src/lib.rs",
+    "scripts/build-ios-viewer.ts",
+    "scripts/package-ios-release.ts",
+    "scripts/app-store-connect.ts",
+    "scripts/prepare-ios-signing.ts",
+    "scripts/publish-ios-release.ts",
+    "Cargo.lock",
+  ]) assert.equal(isIosPath(file), true, `ios:${file}`)
+  for (const file of [
+    "apps/web/android/app/build.gradle.kts",
+    "apps/desktop/src/main/index.ts",
+    "apps/server/src/main.rs",
+    "apps/web/src/App.vue",
+  ]) assert.equal(isIosPath(file), false, `not-ios:${file}`)
 })
 
-test("classifies draft PRs and packaging-related changes", context => {
+test("classifies draft PRs, granular packaging/mobile paths, and main pushes", context => {
   const cwd = temporary(context)
   const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid", ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
@@ -162,6 +243,17 @@ test("classifies draft PRs and packaging-related changes", context => {
     writeFileSync(full, content)
   }
   const snapshot = () => { git("add", "."); git("commit", "-qm", "Fixture"); return git("rev-parse", "HEAD") }
+  const baseFlags = {
+    docsOnly: false,
+    specsOnly: false,
+    runBuild: false,
+    runNixServer: false,
+    runSuperAgent: false,
+    runAndroid: false,
+    runIos: false,
+    allPlatforms: false,
+    runBackend: false,
+  }
   git("init", "-q", "-b", "main")
   save("README.md", "docs\n")
   save("source.rs", "source\n")
@@ -170,54 +262,103 @@ test("classifies draft PRs and packaging-related changes", context => {
   save("source.rs", "modified source\n")
   const code = snapshot()
 
-  // Standard Rust source change triggers platform matrix and backend integration
+  // Standard Rust source change triggers platform matrix and backend integration, but skips mobile and packaging
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
+  }, cwd), { ...baseFlags, allPlatforms: true, runBackend: true })
 
-  // Pure frontend UI change (apps/web) skips Windows/macOS matrix and backend integration
+  // Push to main uses the same path-based classification for code changes
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: initial, after: code
+  }, cwd), { ...baseFlags, allPlatforms: true, runBackend: true })
+
+  // Pure frontend UI change (apps/web) skips Windows/macOS, backend, mobile, and packaging
   save("apps/web/src/App.vue", "<template>hello</template>\n")
   const frontendSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: code }, head: { sha: frontendSha } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  }, cwd), baseFlags)
 
-  // Draft PR skips runtime matrix and backend tests
+  // Draft PR skips runtime matrix, mobile, backend, and packaging
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code }, draft: true }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  }, cwd), baseFlags)
 
-  // Packaging change in PR triggers release build
-  save("packaging/aur/PKGBUILD.in", "pkgbuild\n")
-  const packagingSha = snapshot()
+  // iOS-only change runs iOS tests/build without triggering Linux desktop packaging, Nix server, or Android
+  save("apps/web/ios/App/Info.plist", "<plist/>\n")
+  const iosSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
-    pull_request: { base: { sha: initial }, head: { sha: packagingSha } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+    pull_request: { base: { sha: frontendSha }, head: { sha: iosSha } }
+  }, cwd), { ...baseFlags, runIos: true, allPlatforms: true })
 
-  // Desktop electron-builder and staging inputs also trigger packaging
+  // Desktop electron-builder change triggers desktop packaging without Nix server, Super Agent, or mobile builds
   save("apps/desktop/electron-builder.yml", "appId: test\n")
   const desktopPackaging = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
-    pull_request: { base: { sha: initial }, head: { sha: desktopPackaging } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+    pull_request: { base: { sha: iosSha }, head: { sha: desktopPackaging } }
+  }, cwd), { ...baseFlags, runBuild: true, allPlatforms: true, runBackend: true })
 
-  // A dependency change that only updates the pnpm lockfile must still run the
-  // packaging build: the Nix Web derivation installs from that lockfile.
+  // A pnpm lockfile update triggers packaging, Nix server, Super Agent, and mobile jobs
   save("pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
   const lockfileSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
-    pull_request: { base: { sha: initial }, head: { sha: lockfileSha } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+    pull_request: { base: { sha: desktopPackaging }, head: { sha: lockfileSha } }
+  }, cwd), {
+    ...baseFlags,
+    runBuild: true,
+    runNixServer: true,
+    runSuperAgent: true,
+    runAndroid: true,
+    runIos: true,
+    allPlatforms: true,
+    runBackend: true,
+  })
 
   // Packaging change in Draft PR still skips release build until ready
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
-    pull_request: { base: { sha: initial }, head: { sha: packagingSha }, draft: true }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+    pull_request: { base: { sha: initial }, head: { sha: desktopPackaging }, draft: true }
+  }, cwd), baseFlags)
 
-  // Push to main always runs build and all platforms on code changes
+  // Main push after a cancelled iOS commit expands the diff back to the last passing main CI commit
+  save("README.md", "docs-only follow-up commit\n")
+  const docsFollowup = snapshot()
   assert.deepEqual(classifyChanges("push", "refs/heads/main", {
-    before: initial, after: code
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+    before: iosSha, after: docsFollowup,
+  }, cwd, { mainBaseSha: frontendSha, requireMainBaseSha: true }), {
+    ...baseFlags,
+    runBuild: true,
+    runNixServer: true,
+    runSuperAgent: true,
+    runAndroid: true,
+    runIos: true,
+    allPlatforms: true,
+    runBackend: true,
+  })
+  // A cancelled iOS-only commit followed by a docs-only commit still keeps iOS validation active
+  git("checkout", "-q", iosSha)
+  save("README.md", "docs follow-up on top of ios only\n")
+  const docsOnIos = snapshot()
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: iosSha, after: docsOnIos,
+  }, cwd, { mainBaseSha: frontendSha, requireMainBaseSha: true }), {
+    ...baseFlags,
+    runIos: true,
+    allPlatforms: true,
+  })
+  // Missing or unresolved mainBaseSha when required fails closed to full validation
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: iosSha, after: docsOnIos,
+  }, cwd, { requireMainBaseSha: true }), {
+    docsOnly: false,
+    specsOnly: false,
+    runBuild: true,
+    runNixServer: true,
+    runSuperAgent: true,
+    runAndroid: true,
+    runIos: true,
+    allPlatforms: true,
+    runBackend: true,
+  })
 })
 
 test("platform and backend detectors cover shared actions and build-env paths", () => {
@@ -268,7 +409,18 @@ test("a spec-only pull request and main push skip product suites", context => {
   save("specs/grant_lifecycle.qnt", "module grant_lifecycle {}\n")
   save("agents/docs/control-plane-verification.md", "plan\n")
   const specs = snapshot()
-  const specsOnly = { docsOnly: false, specsOnly: true, runBuild: false, allPlatforms: false, runBackend: false }
+  const specsOnly = {
+    docsOnly: false,
+    specsOnly: true,
+    runBuild: false,
+    runNixServer: false,
+    runSuperAgent: false,
+    runAndroid: false,
+    runIos: false,
+    allPlatforms: false,
+    runBackend: false,
+  }
+  const websiteAndSpecs = { ...specsOnly, specsOnly: false }
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: specs } }
   }, cwd), specsOnly)
@@ -277,14 +429,13 @@ test("a spec-only pull request and main push skip product suites", context => {
   const website = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: website } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
-  assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: website }, cwd),
-    { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  }, cwd), websiteAndSpecs)
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: website }, cwd), websiteAndSpecs)
   save("source.rs", "changed\n")
   const mixed = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: mixed } }
-  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
+  }, cwd), { ...websiteAndSpecs, allPlatforms: true, runBackend: true })
 })
 
 test("spec models skip product suites and any other file restores them", () => {
@@ -306,6 +457,8 @@ test("manual Test workflow_dispatch declares full matrix and backend defaults", 
   assert.match(dispatch, /workflow_dispatch:\n(?: {4}.+\n)*? {4}inputs:/)
   assert.match(dispatch, /workflow_dispatch:[\s\S]*?all_platforms:[\s\S]*?default:\s*true/)
   assert.match(dispatch, /workflow_dispatch:[\s\S]*?run_backend:[\s\S]*?default:\s*true/)
+  assert.match(dispatch, /workflow_dispatch:[\s\S]*?run_android:[\s\S]*?default:\s*true/)
+  assert.match(dispatch, /workflow_dispatch:[\s\S]*?run_ios:[\s\S]*?default:\s*true/)
   assert.match(dispatch, /workflow_dispatch:[\s\S]*?specs_only:[\s\S]*?default:\s*false/)
 })
 
@@ -325,7 +478,7 @@ test("manual and scheduled runs, unrelated refs, and malformed events retain ful
     })
     assert.equal(
       readFileSync(output, "utf8"),
-      "docs_only=false\nspecs_only=false\nrun_build=true\nall_platforms=true\nrun_backend=true\n"
+      "docs_only=false\nspecs_only=false\nrun_build=true\nrun_nix_server=true\nrun_super_agent=true\nrun_android=true\nrun_ios=true\nall_platforms=true\nrun_backend=true\n"
     )
   }
 })
@@ -334,23 +487,34 @@ function workflowYaml(relativePath: string): string {
   return readFileSync(join(import.meta.dirname, relativePath), "utf8").replace(/\r\n/gu, "\n")
 }
 
-function workflowScript(job: string): string {
+function workflowScript(job: string, stepId?: string): string {
   const yaml = workflowYaml("../.github/workflows/ci.yml")
-  const block = yaml.match(new RegExp(`^  ${job}:[\\s\\S]*?^        run: \\|\\n((?:          .*\\n)+)`, "m"))?.[1]
+  const jobBlock = yaml.match(new RegExp(`^  ${job}:[\\s\\S]*?(?=^  [a-z]|(?![\\s\\S]))`, "m"))?.[0]
+  assert.ok(jobBlock, `Missing ${job} job`)
+  const scope = stepId
+    ? jobBlock.match(new RegExp(`id:\\s*${stepId}[\\s\\S]*?(?=^      - name:|(?![\\s\\S]))`, "m"))?.[0]
+    : jobBlock
+  assert.ok(scope, `Missing step ${stepId ?? ""} for ${job}`)
+  const block = scope.match(/^        run: \|\n((?:          .*\n)+)/m)?.[1]
   assert.ok(block, `Missing shell step for ${job}`)
   return block.replace(/^ {10}/gm, "")
 }
 
 test("packaging jobs run independently of Test and only Linux packages waits on Build", () => {
   const yaml = workflowYaml("../.github/workflows/ci.yml")
-  for (const name of ["build", "nix_server"]) {
-    const job = yaml.match(new RegExp(`^  ${name}:[\\s\\S]*?(?=^  [a-z])`, "m"))?.[0]
-    assert.ok(job, `Missing ${name} job`)
-    assert.match(job, /needs:\s*changes\b/)
-    assert.doesNotMatch(job, /needs:\s*\[[^\]]*test/)
-    assert.doesNotMatch(job, /needs\.test\.result/)
-    assert.match(job, /needs\.changes\.outputs\.run_build\s*==\s*'true'/)
-  }
+  const build = yaml.match(/^  build:[\s\S]*?(?=^  [a-z])/m)?.[0]
+  assert.ok(build, "Missing build job")
+  assert.match(build, /needs:\s*changes\b/)
+  assert.doesNotMatch(build, /needs:\s*\[[^\]]*test/)
+  assert.doesNotMatch(build, /needs\.test\.result/)
+  assert.match(build, /needs\.changes\.outputs\.run_build\s*==\s*'true'\s*\|\|\s*needs\.changes\.outputs\.run_android\s*==\s*'true'\s*\|\|\s*needs\.changes\.outputs\.run_ios\s*==\s*'true'/)
+
+  const nixServer = yaml.match(/^  nix_server:[\s\S]*?(?=^  [a-z])/m)?.[0]
+  assert.ok(nixServer, "Missing nix_server job")
+  assert.match(nixServer, /needs:\s*changes\b/)
+  assert.doesNotMatch(nixServer, /needs:\s*\[[^\]]*test/)
+  assert.match(nixServer, /needs\.changes\.outputs\.run_nix_server\s*==\s*'true'/)
+
   const linuxPackages = yaml.match(/^  linux_packages:[\s\S]*?(?=^  [a-z])/m)?.[0]
   assert.ok(linuxPackages, "Missing linux_packages job")
   assert.match(linuxPackages, /needs:\s*\[changes,\s*build\]/)
@@ -392,6 +556,14 @@ test("failed classification keeps the full Test matrix and backend jobs", () => 
   )
   assert.match(
     test,
+    /run_android:\s*\$\{\{\s*needs\.changes\.result\s*!=\s*'success'\s*\|\|\s*needs\.changes\.outputs\.run_android\s*==\s*'true'\s*\}\}/,
+  )
+  assert.match(
+    test,
+    /run_ios:\s*\$\{\{\s*needs\.changes\.result\s*!=\s*'success'\s*\|\|\s*needs\.changes\.outputs\.run_ios\s*==\s*'true'\s*\}\}/,
+  )
+  assert.match(
+    test,
     /docs_only:\s*\$\{\{\s*needs\.changes\.result\s*==\s*'success'\s*&&\s*needs\.changes\.outputs\.docs_only\s*==\s*'true'\s*\}\}/,
   )
   assert.match(
@@ -406,12 +578,17 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
     env: {
       ...process.env,
       CHANGES_RESULT: "success",
+      SKIP_SCHEDULE: "false",
       TEST_RESULT: "success",
       BUILD_RESULT: "success",
       NIX_SERVER_RESULT: "success",
       LINUX_PACKAGES_RESULT: "success",
       DOCS_ONLY: "false",
+      SPECS_ONLY: "false",
       RUN_BUILD: "true",
+      RUN_NIX_SERVER: "true",
+      RUN_ANDROID: "true",
+      RUN_IOS: "true",
       ...state,
     },
   }).status === 0
@@ -420,7 +597,6 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
     for (const state of ["failure", "cancelled", "skipped"]) {
       assert.equal(expected({ [job]: state }), false, `${job}=${state}`)
       assert.equal(expected({ [job]: state, DOCS_ONLY: "true" }), false, `${job}=${state} with docs-only skip`)
-      assert.equal(expected({ [job]: state, RUN_BUILD: "false" }), false, `${job}=${state} with build skip`)
     }
   }
   for (const state of ["failure", "cancelled", "skipped"]) {
@@ -428,12 +604,39 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
     assert.equal(expected({ TEST_RESULT: state }), false, `test=${state} with packaging success`)
     assert.equal(expected({ TEST_RESULT: state, BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false, `test=${state}`)
   }
-  for (const state of [{ DOCS_ONLY: "true" }, { RUN_BUILD: "false" }]) {
+  for (const state of [
+    { DOCS_ONLY: "true" },
+    { SPECS_ONLY: "true" },
+    { RUN_BUILD: "false", RUN_NIX_SERVER: "false", RUN_ANDROID: "false", RUN_IOS: "false" },
+  ]) {
     assert.equal(expected({ ...state, BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), true,
       `allowed skip: ${JSON.stringify(state)}`)
     assert.equal(expected({ ...state, BUILD_RESULT: "success", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false,
       `unexpected build: ${JSON.stringify(state)}`)
   }
+  // Mobile-only change runs Build without Nix server or Linux packages
+  assert.equal(
+    expected({ RUN_BUILD: "false", RUN_NIX_SERVER: "false", RUN_ANDROID: "false", RUN_IOS: "true", BUILD_RESULT: "success", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }),
+    true,
+    "iOS-only build skips Nix server and Linux packages",
+  )
+  // Desktop-only packaging change runs Build + Linux packages without Nix server
+  assert.equal(
+    expected({ RUN_BUILD: "true", RUN_NIX_SERVER: "false", RUN_ANDROID: "false", RUN_IOS: "false", BUILD_RESULT: "success", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "success" }),
+    true,
+    "desktop packaging skips Nix server when Nix inputs are unchanged",
+  )
+  // Scheduled deduplication expects every downstream job skipped
+  assert.equal(
+    expected({ SKIP_SCHEDULE: "true", TEST_RESULT: "skipped", BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }),
+    true,
+    "deduplicated schedule run skips all downstream jobs",
+  )
+  assert.equal(
+    expected({ SKIP_SCHEDULE: "true", TEST_RESULT: "failure", BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }),
+    false,
+    "deduplicated schedule cannot hide a failed downstream job",
+  )
   // Test failure no longer forces packaging into the skipped expectation.
   assert.equal(
     expected({ TEST_RESULT: "failure", BUILD_RESULT: "success", NIX_SERVER_RESULT: "success", LINUX_PACKAGES_RESULT: "success" }),
@@ -443,7 +646,7 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
 })
 
 test("classifier process failure or missing output cannot skip CI", { skip: process.platform === "win32" }, context => {
-  const script = workflowScript("changes")
+  const script = workflowScript("changes", "classify")
   const cwd = temporary(context)
   const node = join(cwd, "node")
   const output = join(cwd, "output")
@@ -456,6 +659,10 @@ test("classifier process failure or missing output cannot skip CI", { skip: proc
     assert.ok(lines.includes("docs_only=false"))
     assert.ok(lines.includes("specs_only=false"))
     assert.ok(lines.includes("run_build=true"))
+    assert.ok(lines.includes("run_nix_server=true"))
+    assert.ok(lines.includes("run_super_agent=true"))
+    assert.ok(lines.includes("run_android=true"))
+    assert.ok(lines.includes("run_ios=true"))
     assert.ok(lines.includes("all_platforms=true"))
     assert.ok(lines.includes("run_backend=true"))
   }

@@ -28,6 +28,16 @@ on:
         type: boolean
         required: false
         default: true
+      run_android:
+        description: Run Android Gradle unit tests and lint.
+        type: boolean
+        required: false
+        default: true
+      run_ios:
+        description: Build and verify the iOS Simulator app.
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       docs_only:
@@ -55,6 +65,16 @@ on:
         type: boolean
         required: false
         default: true
+      run_android:
+        description: Run Android Gradle unit tests and lint.
+        type: boolean
+        required: false
+        default: true
+      run_ios:
+        description: Build and verify the iOS Simulator app.
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -75,6 +95,8 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust cargo:cargo-shear npm:@informalsystems/quint
+          install-native-deps: "false"
 
       - name: Run preflight checks
         run: mise run ci:preflight
@@ -96,7 +118,11 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
-          rust-cache: static
+          tools: node pnpm rust cmake
+          # Reuse Linux's test target cache instead of keeping a separate
+          # static cache family against the 10 GB repository quota.
+          rust-cache: test
+          rust-cache-save: "false"
 
       - name: Run static checks
         run: mise run ci:check:static
@@ -122,14 +148,19 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
     steps:
-      # Rust tests can exhaust the hosted image's free disk space. This job
-      # does not build Android; reclaim its SDK before restoring Cargo outputs.
+      # Rust tests can exhaust low-disk hosted images. Reclaim the unused
+      # Android SDK only when the root volume has less than 45 GB free.
       - name: Free unused Android SDK space
         if: runner.os == 'Linux'
         run: |
           df -h /
-          sudo rm -rf /usr/local/lib/android
-          df -h /
+          avail_gb=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
+          if [[ -n "$avail_gb" && "$avail_gb" -lt 45 ]]; then
+            sudo rm -rf /usr/local/lib/android
+            df -h /
+          else
+            echo "Skipping Android SDK removal (${avail_gb}G free)."
+          fi
 
       - uses: actions/checkout@v7
         with:
@@ -140,6 +171,7 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust cmake
           rust-cache: test
 
       - name: Run tests
@@ -175,7 +207,7 @@ jobs:
     name: Tests (Android)
     needs: preflight
     if: >-
-      ${{ !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ inputs.run_android && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ubuntu-26.04
@@ -189,6 +221,8 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm java rust cmake
+          install-native-deps: "false"
 
       - name: Configure Gradle Maven Central mirror
         uses: ./.github/actions/setup-gradle-mirror
@@ -200,7 +234,7 @@ jobs:
     name: Tests (iOS)
     needs: preflight
     if: >-
-      ${{ inputs.all_platforms && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ inputs.run_ios && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: macos-latest
@@ -214,8 +248,12 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust cmake
+          install-native-deps: "false"
 
       - name: Build and verify iOS Simulator app
+        env:
+          DESKFLEET_IOS_TARGETS: aarch64-apple-ios-sim
         run: mise run ios:test
 
   backend:
@@ -266,6 +304,7 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust cmake
           # Start from the Linux test target directory, which shares most
           # dependencies with the backend packages, but leave writing it to Tests.
           rust-cache: test

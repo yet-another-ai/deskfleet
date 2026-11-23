@@ -6,9 +6,22 @@ inputs:
     description: Token used by mise when downloading tools from GitHub.
     required: false
     default: ""
+  tools:
+    description: >-
+      Space-separated locked mise tools to install, such as `node pnpm rust cmake`.
+      Leave empty to install every locked tool.
+    required: false
+    default: ""
+  install-native-deps:
+    description: >-
+      Whether to install Linux native desktop viewer dev libraries and locate
+      Windows LLVM libclang. Disable for jobs that do not compile native desktop
+      Rust targets.
+    required: false
+    default: "true"
   rust-cache:
     description: >-
-      Cargo target cache role, such as `static`, `test`, or `release`. Jobs
+      Cargo target cache role, such as `test` or `release`. Jobs
       with the same role and OS share one entry, so give a role only to jobs
       that build the same profiles and feature sets. Leave empty to skip the
       Cargo cache.
@@ -28,10 +41,11 @@ runs:
     - name: Install locked toolchain
       uses: ./.github/actions/setup-mise
       with:
+        tools: ${{ inputs.tools }}
         github-token: ${{ inputs.github-token }}
 
     - name: Locate LLVM for NVENC bindings
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && inputs.install-native-deps == 'true'
       shell: pwsh
       run: |
         $llvmBin = Join-Path $env:ProgramFiles 'LLVM/bin'
@@ -41,7 +55,7 @@ runs:
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Install native viewer build libraries
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && inputs.install-native-deps == 'true'
       shell: bash
       run: |
         sudo apt-get update

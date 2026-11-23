@@ -15,7 +15,7 @@ export interface Cache {
 }
 
 const mainRef = "refs/heads/main"
-const retiredDownloadCache = /^(?:cargo-downloads-|electron-|mise-v1-|pnpm-store-)/u
+const retiredCache = /^(?:cargo-downloads-|electron-|mise-v1-|pnpm-store-|v0-rust-static-)/u
 
 /** The cache key without the segments that change with its inputs. */
 export function cacheFamily(key: string): string {
@@ -30,7 +30,7 @@ export function staleCaches(caches: readonly Cache[]): Cache[] {
   const stale: Cache[] = []
   const newest = new Map<string, Cache>()
   for (const cache of caches) {
-    if (cache.ref !== mainRef || retiredDownloadCache.test(cache.key)) {
+    if (cache.ref !== mainRef || retiredCache.test(cache.key)) {
       stale.push(cache)
       continue
     }

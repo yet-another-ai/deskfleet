@@ -10,23 +10,31 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
   runs, and a daily full run at 03:17 UTC. It classifies the changed files with
-  the hosted runner's Node, then runs Test in parallel with packaging jobs
-  (`Build` and the experimental Nix server image) when classification requests a
-  build. `Linux packages` still waits on `Build` because it downloads the same-run
-  desktop archive artifact. `Gate` requires every selected job to succeed.
-  Pull requests without packaging changes skip release packaging, relying on
-  `Test` to validate code changes and leaving the smoke build to `main`. Draft
+  the hosted runner's Node, then runs Test in parallel with selected packaging
+  jobs (`Build`, `Nix server`, and `Linux packages`) when classification
+  requests them. On scheduled runs, `scripts/ci-check-existing-run.ts schedule`
+  skips downstream jobs if `Publish` or an earlier scheduled run already
+  succeeded on the exact `HEAD` commit. `Linux packages` still waits on `Build`
+  because it downloads the same-run desktop archive artifact. `Gate` requires
+  every selected job to succeed.
+  Both pull requests and pushes to `main` apply path-based classification so
+  unchanged desktop packaging, Nix server, Super Agent, Android, iOS,
+  cross-platform, or backend suites are skipped; daily scheduled runs and manual
+  dispatches always run the full matrix and all packaging suites. Draft
   pull requests run static checks only, automatically triggering the full runtime
   test suite upon `ready_for_review`. Configure `Gate` under the `CI` workflow as
   the required status check in repository branch protection. Successful push and
   manual runs on `main` then deploy the product website to GitHub Pages, except
   `specs_only` pushes, which produce no website artifact.
-  A new pull request push cancels that pull request's previous run. The
-  concurrency policy lets started push, scheduled, and manual runs finish,
-  while GitHub can replace older queued runs in the same group. Reusable
-  workflows inherit the caller's group. After each run on `main`, `Prune
-  caches` removes retired and superseded entries as described under
-  [Toolchains and caches](#toolchains-and-caches).
+  A new pull request push or rapid back-to-back push to `main` cancels the
+  previous in-progress run for that group so only the latest commit finishes,
+  saves caches, and deploys Pages. On `main` pushes, `scripts/ci-check-existing-run.ts main-base`
+  resolves the last passing `CI` ancestor commit so classification diffs the
+  entire unvalidated commit range across any cancelled or failed intermediate
+  runs (failing closed to full CI if unresolved). Scheduled and manual runs
+  finish once started. Reusable workflows inherit the caller's group. After each
+  run on `main`, `Prune caches` removes retired and superseded entries as
+  described under [Toolchains and caches](#toolchains-and-caches).
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
   rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
@@ -36,15 +44,18 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   fast-fail feedback before running on expensive runners. `Static checks` runs
   beside them with `mise run ci:check:static`: Clippy, the type checks that need
   the native addon, and the desktop, Web, and website builds. Test fails if
-  either job fails, so `Gate` requires both. Furthermore, pull requests filter runtime test jobs by changed paths:
-  cross-platform matrix checks (macOS arm64 and Windows x64) run only when
-  native/cross-platform paths are modified (`crates/`, `apps/desktop/`, `apps/daemon/`,
-  `*.rs`, root build configs, workflows, scripts, or patches), running Linux x64 only
-  for frontend-only changes; backend integration tests run only when backend, server,
-  database, or shared protocol files are touched (`apps/server/`, `crates/`, `compose.yaml`,
-  etc.). Pushes to `main` run the full matrix and all integration suites, except a
-  `specs_only` change, which runs preflight only. Daily scheduled runs and manual
-  dispatches always run the full matrix and all integration suites. Once Preflight passes, active platform
+  either job fails, so `Gate` requires both. Furthermore, pull requests and
+  pushes to `main` filter runtime test jobs by changed paths: cross-platform
+  matrix checks (macOS arm64 and Windows x64) run only when
+  native/cross-platform paths are modified (`crates/`, `apps/desktop/`,
+  `apps/daemon/`, `*.rs`, root build configs, workflows, scripts, or patches),
+  running Linux x64 only for frontend-only changes; backend integration tests
+  run only when backend, server, database, or shared protocol files are touched
+  (`apps/server/`, `crates/`, `compose.yaml`, etc.); Android and iOS test/build
+  jobs run independently only when their respective mobile, Capacitor bridge,
+  native viewer, or shared manifest/lockfile paths change. `specs_only` changes
+  run preflight only. Daily scheduled runs and manual dispatches always run the
+  full matrix and all integration suites. Once Preflight passes, active platform
   tests run in parallel. Linux uses `mise run test`, including the renderer Vitest
   project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
   script, and desktop main/shared/client checks, without repeating the happy-dom renderer
@@ -65,9 +76,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   before launching the clients.
   The Linux test matrix also runs native X11 capture/input tests serially under
   a disposable Xvfb server with `-noreset`, avoiding server resets when the last
-  client disconnects between test cases. Before restoring Cargo outputs, that
-  job removes the hosted image's unused Android SDK to leave disk space for
-  Rust compilation and logs free space before and after cleanup.
+  client disconnects between test cases. Before restoring Cargo outputs, Linux
+  test and build jobs check root free space and remove the hosted image's unused
+  Android SDK only when less than 45 GB is available.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
   installers and Linux desktop archives. Ordinary CI runs use
   `mise run ci:build`; tagged releases build Web and Electron separately to give
@@ -81,13 +92,15 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   unless the caller explicitly selects prebuilt staging. The server is read from
   `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
   native runner's triple.
-  Pushes to `main` use a Linux x64 smoke build; pull requests run it only when
-  packaging or distribution configurations change (`packaging/**`, `nix/**`,
-  root flake files, packaging scripts, or packaging workflow files). Daily
-  scheduled, manual, and tagged release runs use the full platform matrix.
-  Smoke builds package only the Linux `tar.gz` desktop payload; the full matrix
-  keeps every configured target, including AppImages and the macOS ZIP that Nix
-  consumes.
+  Smoke builds (PRs and pushes to `main`) run Linux x64 desktop/server
+  packaging (`run_package`), Linux Nix Super Agent image steps
+  (`run_super_agent`), Android (`run_android`), and iOS (`run_ios`) only when
+  their respective paths change. Daily scheduled, manual, and tagged release
+  runs enable every job and use the full platform matrix.
+  Smoke builds package only the Linux `tar.gz` desktop payload with store
+  compression (`-c.compression=store`) and fast gzip `.deb`/`.rpm` payloads
+  (`--compression fast`); the full matrix keeps every configured target, default
+  release compression, including AppImages and the macOS ZIP that Nix consumes.
   Desktop Nix packaging follows Build's Linux and macOS matrix during releases
   so it only downloads archives produced in the same run.
   `mise.ci.toml` gives CI release builds Cargo's parallel release codegen: 16
@@ -107,10 +120,12 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   and manual Build runs do not bind
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
-- `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  calls Nix, AUR, and Linux package validation with the desktop artifacts from
-  Build. It creates a draft GitHub Release and publishes both service images after all
-  five workflows succeed.
+- `.github/workflows/publish.yml` validates `v*` tags, checks whether a
+  completed `CI` run on `main` already passed every full-matrix `Test` job for
+  the exact tag SHA (`scripts/ci-check-existing-run.ts publish-test`), calls
+  Test (unless already verified) and Build, then calls Nix, AUR, and Linux
+  package validation with the desktop artifacts from Build. It creates a draft
+  GitHub Release and publishes both service images after all gates succeed.
 - `.github/workflows/nix.yml` consumes the same-run Linux desktop archives and
   macOS app ZIP from Build, generates a flake bundle, checks the repackaged Linux
   app under Xvfb, and verifies the macOS bundle's signatures on macOS.
@@ -121,11 +136,13 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   release publication and excluded from daily CI.
 - `.github/workflows/nix-server.yml` builds the experimental server and Web image
   from source with the root flake, loads it, and runs the existing server image
-  smoke test. It runs in parallel with Test and Build under the same
-  packaging-change gate, and its result is required by `Gate`. It follows the
-  native Linux smoke/full matrix and uploads each tested image as
-  `deskfleet-server-nix-<platform>` for three days. These images do not replace
-  the official image published by the tag workflow.
+  smoke test. It runs in parallel with Test and Build under a dedicated
+  `run_nix_server` gate (flake/Nix files, Cargo/server crate inputs fileset by
+  `nix/server.nix`, server image smoke scripts, and pnpm/Web/mise manifest
+  inputs), plus daily scheduled and manual runs, and its result is required by
+  `Gate`. It follows the native Linux smoke/full matrix and uploads each tested
+  image as `deskfleet-server-nix-<platform>` for three days. These images do not
+  replace the official image published by the tag workflow.
 - `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
   x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
   a disposable Arch container. Publish requires it before creating the draft or
@@ -141,9 +158,11 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   and its locked tools. Jobs that need only Node pass `tools: node`. It selects
   the CI mise environment and retries the install once after a transient
   failure: hosted macOS runners have SIGKILL'd rustup during the first attempt.
-- `.github/actions/setup-build/action.yml` calls setup-mise, then installs the
-  workspace and configures shared caches for the Test and Build workflows. It
-  writes a cache restore summary for each job.
+- `.github/actions/setup-build/action.yml` calls setup-mise with each job's
+  required tool subset (`tools`), skips Linux desktop viewer dev packages and
+  Windows LLVM lookup when `install-native-deps` is `false`, installs the
+  workspace, and configures shared Cargo caches for the Test and Build workflows.
+  It writes a cache restore summary for each job.
 
 The build matrix covers Linux x64/arm64, macOS arm64/x64, and Windows x64. The
 Intel macOS job uses the native `macos-26-intel` runner and the same build and
@@ -851,10 +870,11 @@ I/O out of IPC and lifecycle timeout budgets.
 
 `.github/actions/setup-mise` sets `MISE_ENV=ci`, which loads `mise.ci.toml`
 on top of `mise.toml`. It holds the CI-only Cargo settings: no incremental
-state, line-table debug info for dev and test builds, and the faster release
-profile above. mise-action exports them to later steps, so plain `cargo`
-steps see the same environment as `mise run`. Reproduce a CI build locally
-with `mise -E ci run <task>`.
+state, no DWARF debug info on dev/test builds (preserving panic file/line
+locations while keeping Cargo target caches within the 10 GB quota), and the
+faster release profile above. mise-action exports them to later steps, so plain
+`cargo` steps see the same environment as `mise run`. Reproduce a CI build
+locally with `mise -E ci run <task>`.
 
 The repository's 10 GB Actions cache budget goes to compiled Cargo dependency
 artifacts. The Rust cache action bundles Cargo registry and Git dependency
@@ -866,13 +886,17 @@ profiles and features share one entry per platform and role.
 
 | Role | Jobs | Saves |
 | --- | --- | --- |
-| `static` | Static checks | Yes |
-| `test` | Tests on each platform; the PostgreSQL job restores Linux's entry | Tests only |
+| `test` | Tests on each platform; Static checks and PostgreSQL restore Linux's entry | Tests only |
 | `release` | Build | Main smoke build only |
 
 Preflight and tagged production builds use fresh Cargo directories. The Rust
 cache action saves compiled dependencies after a failed test as well. Per-crate
 sccache entries previously filled the quota and evicted Cargo target caches.
+
+iOS CI sets `DESKFLEET_IOS_TARGETS` so `scripts/build-ios-viewer.ts` compiles
+only the slice required by each job (`aarch64-apple-ios-sim` in `Tests (iOS)`,
+`aarch64-apple-ios` in `Build (ios-arm64)` and `mise run ios:build`), while
+default local `cap sync ios` continues staging both slices.
 
 Each job installs its locked mise tools and workspace packages directly. In
 CI, mise can download the pinned Cargo Shear release binary. Cargo downloads
