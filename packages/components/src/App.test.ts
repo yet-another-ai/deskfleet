@@ -10,6 +10,7 @@ import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
+import { deferred } from "./test/desktop-media.ts"
 import type { LocalAgentState } from "@deskfleet/client/local-agent"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
 import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
@@ -121,6 +122,26 @@ test("the archive route retains the sidebar without tiled windows", async () => 
   expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
   expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
   expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
+})
+
+test("the first-task guide waits for configured Agents before offering setup or dismissal", async () => {
+  const catalog = catalogFixture()
+  catalog.sessionIds = []
+  catalog.workspaces[0]!.worktrees = catalog.workspaces[0]!.worktrees.filter(worktree => !worktree.sessionId)
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(catalog)
+  const configured = await platformClient.providers.list()
+  const providers = deferred<typeof configured>()
+  vi.spyOn(platformClient.providers, "list").mockReturnValue(providers.promise)
+  const wrapper = await mountApp()
+
+  expect(wrapper.get('main [role="status"]').text()).toBe("Checking available Agents…")
+  expect(link(wrapper, "Set up an Agent")).toBeUndefined()
+  expect(button(wrapper, "Skip guide")).toBeUndefined()
+
+  providers.resolve(configured)
+  await flushPromises()
+  expect(button(wrapper, "Use suggested task")?.exists()).toBe(true)
+  expect(button(wrapper, "Skip guide")?.exists()).toBe(true)
 })
 
 test("the first-task guide drafts a task for a real workspace and offers handoff after completion", async () => {

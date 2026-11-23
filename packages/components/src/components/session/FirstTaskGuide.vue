@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Check, FolderOpen, Send } from "@lucide/vue"
+import { Bot, Check, FolderOpen, LoaderCircle, Send } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import UiButton from "../common/UiButton.vue"
@@ -27,16 +27,21 @@ const icons = { workspace: FolderOpen, agent: Bot, task: Send }
       </li>
     </ol>
     <div class="mt-4 border-t border-ui-border pt-4">
-      <h2 class="m-0 text-sm font-semibold">{{ t(`firstTask.${step}.title`) }}</h2>
-      <p class="m-0 mt-1.5 text-sm leading-relaxed text-ui-text-muted">
-        {{ t(step === 'workspace' && hasWorkspaces ? 'firstTask.workspace.existing' : `firstTask.${step}.description`) }}
+      <p v-if="step === 'agent' && !canSetUpAgent" role="status" class="m-0 flex items-center gap-2 text-sm text-ui-text-muted">
+        <LoaderCircle :size="15" class="shrink-0 motion-safe:animate-spin" aria-hidden="true" />{{ t('firstTask.agent.checking') }}
       </p>
-      <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <UiButton v-if="step === 'workspace' && !hasWorkspaces" type="button" variant="primary" @click="$emit('workspace')">{{ t('firstTask.workspace.choose') }}</UiButton>
-        <RouterLink v-else-if="step === 'agent' && canSetUpAgent" :to="{ name: 'settings-agents' }" class="ui-button-primary h-8 px-3 no-underline">{{ t('firstTask.agent.setup') }}</RouterLink>
-        <UiButton v-else-if="step === 'task' && suggestTask" type="button" @click="$emit('suggest')">{{ t('firstTask.task.suggest') }}</UiButton>
-        <UiButton type="button" variant="ghost" size="sm" @click="$emit('skip')">{{ t('firstTask.skip') }}</UiButton>
-      </div>
+      <template v-else>
+        <h2 class="m-0 text-sm font-semibold">{{ t(`firstTask.${step}.title`) }}</h2>
+        <p class="m-0 mt-1.5 text-sm leading-relaxed text-ui-text-muted">
+          {{ t(step === 'workspace' && hasWorkspaces ? 'firstTask.workspace.existing' : `firstTask.${step}.description`) }}
+        </p>
+        <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <UiButton v-if="step === 'workspace' && !hasWorkspaces" type="button" variant="primary" @click="$emit('workspace')">{{ t('firstTask.workspace.choose') }}</UiButton>
+          <RouterLink v-else-if="step === 'agent'" :to="{ name: 'settings-agents' }" class="ui-button-primary h-8 px-3 no-underline">{{ t('firstTask.agent.setup') }}</RouterLink>
+          <UiButton v-else-if="step === 'task' && suggestTask" type="button" @click="$emit('suggest')">{{ t('firstTask.task.suggest') }}</UiButton>
+          <UiButton type="button" variant="ghost" size="sm" @click="$emit('skip')">{{ t('firstTask.skip') }}</UiButton>
+        </div>
+      </template>
     </div>
   </div>
 </template>

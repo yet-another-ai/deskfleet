@@ -918,6 +918,7 @@
     },
     "agent": {
       "title": "Set up an Agent for this machine",
+      "checking": "Checking available Agents…",
       "description": "Choose an Agent you use, such as Codex or Claude Code. Finish its setup and sign-in, then return here to start the task.",
       "setup": "Set up an Agent"
     },

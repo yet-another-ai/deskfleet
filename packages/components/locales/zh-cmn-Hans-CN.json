@@ -918,6 +918,7 @@
     },
     "agent": {
       "title": "为这台机器设置 Agent",
+      "checking": "正在检查可用的 Agent…",
       "description": "选择你常用的 Agent，例如 Codex 或 Claude Code。完成设置和登录后，回到这里开始任务。",
       "setup": "设置 Agent"
     },
