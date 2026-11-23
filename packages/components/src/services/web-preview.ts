@@ -1,5 +1,5 @@
-import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
-import type { PortForwardHost } from "../../../client/src/ports.ts"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { PortForwardHost } from "@deskfleet/client/ports"
 
 export interface WebPreviewTarget {
   host: PortForwardHost
