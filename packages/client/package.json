@@ -1,6 +1,6 @@
 {
   "name": "@deskfleet/client",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "dependencies": {
     "@catppuccin/palette": "1.8.0",

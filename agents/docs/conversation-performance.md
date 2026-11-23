@@ -468,7 +468,7 @@ it conservatively disables structured-node reuse in documents containing links,
 and restoring incremental tokenization alone does not remove repeated Vue work.
 A carry-across `stream-markdown-parser@*` patch exports the parser's existing
 `registerCacheStableLinkValidator` function with its deterministic-function
-contract (currently against `1.2.26`). Only our module-level URL predicate is
+contract (currently against `1.2.28`). Only our module-level URL predicate is
 registered. The patch changes exports and type declarations, leaving parser
 algorithms and conservative behavior for other callbacks intact. Tests verify
 node identity for completed file/HTTP links and continued revalidation for an

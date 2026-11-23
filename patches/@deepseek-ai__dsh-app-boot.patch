@@ -1,8 +1,10 @@
 diff --git a/lib/index.js b/lib/index.js
-index 927ba78f65abd7d9a17f9b52c5743eac07d8bfaa..d347ef4dc15779b659675c883c1ac0634eb10db3 100644
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -2566,6 +2566,8 @@ function internalModules() {
+@@ -2568,12 +2568,14 @@
+ 	}
+ };
+ function internalModules() {
 -	const addon = createRequire(import.meta.url)("node-addon-require-builtin");
 -	const esmModule = addon.requireBuiltin("internal/modules/esm/loader");
 -	const cjsModule = addon.requireBuiltin("internal/modules/cjs/loader");
@@ -17,3 +19,6 @@ index 927ba78f65abd7d9a17f9b52c5743eac07d8bfaa..d347ef4dc15779b659675c883c1ac063
 +	const cjsHelpers = requireBuiltin("internal/modules/helpers");
 +	const esmUtils = requireBuiltin("internal/modules/esm/utils");
 +	const esmResolve = requireBuiltin("internal/modules/esm/resolve");
+ 	const esm = esmModule.getOrInitializeCascadedLoader();
+ 	const modern = "getOrCreateModuleJob" in esm;
+ 	/* v8 ignore start -- the supported Node 24/26 matrix validates each available Internal interface */

@@ -2575,6 +2575,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "curve25519-dalek"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "curve25519-dalek-derive",
+ "digest 0.11.3",
+ "fiat-crypto 0.3.0",
+ "rustc_version",
+ "subtle",
+]
+
+[[package]]
 name = "curve25519-dalek-derive"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2799,7 +2814,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-capture"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "block2 0.6.2",
  "deskfleet-gstreamer-media",
@@ -2823,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-control-store"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "chrono",
  "deskfleet-protocol",
@@ -2839,7 +2854,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-desktop-service"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-native",
  "deskfleet-windows-desktop",
@@ -2847,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-desktop-viewer"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "async-channel",
  "block2 0.6.2",
@@ -2894,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-encoder"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-capture",
  "deskfleet-gstreamer-media",
@@ -2912,7 +2927,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-gstreamer-media"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "libloading 0.9.1",
  "thiserror 2.0.21",
@@ -2921,7 +2936,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-input"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-linux-desktop",
  "deskfleet-wayland",
@@ -2940,18 +2955,18 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-linux-desktop"
-version = "0.21.0"
+version = "0.22.0"
 
 [[package]]
 name = "deskfleet-maintenance-service"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-windows-desktop",
 ]
 
 [[package]]
 name = "deskfleet-migration"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "sea-orm-migration",
  "tokio",
@@ -2959,7 +2974,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-model"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2968,7 +2983,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-native"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3001,7 +3016,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-node"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-model",
  "deskfleet-native",
@@ -3016,7 +3031,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-nvenc"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-nvenc-sys",
  "tracing",
@@ -3024,7 +3039,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-nvenc-sys"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "bindgen",
  "libloading 0.9.1",
@@ -3032,7 +3047,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-protocol"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-model",
  "serde",
@@ -3042,7 +3057,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-server"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -3084,7 +3099,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-store"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "deskfleet-migration",
  "deskfleet-model",
@@ -3098,7 +3113,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-wayland"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "futures-util",
  "reis",
@@ -3112,21 +3127,21 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-windows-desktop"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
+ "base64 0.23.1",
+ "ed25519-dalek 3.0.0",
  "rand 0.10.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "tracing",
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "deskfleet-x11"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "socket2",
  "thiserror 2.0.21",
@@ -3287,17 +3302,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
+dependencies = [
+ "signature 3.0.0",
+]
+
+[[package]]
 name = "ed25519-dalek"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
- "curve25519-dalek",
- "ed25519",
+ "curve25519-dalek 4.1.3",
+ "ed25519 2.2.3",
  "serde",
  "sha2 0.10.9",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ebaa1a2bf1290ab3bfe5a7b771d050ebffab2711c19a81691c683a5144a25de"
+dependencies = [
+ "curve25519-dalek 5.0.0",
+ "ed25519 3.0.0",
+ "sha2 0.11.1",
+ "subtle",
 ]
 
 [[package]]
@@ -6516,9 +6552,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-base"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf403f8cf3a973fef8f9234e2a769b6fad4cf01bcc14aff108e02af80399bdc7"
+checksum = "e083cbd14b906efbd94076939c7effd43fa3d1574f1d555919d099e9e0ec3e1c"
 dependencies = [
  "chrono",
  "html5ever",
@@ -6536,9 +6572,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-core"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ee5ae33b9d77bb6d2fb31defa94fc7a7b3d5d0125fd9854dcb996e7454ea5bd"
+checksum = "4b45a8b194c6879bcb26c6e430b804e49e97ec0fea5fad8c78d7710fd41f74a6"
 dependencies = [
  "cap-std",
  "chrono",
@@ -6571,9 +6607,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-engine"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f7e66fcd78c3b3814f9f7af94ed9221e210c045867c421510a1877c566eecab"
+checksum = "b4de944c36204b3f778b4fcf90373496d29507e8d38fb5e92a6e29a4cce637d7"
 dependencies = [
  "crossbeam-channel",
  "env_filter",
@@ -6604,9 +6640,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-android"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd56e13c470b2120728330d211f7185f3d602a56703c21f876baa8f8b451ba3"
+checksum = "f0b004abd6f0868d5b332c4d0d1f54394c0f4e1b3be57179cf2c239a8be85e5c"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -6622,9 +6658,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-apple"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ef41cc33a3b1fe572f568fa0a10d91b3c7545631e05f42437984627ec2e0ff2"
+checksum = "e3a094eee9e29979fd0fd1bcc8fca568c386d5ab10a46a67c72409c1c257561f"
 dependencies = [
  "block2 0.6.2",
  "cc",
@@ -6645,9 +6681,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-gpui"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a7eb57dd77411e4cb1ce0c2a2a52043d01d9219ecc74da2018ab38847759c78"
+checksum = "01d1e66c2c25af83258a9d66aea203df59bea7c16be38189f41682b2c7e08d48"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -6679,9 +6715,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-ios"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44611f5725557da51042247a4fe7739ef1103e34c1fc1e47c88d72be4016b978"
+checksum = "5b0b2189ea345de6bebf46870c5fd8ab49c38445dc77986a601e10180af041bc"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -6713,7 +6749,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c263483a4e5c6977dcade98dd1865b0bbdfbf4ff8dafbacaa3ad198e7bf1e2fe"
 dependencies = [
  "base64 0.22.1",
- "ed25519-dalek",
+ "ed25519-dalek 2.2.0",
  "flate2",
  "semver",
  "serde",

@@ -1,6 +1,6 @@
 {
   "name": "@deskfleet/daemon",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -13,7 +13,7 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "2.7.0",
+    "@agentclientprotocol/sdk": "2.8.0",
     "@deskfleet/agent-antigravity": "workspace:*",
     "@deskfleet/agent-claude-code": "workspace:*",
     "@deskfleet/agent-codebuddy": "workspace:*",
