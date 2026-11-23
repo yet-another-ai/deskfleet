@@ -1,7 +1,7 @@
 import { usePlatformClient } from "./usePlatformClient.ts"
 import { useDocumentVisibility, useIntervalFn, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, toValue, type MaybeRefOrGetter } from "vue"
-import type { SystemStatus } from "../../../client/src/system.ts"
+import type { SystemStatus } from "@deskfleet/client/system"
 
 export const SYSTEM_STATUS_INTERVAL = 2_000
 export const SYSTEM_STATUS_HISTORY = 60_000

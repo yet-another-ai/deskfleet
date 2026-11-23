@@ -1,7 +1,7 @@
-import enUS from "../../../../packages/components/locales/en-US.json"
-import jaJP from "../../../../packages/components/locales/ja-JP.json"
-import zhCmnHansCN from "../../../../packages/components/locales/zh-cmn-Hans-CN.json"
-import { DEFAULT_LOCALE, translate, type AppLocale, type MessageTree } from "../../../../packages/client/src/i18n.ts"
+import enUS from "@deskfleet/components/locales/en-US.json"
+import jaJP from "@deskfleet/components/locales/ja-JP.json"
+import zhCmnHansCN from "@deskfleet/components/locales/zh-cmn-Hans-CN.json"
+import { DEFAULT_LOCALE, translate, type AppLocale, type MessageTree } from "@deskfleet/client/i18n"
 
 const catalogs: Record<AppLocale, MessageTree> = {
   "en-US": enUS,

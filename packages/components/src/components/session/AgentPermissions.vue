@@ -3,7 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { ShieldAlert } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentPermission } from "@deskfleet/protocol/agent"
 import AgentToolCall from "./AgentToolCall.vue"
 const props = defineProps<{ permissions: AgentPermission[]; disabled: boolean }>()
 const emit = defineEmits<{ respond: [id: string, optionId: string] }>()

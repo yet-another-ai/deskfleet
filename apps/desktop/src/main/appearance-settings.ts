@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import { DEFAULT_APPEARANCE_SETTINGS, validateAppearanceSettings, type AppearanceSettings } from "../../../../packages/client/src/appearance.ts"
+import { DEFAULT_APPEARANCE_SETTINGS, validateAppearanceSettings, type AppearanceSettings } from "@deskfleet/client/appearance"
 
 /** Appearance belongs to the desktop installation, independently of selected machines. */
 export class AppearanceSettingsController {

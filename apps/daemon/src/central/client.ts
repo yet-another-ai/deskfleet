@@ -1,0 +1,421 @@
+import { chmod, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { hostname } from "node:os"
+import { join } from "node:path"
+import type { RemoteMcpRequest } from "@deskfleet/protocol/generated/central-control"
+import { apiRequest, type ApiRequestOptions } from "@deskfleet/client/api-request"
+import { HttpError } from "@deskfleet/client/request-diagnostics"
+import type { CentralSocket, CentralTransport } from "@deskfleet/client/central-transport"
+import type { RemoteMcp } from "../mcp/remote.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
+import type { GithubPullRequest, GithubPullRequestQuery } from "@deskfleet/client/central"
+import { AuthorizedPeers, type LocalPeerSink } from "../peers/authorized-peers.ts"
+import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "@deskfleet/protocol/central"
+import { CentralSync } from "./sync.ts"
+import type { ControlPeers } from "../control/server.ts"
+import { desktopErrorReason, type IceCandidate } from "@deskfleet/protocol/control"
+import { validateRelayedDesktopStart } from "../control/request.ts"
+import type { MachineOperations } from "../machine/operations.ts"
+
+const HEARTBEAT_MS = 20_000
+const IDLE_TIMEOUT_MS = 60_000
+/**
+ * A WebSocket close is only a request. The peer never answers on a dead link, and
+ * the implementation has no closing-handshake timeout, so a stalled close must
+ * not be the only path back to a working connection.
+ */
+const CLOSE_GRACE_MS = 5_000
+const RETRY_MIN_MS = 2_000
+const RETRY_MAX_MS = 30_000
+const CLOSE_REPORT_INTERVAL_MS = 60_000
+
+/** Only the backend's explicit machine credential error can retire an identity. */
+function machineCredentialRejected(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 401 && error.code === "machine_credential_rejected"
+    && error.response?.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
+}
+
+function reportPeerCleanupFailure(error: unknown): void {
+  // AuthorizedPeers aggregates resource shutdown failures. Malformed messages
+  // must still reject the control handler and close the control socket.
+  if (!(error instanceof AggregateError)) throw error
+  console.error("Central peer cleanup failed", error)
+}
+
+/** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
+export class CentralClient {
+  readonly #path: string
+  readonly #operations: MachineOperations
+  readonly #peers: AuthorizedPeers
+  readonly #sync: CentralSync
+  readonly #unsubscribeTerminals: () => void
+  #credentials: MachineCredentials | undefined
+  #socket: CentralSocket | undefined
+  #connected = false
+  #closed = false
+  #stopping = false
+  #stop: Promise<void> | undefined
+  #close: Promise<void> | undefined
+  readonly #httpClosing = new AbortController()
+  readonly #shutdownTimeoutMs: number
+  #retry: ReturnType<typeof setTimeout> | undefined
+  #retryDelay = RETRY_MIN_MS
+  #closeDeadline: ReturnType<typeof setTimeout> | undefined
+  #heartbeat: ReturnType<typeof setInterval> | undefined
+  #lastReceived = 0
+  #nextCloseReport = 0
+  #suppressedCloseReports = 0
+  #requests = new Set<Promise<void>>()
+  #enrolling = false
+  #revocation: Promise<void> | undefined
+
+  readonly #remoteMcp?: RemoteMcp
+  readonly #transport?: CentralTransport
+
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport) {
+    this.#remoteMcp = remoteMcp
+    this.#transport = centralTransport
+    this.#shutdownTimeoutMs = shutdownTimeoutMs
+    this.#path = join(directory, "central.json")
+    this.#operations = operations
+    this.#peers = new AuthorizedPeers({
+      peers, agents: operations.agents, terminals: operations.terminals,
+      identity: operations.agents.journal.identity,
+      signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
+    })
+    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates)
+    this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
+  }
+
+  async init(): Promise<void> {
+    try {
+      const saved = JSON.parse(await readFile(this.#path, "utf8")) as MachineCredentials
+      this.#credentials = { ...saved, serverUrl: centralUrl(saved.serverUrl) }
+      this.#peers.bind(this.#credentials)
+      this.#connect()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+  }
+
+  status(): CentralStatus {
+    const credentials = this.#credentials
+    return {
+      configured: !!credentials, connected: this.#connected, revoked: credentials?.revoked === true,
+      ...(credentials ? { serverUrl: credentials.serverUrl, machineId: credentials.machineId, teamId: credentials.teamId } : {}),
+      identity: this.#operations.agents.journal.identity, machineName: hostname(),
+    }
+  }
+
+  desktopCapabilitiesChanged(): void { this.#sync.changed() }
+
+  openLocal(peerId: string, token: string, owner: object, sink: LocalPeerSink): void {
+    this.#peers.openLocal(peerId, token, owner, sink)
+  }
+
+  sendLocal(peerId: string, owner: object, data: Buffer, isString: boolean): void {
+    this.#peers.sendLocal(peerId, owner, data, isString)
+  }
+
+  closeLocal(peerId: string, owner: object): Promise<void> {
+    return this.#peers.closeLocal(peerId, owner)
+  }
+
+  /** Schedules and session tools retain user intent, never a reusable user login token. */
+  async authorizeDelegation(actor: AgentActor): Promise<AgentActor> {
+    const credentials = this.#credentials
+    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Machine delegation is unavailable")
+    const result = await this.#api<{ authorized?: boolean }>(credentials, "/api/daemon/authorize-delegation", {
+      method: "POST", json: { userId: actor.userId }, timeoutMs: 15_000, totalTimeoutMs: 15_000,
+      errorPrefix: "User delegation is no longer authorized",
+    })
+    if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
+    return structuredClone(actor)
+  }
+
+  /** Read PR state using the Session author's current opt-in; no user token reaches the daemon. */
+  async githubPullRequest(actor: AgentActor, query: GithubPullRequestQuery): Promise<{ pullRequest: GithubPullRequest | null }> {
+    const credentials = this.#credentials
+    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("GitHub pull request status is unavailable")
+    return this.#api(credentials, "/api/daemon/github/pull-request", {
+      method: "POST", json: { userId: actor.userId, query }, timeoutMs: 45_000, totalTimeoutMs: 45_000,
+      errorPrefix: "GitHub pull request status is unavailable",
+    })
+  }
+
+  /** The credential fixes the source registration; the backend authorizes the target in that Team. */
+  async remoteMcp(request: RemoteMcpRequest): Promise<unknown> {
+    const credentials = this.#credentials
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Remote Agent delegation is unavailable")
+    return this.#api(credentials, "/api/daemon/mcp", {
+      method: "POST", redirect: "error", json: request, timeoutMs: 105_000, totalTimeoutMs: 105_000,
+      errorPrefix: "Remote MCP request failed",
+    })
+  }
+
+  /** Fresh quota reads and admission writes with stable operation/generation IDs are safe to retry. */
+  async quotaRequest(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+    const credentials = this.#credentials
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Team allowance is unavailable")
+    return this.#api(credentials, path, {
+      method, ...(body === undefined ? {} : { json: body }), idempotent: true,
+      errorPrefix: "Team allowance request failed",
+    })
+  }
+
+  async enroll(value: MachineEnrollment): Promise<CentralStatus> {
+    if (this.#stopping || this.#closed || this.#enrolling) throw new Error("Machine enrollment is unavailable")
+    const previous = this.#credentials
+    if (value.originId !== this.#operations.agents.journal.identity.originId) throw new Error("Machine credentials do not match this catalog origin")
+    if (previous && !previous.revoked) {
+      if (previous.serverUrl === centralUrl(value.serverUrl) && previous.machineId === value.machineId && previous.teamId === value.teamId && previous.token === value.token) return this.status()
+      throw new Error("This Team registration is already enrolled")
+    }
+    if (previous && (previous.serverUrl !== centralUrl(value.serverUrl) || previous.machineId !== value.machineId || previous.teamId !== value.teamId)) {
+      throw new Error("Re-enrollment must retain this Team's machine identity")
+    }
+    this.#enrolling = true
+    try {
+      try { await this.#revocation } catch {
+        // A failed cleanup must not block every later enrollment. Retry it now
+        // that the fault may have cleared; a repeated failure fails only this attempt.
+        this.#revocation = this.#retire()
+        await this.#revocation
+      }
+      const serverUrl = centralUrl(value.serverUrl)
+      const verified = await apiRequest<{
+        serverId: string; machine: { id: string; teamId: string; originId: string; localMachineId: string }
+      }>(`${serverUrl}/api/daemon/me`, {
+        headers: { authorization: `Bearer ${value.token}` }, totalTimeoutMs: 15_000,
+        signal: this.#httpClosing.signal, errorPrefix: "Machine enrollment verification failed",
+        fetch: this.#transport?.fetch, transport: this.#transport?.transport,
+      })
+      const identity = this.#operations.agents.journal.identity
+      if (!verified.serverId || verified.machine.id !== value.machineId || verified.machine.teamId !== value.teamId ||
+        verified.machine.originId !== identity.originId || verified.machine.localMachineId !== identity.machineId) {
+        throw new Error("Machine credentials do not match this daemon and selected team")
+      }
+      const credentials: MachineCredentials = { serverUrl, serverId: verified.serverId, machineId: value.machineId, teamId: value.teamId, token: value.token }
+      await this.#save(credentials)
+      this.#credentials = credentials
+      this.#revocation = undefined
+      this.#peers.bind(credentials)
+      this.#connect()
+      return this.status()
+    } finally { this.#enrolling = false }
+  }
+
+  async #save(credentials: MachineCredentials): Promise<void> {
+    const temporary = `${this.#path}.tmp`
+    try {
+      await writeFile(temporary, JSON.stringify(credentials), { mode: 0o600 })
+      if (process.platform !== "win32") await chmod(temporary, 0o600)
+      await rename(temporary, this.#path)
+    } finally { await rm(temporary, { force: true }) }
+  }
+
+  async #http(path: string, body: unknown): Promise<unknown> {
+    const credentials = this.#credentials
+    if (!credentials || this.#closed) throw new Error("Machine is not connected to a team")
+    return this.#api(credentials, path, {
+      method: "POST", json: body, timeoutMs: 30_000, totalTimeoutMs: 30_000, errorPrefix: "Central sync failed",
+    })
+  }
+
+  async #api<T>(credentials: MachineCredentials, path: string, options: ApiRequestOptions): Promise<T> {
+    try {
+      return await apiRequest<T>(`${credentials.serverUrl}${path}`, {
+        ...options, headers: { authorization: `Bearer ${credentials.token}` }, signal: this.#httpClosing.signal,
+        fetch: this.#transport?.fetch, transport: this.#transport?.transport,
+      })
+    } catch (error) {
+      // Only the captured registration's explicit credential rejection can revoke it.
+      if (machineCredentialRejected(error)) await this.#revoked(credentials)
+      throw error
+    }
+  }
+
+  #connect(): void {
+    if (this.#stopping || this.#closed || !this.#credentials || this.#credentials.revoked || this.#socket) return
+    const url = new URL("/api/daemon/ws", this.#credentials.serverUrl)
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+    const socket = this.#transport?.socket?.(url.toString()) ?? new WebSocket(url)
+    this.#socket = socket
+    this.#lastReceived = Date.now()
+    socket.addEventListener("open", () => this.#send({ type: "authenticate", token: this.#credentials!.token }))
+    socket.addEventListener("message", event => {
+      if (this.#socket !== socket || socket.readyState !== WebSocket.OPEN) return
+      this.#lastReceived = Date.now()
+      const pending = this.#message(event.data).catch(error => {
+        console.error("Central control message failed", error instanceof Error ? error.message : String(error))
+        if (this.#socket !== socket || socket.readyState !== WebSocket.OPEN) return
+        // Node and browser WebSockets only allow 1000 or application codes 3000–4999.
+        socket.close(4002, "Invalid control message")
+      }).finally(() => this.#requests.delete(pending))
+      this.#requests.add(pending)
+    })
+    socket.addEventListener("error", () => { /* close schedules reconnection */ })
+    socket.addEventListener("close", event => {
+      if (this.#socket !== socket) return
+      this.#reportClose(event.code)
+      clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
+      this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
+      // 4401/4403 are durable credential rejection. Other codes (including 1012 for an
+      // interrupted pre-auth hello) reconnect with the same machine identity.
+      if (event.code === 4401 || event.code === 4403) {
+        void this.#revoked().catch(error => console.error("Revoked machine cleanup failed", error))
+      } else this.#reconnect()
+    })
+    this.#heartbeat = setInterval(() => {
+      if (Date.now() - this.#lastReceived > IDLE_TIMEOUT_MS) this.#stale(socket)
+      else this.#send({ type: "ping" })
+    }, HEARTBEAT_MS)
+    this.#heartbeat.unref()
+  }
+
+  /** Preserve a useful close code without letting a reconnect loop flood diagnostics. */
+  #reportClose(closeCode: number): void {
+    if (this.#stopping || this.#closed) return
+    const now = Date.now()
+    if (now < this.#nextCloseReport) { this.#suppressedCloseReports++; return }
+    this.#nextCloseReport = now + CLOSE_REPORT_INTERVAL_MS
+    console.warn("Central control link closed", {
+      teamId: this.#credentials?.teamId, machineId: this.#credentials?.machineId, closeCode,
+      ...(closeCode === 4401 || closeCode === 4403 ? {} : { reconnectDelayMs: this.#retryDelay }),
+      suppressedSinceLastReport: this.#suppressedCloseReports,
+    })
+    this.#suppressedCloseReports = 0
+  }
+
+  /**
+   * Request an orderly close, then abandon the link. A dead peer never answers the
+   * closing handshake, so waiting for the close event alone leaves the daemon
+   * permanently offline with the socket still owning `#socket`.
+   */
+  #stale(socket: CentralSocket): void {
+    if (this.#socket !== socket || this.#closeDeadline) return
+    this.#connected = false; this.#sync.disable()
+    socket.close(4000, "Control link heartbeat timed out")
+    this.#closeDeadline = setTimeout(() => {
+      this.#closeDeadline = undefined
+      if (this.#socket !== socket) return
+      this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
+      this.#reconnect()
+    }, CLOSE_GRACE_MS)
+    this.#closeDeadline.unref()
+  }
+
+  /** Replace a lost link without waiting on its close event, backing off while attempts fail. */
+  #reconnect(): void {
+    if (this.#stopping || this.#closed) return
+    clearTimeout(this.#retry)
+    this.#retry = setTimeout(() => { this.#retry = undefined; this.#connect() }, this.#retryDelay)
+    this.#retry.unref()
+    this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
+  }
+
+  #send(message: unknown): void {
+    if (this.#socket?.readyState === WebSocket.OPEN) this.#socket.send(JSON.stringify(message))
+  }
+
+  async #message(raw: unknown): Promise<void> {
+    if (this.#stopping) return
+    if (typeof raw !== "string") throw new Error("Expected JSON control messages")
+    const message = JSON.parse(raw) as ServerMessage
+    if (message.type === "ready") {
+      if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId || message.serverId !== this.#credentials?.serverId) throw new Error("Control identity mismatch")
+      this.#connected = true; this.#sync.enable(); this.#retryDelay = RETRY_MIN_MS
+      void this.#operations.agents.reconcileAdmissions().catch(error => console.error("Session admission reconciliation failed", error))
+      return
+    }
+    if (message.type === "ping") { this.#send({ type: "pong" }); return }
+    if (message.type === "pong") return
+    if (!this.#connected) throw new Error("Authenticate the control channel first")
+    if (message.type === "peerRevoked") { await this.#peers.close(message.peerId).catch(reportPeerCleanupFailure); return }
+    if (message.type === "reconcilePeers") { await this.#peers.reconcile(message.peers).catch(reportPeerCleanupFailure); return }
+    if (message.type !== "request") throw new Error("Unknown control message")
+    // Each RPC is independent: a slow Provider operation must not block revocation.
+    try {
+      const result = await this.#request(message.method, message.params, message.actor)
+      this.#send({ type: "response", id: message.id, result })
+    } catch (error) {
+      const reason = desktopErrorReason(error)
+      this.#send({ type: "response", id: message.id, error: { code: "operation_failed", message: error instanceof Error ? error.message : String(error), ...(reason ? { reason } : {}) } })
+    }
+  }
+
+  async #request(method: string, value: unknown, actor?: AgentActor): Promise<unknown> {
+    const params = value as Record<string, unknown>
+    switch (method) {
+      case "remoteMcpDiscover":
+      case "remoteMcp":
+        if (!this.#credentials || !this.#remoteMcp) throw new Error("Remote MCP is unavailable")
+        return this.#remoteMcp.handle(method, value, actor, this.#credentials)
+      case "peer.offer": return this.#peers.offer(value as PeerOffer)
+      case "peer.local": this.#peers.prepareLocal(value as LocalPeerGrant); return null
+      case "peer.candidate": await this.#peers.candidate(params.peerId as string, params.candidate as IceCandidate); return null
+      case "peer.close": await this.#peers.close(params.peerId as string); return null
+      case "peer.start": await this.#peers.start(params.peerId as string, validateRelayedDesktopStart(params)); return null
+      default: return this.#operations.handle(method, value, actor)
+    }
+  }
+
+  #revoked(expected?: MachineCredentials): Promise<void> {
+    if (expected && this.#credentials !== expected) return Promise.resolve()
+    if (this.#revocation) return this.#revocation
+    this.#sync.disable(); this.#connected = false
+    clearTimeout(this.#retry); clearTimeout(this.#closeDeadline); clearInterval(this.#heartbeat)
+    this.#closeDeadline = undefined
+    const socket = this.#socket; this.#socket = undefined; socket?.close()
+    const credentials = this.#credentials
+    if (credentials) this.#credentials = { ...credentials, revoked: true }
+    // Retain this Team's execution and history. Re-enrollment replaces its token
+    // without changing the catalog or stopping accepted work.
+    return this.#revocation = this.#retire()
+  }
+
+  /**
+   * Close this registration's peers and persist its logout. Settle only after both
+   * finish, so a retry never overlaps an earlier write of the credential file.
+   */
+  async #retire(): Promise<void> {
+    const results = await Promise.allSettled([
+      this.#peers.closeAll(),
+      this.#credentials ? this.#save(this.#credentials) : undefined,
+    ])
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length === 1) throw failures[0]
+    if (failures.length) throw new AggregateError(failures, "Revoked machine cleanup failed")
+  }
+
+  stop(): Promise<void> {
+    if (this.#stop) return this.#stop
+    this.#stopping = true; this.#connected = false
+    this.#sync.disable()
+    clearTimeout(this.#retry); clearTimeout(this.#closeDeadline); clearInterval(this.#heartbeat)
+    this.#closeDeadline = undefined
+    const socket = this.#socket; this.#socket = undefined; socket?.close()
+    return this.#stop = (async () => {
+      await this.#peers.closeAll()
+      await Promise.allSettled([...this.#requests])
+    })()
+  }
+
+  /** Called after Agent/PTY producers and their accepted management RPCs stop. */
+  close(): Promise<void> {
+    return this.#close ??= (async () => {
+      try { await this.stop(); await this.#revocation }
+      finally {
+        this.#unsubscribeTerminals()
+        const deadline = setTimeout(() => this.#httpClosing.abort(new Error("Final history synchronization timed out")), this.#shutdownTimeoutMs)
+        try { await this.#sync.close(!!this.#credentials && !this.#credentials.revoked) }
+        finally {
+          clearTimeout(deadline)
+          this.#httpClosing.abort()
+          this.#closed = true
+        }
+      }
+    })()
+  }
+}

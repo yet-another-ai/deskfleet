@@ -57,7 +57,7 @@ Workspace is selected and remembers the last choice on that device.
 ### Git automation policy
 
 Daemon Git preparation, inspection, watchers, file-reference discovery, branch
-discovery, and generated-checkout lifecycle share `git-execution.ts`. Inherited
+discovery, and generated-checkout lifecycle share the daemon's `git/execution.ts`. Inherited
 `GIT_*` overrides are removed. Every invocation disables repository hooks and
 fsmonitor; diffs disable external commands and text conversion, and checkouts
 disable all discovered filter drivers. Only HTTPS, SSH, and local-file transports
@@ -885,10 +885,10 @@ the start of the message and enter the backlog. Other advertised commands remain
 in `/`. The daemon does not scan skill directories or infer universal skill
 invocation semantics.
 
-`composer-references.ts` owns file/Session discovery and resolution;
-`agent-composer-commands.ts` owns the initial command-notification wait. Shared
-`composer-mentions.ts` and `composer-prompt.ts` own token identities and prompt
-assembly. Both reference RPCs require `agent:execute` on the authenticated Agent
+The daemon's `agent/composer-references.ts` owns file/Session discovery and
+resolution; `agent/composer-commands.ts` owns the initial command-notification
+wait. Shared `composer-mentions.ts` and `composer-prompt.ts` own token
+identities and prompt assembly. Both reference RPCs require `agent:execute` on the authenticated Agent
 peer, return reference metadata rather than file contents, and do not write the
 journal. Provider prompts retain the existing submission and delivery audit.
 

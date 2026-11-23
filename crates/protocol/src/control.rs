@@ -357,7 +357,7 @@ mod tests {
     fn generated_control_types_are_current() {
         assert_eq!(
             super::typescript(),
-            include_str!("../control.ts"),
+            include_str!("../../../packages/protocol/src/generated/central-control.ts"),
             "run cargo run -p deskfleet-protocol --example export_types"
         );
     }

@@ -1,13 +1,13 @@
 import { adminPlanQuotasFixture, creditRatesFixture, planCatalogFixture, quotaFixture } from "./plan-quotas.ts"
 import { vi } from "vitest"
-import type { CreditRates, HostedPlan, PlanQuota } from "../../../client/src/billing.ts"
-import type { AdminPlanQuota } from "../../../client/src/central.ts"
-import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
-import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
-import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { RegisterSuperAgentMachineSessionInput, SuperAgentConfig, SuperAgentConfigUpdate, SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
-import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-usage.ts"
-import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
+import type { CreditRates, HostedPlan, PlanQuota } from "@deskfleet/client/billing"
+import type { AdminPlanQuota } from "@deskfleet/client/central"
+import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "@deskfleet/client/billing"
+import type { AccountDeletionRequestPage } from "@deskfleet/client/account-deletion"
+import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "@deskfleet/client/ai-usage"
+import type { RegisterSuperAgentMachineSessionInput, SuperAgentConfig, SuperAgentConfigUpdate, SuperAgentSession, SuperAgentUsage } from "@deskfleet/client/super-agent"
+import type { SiteUsagePeriod, SiteUsageTrends } from "@deskfleet/client/site-usage"
+import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "@deskfleet/client/central"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
   return { plan: "selfHosted", limits: quotaFixture.selfHosted, planCatalog: planCatalogFixture(), usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }

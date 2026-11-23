@@ -1,6 +1,6 @@
-import { FILE_CHUNK_BYTES, FILE_PIPELINE_CHUNKS, type FileEndpoint, type FileEntry, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, FILE_PIPELINE_CHUNKS, type FileEndpoint, type FileEntry, type FileReply } from "@deskfleet/protocol/files"
 
-export { FILE_PIPELINE_CHUNKS } from "../../../apps/daemon/src/files-protocol.ts"
+export { FILE_PIPELINE_CHUNKS } from "@deskfleet/protocol/files"
 
 export async function copyFileChunks(options: {
   source: FileEndpoint; destination: FileEndpoint; file: FileEntry; transferId: string; path: string

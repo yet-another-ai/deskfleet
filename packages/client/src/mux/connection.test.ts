@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { MuxConnection, type MuxStream } from "./connection.ts"
-import { MUX_FRAME_BYTES, MUX_HEADER_BYTES, MUX_LABELS, MUX_MAX_STREAMS, MUX_STREAM_QUEUE_BYTES, MUX_WINDOW_BYTES, decodeMuxFrame, encodeMuxControl, encodeMuxFrame, muxFrameCost, type MuxLane } from "./protocol.ts"
+import { MUX_FRAME_BYTES, MUX_HEADER_BYTES, MUX_LABELS, MUX_MAX_STREAMS, MUX_STREAM_QUEUE_BYTES, MUX_WINDOW_BYTES, decodeMuxFrame, encodeMuxControl, encodeMuxFrame, muxFrameCost, type MuxLane } from "@deskfleet/protocol/mux"
 
 const connections: MuxConnection[] = []
 afterEach(() => { for (const connection of connections.splice(0)) connection.close() })

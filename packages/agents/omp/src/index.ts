@@ -4,7 +4,7 @@ import {
   UNSUPPORTED_INSTALL_PLATFORM_MESSAGE,
   type AgentProvider, type AgentProviderPlugin, type AgentQuotaItem,
 } from "@deskfleet/agent-core"
-import { parseOmpComposerSkill } from "./protocol.ts"
+import { parseOmpComposerSkill } from "@deskfleet/protocol/agents/omp"
 
 export { parseOmpComposerSkill }
 

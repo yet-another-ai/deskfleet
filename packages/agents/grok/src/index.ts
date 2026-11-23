@@ -4,7 +4,7 @@ import {
   supportsAutoInstallPlatform, UNSUPPORTED_INSTALL_PLATFORM_MESSAGE,
   type AcpExtension, type AgentConfig, type AgentProcess, type AgentProvider, type AgentProviderPlugin,
 } from "@deskfleet/agent-core"
-import { GROK_SESSION_CONFIG_META_KEY } from "./protocol.ts"
+import { GROK_SESSION_CONFIG_META_KEY } from "@deskfleet/protocol/agents/grok"
 import {
   answerGrokQuestion, GROK_ASK_USER_QUESTION_ALIAS, GROK_ASK_USER_QUESTION_METHOD, grokPlanInterview, grokPlanOutcome,
 } from "./questions.ts"

@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto"
 import { lstat, mkdir, realpath, stat } from "node:fs/promises"
 import { basename, dirname, join, posix, win32 } from "node:path"
 import type { FileTarget } from "@deskfleet/client/files"
-import { defaultDirectory, fileError, sessionResourcePath, uploadPath } from "../../../daemon/src/files-paths.ts"
-import type { FileEndpoint, FileMethod, FileMethods, FileReply } from "../../../daemon/src/files-protocol.ts"
-import { FilesService } from "../../../daemon/src/files-service.ts"
+import { defaultDirectory, fileError, sessionResourcePath, uploadPath } from "@deskfleet/daemon/files-paths"
+import type { FileEndpoint, FileMethod, FileMethods, FileReply } from "@deskfleet/protocol/files"
+import { FilesService } from "@deskfleet/daemon/files-service"
 
 type LocalTarget = Extract<FileTarget, { kind: "local" }>
 type Permission = "read" | "write"

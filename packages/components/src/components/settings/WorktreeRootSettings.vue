@@ -3,7 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { WorktreeRootState } from "../../../../client/src/settings.ts"
+import type { WorktreeRootState } from "@deskfleet/client/settings"
 import SettingsRow from "./SettingsRow.vue"
 
 const platformClient = usePlatformClient()

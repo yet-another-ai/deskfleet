@@ -1,4 +1,4 @@
-import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
+import type { WindowsDesktopServiceState } from "@deskfleet/client/windows-desktop-service"
 
 export type WindowsDesktopServiceCommand = "status" | "maintenance-update" | "elevate-install" | "elevate-uninstall"
 export type WindowsDesktopServiceRunner = (command: WindowsDesktopServiceCommand) => Promise<string>

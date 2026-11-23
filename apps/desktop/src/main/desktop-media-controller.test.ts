@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import type { DaemonEvent } from "../../../daemon/src/control-protocol.ts"
+import type { DaemonEvent } from "@deskfleet/protocol/control"
 
 const mock = vi.hoisted(() => ({ connect: vi.fn() }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: mock.connect } }))

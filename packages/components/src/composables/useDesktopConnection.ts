@@ -1,15 +1,15 @@
 import { computed, onScopeDispose, ref, shallowRef } from "vue"
-import type { RelayDeniedReason } from "../../../client/src/relay.ts"
-import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
-import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage, type DesktopSettingsMessage } from "../../../client/src/desktop-input.ts"
+import type { RelayDeniedReason } from "@deskfleet/client/relay"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "@deskfleet/client/peer-lifecycle"
+import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage, type DesktopSettingsMessage } from "@deskfleet/client/desktop-input"
 import type {
   DesktopMediaApi,
   DesktopErrorReason,
   DesktopStart,
   IceCandidate,
   VideoCodec,
-} from "../../../client/src/desktop-media.ts"
-import { DESKTOP_START_TIMEOUT_MS, desktopErrorReason } from "../../../client/src/desktop-media.ts"
+} from "@deskfleet/client/desktop-media"
+import { DESKTOP_START_TIMEOUT_MS, desktopErrorReason } from "@deskfleet/client/desktop-media"
 
 export type DesktopConnectionState = "idle" | "connecting" | "starting" | "connected" | "error"
 export interface DesktopFailure {

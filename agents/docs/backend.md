@@ -145,17 +145,17 @@ distinct.
 | --- | --- |
 | [Server routes](../../apps/server/src/lib.rs) expose only `/healthz`; startup opens the catalog | Implement the authenticated control-plane APIs and daemon connection service |
 | [LocalCatalog](../../crates/store/src/local.rs) creates a `Local` Team/Machine and permits use without login | Require enrollment and authenticated Team context in the integrated flow; retain local storage and resource ownership |
-| [Control server](../../apps/daemon/src/control-server.ts) uses one discovery token and an authenticated boolean for local APIs | Bind requests and peers to verified identities and Team actions; local socket authentication remains a transport check |
-| [Agent store](../../apps/daemon/src/agent-store.ts) constructs a `local_token` actor | Record verified user and device identities; an optional source Machine represents an actual enrolled machine, never a fabricated browser machine |
+| [Control server](../../apps/daemon/src/control/server.ts) uses one discovery token and an authenticated boolean for local APIs | Bind requests and peers to verified identities and Team actions; local socket authentication remains a transport check |
+| [Agent store](../../apps/daemon/src/agent/store.ts) constructs a `local_token` actor | Record verified user and device identities; an optional source Machine represents an actual enrolled machine, never a fabricated browser machine |
 | [Fleet store](../../packages/components/src/stores/fleet.ts) fixes the target to `local-daemon` | Read the Team catalog from the backend and route operations to selected machines |
 | [Router](../../packages/components/src/router/index.ts) and Session stores identify resources by unqualified local IDs | Qualify routes, caches, drafts, and pending operations by resource origin/target so equal IDs on different machines cannot collide |
 | [Desktop signaling](../../apps/desktop/src/main/desktop-media-controller.ts) connects only to local IPC and reports signaling loss as peer failure | Add central signaling and backend management transports; keep valid working peers alive across signaling loss, bounded by revocation and expiry |
 | [Agent](../../packages/components/src/services/agent-client.ts), [terminal](../../packages/components/src/services/terminal-client.ts), and [desktop](../../packages/components/src/composables/useDesktopConnection.ts) peers use empty ICE server lists | Apply server-issued STUN/TURN configuration to both peers and verify relayed access |
 | [Session history](../../packages/components/src/stores/agent-sessions.ts) reads only through the daemon DataChannel | Add backend history reads and reconcile the stored watermark with live subscription without replaying commands |
-| [Catalog notifications](../../apps/daemon/src/catalog.ts) publish immediate `catalogChanged` events | Add synchronization that recovers missed changes and records deletions independently of removed resources |
-| [Session deletion](../../apps/daemon/src/agent-sessions.ts) removes resource rows and their journal | Keep deletion separate from archive/restore: archive reclaims generated checkouts while retaining history; deletion also removes local records and retained worktree refs |
-| [Terminal hangup](../../apps/daemon/src/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
-| [Provider snapshots](../../apps/daemon/src/agent-providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
+| [Catalog notifications](../../apps/daemon/src/machine/catalog.ts) publish immediate `catalogChanged` events | Add synchronization that recovers missed changes and records deletions independently of removed resources |
+| [Session deletion](../../apps/daemon/src/agent/session-transitions.ts) removes resource rows and their journal | Keep deletion separate from archive/restore: archive reclaims generated checkouts while retaining history; deletion also removes local records and retained worktree refs |
+| [Terminal hangup](../../apps/daemon/src/terminals/terminals.ts) removes the transcript and metadata | Add a stop-and-retain path for archive; close only Session-owned PTYs and preserve all terminal records |
+| [Provider snapshots](../../apps/daemon/src/providers/providers.ts) include launch settings and environment values | Separate display metadata from configuration; keep secrets out of central replicas, command audit payloads, and logs |
 | [Agent queries](../../crates/store/src/agent/queries.rs) use the daemon's typed SQLite entities and SeaQuery builders | Keep PostgreSQL server persistence independent of the local journal |
 | [Renderer CSP](../../apps/desktop/src/shared/renderer-csp.ts) forbids network access and UI code calls `window.deskfleet` | Extract shared UI behind application adapters; Electron supplies a main-process/preload adapter and Web supplies a browser API/signaling adapter |
 
@@ -168,7 +168,7 @@ may pass through the authorized API, but launch environment values and CLI
 credentials do not belong in the central catalog/history. Synchronize only the
 Provider metadata needed for selection and display.
 
-The one-shot [agent CLI](../../apps/daemon/src/agent-cli.ts) starts a provider
+The one-shot [agent CLI](../../apps/daemon/src/agent/cli.ts) starts a provider
 directly in a chosen working directory for adapter diagnostics. It does not
 create managed resources or provide an unauthenticated path into Team Sessions.
 A future production CLI/MCP client should use the same authorized operations as
@@ -416,7 +416,7 @@ Agent/terminal I/O with WebRTC creation disabled. Reconnection replays the same
 shell transcript, and signaling loss preserves an established local grant:
 
 ```sh
-mise exec -- node --test apps/daemon/src/authorized-peers.test.ts apps/daemon/src/local-channel.test.ts
+mise exec -- node --test apps/daemon/src/peers/authorized-peers.test.ts apps/daemon/src/control/local-channel.test.ts
 ```
 
 The shared client and Electron suites cover the DataChannel surface, transport

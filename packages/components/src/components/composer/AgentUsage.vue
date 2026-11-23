@@ -4,7 +4,7 @@ import { vSpring } from "../../directives/spring.ts"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import type { AgentUsage } from "../../services/agent-usage.ts"
 

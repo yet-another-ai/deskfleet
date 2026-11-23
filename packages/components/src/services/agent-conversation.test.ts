@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import type { AgentEvent, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentTurn } from "@deskfleet/protocol/agent"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
 import { groupTranscript, projectConversation, sessionCanMarkUnread, sessionIsUnread, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
 const update = (seq: number, update: Record<string, unknown>) => agentEvent(seq, "acp", { sessionId: "provider-session", update } as AgentEvent["payload"])

@@ -1,0 +1,231 @@
+import { TestAgentQuotas } from "../fixtures/agent-quotas.ts"
+import assert from "node:assert/strict"
+import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { setTimeout as delay } from "node:timers/promises"
+import { promisify } from "node:util"
+import test from "node:test"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { openInMemoryCatalog } from "@deskfleet/native"
+import type { AgentClient, AgentConnection, AgentProvider } from "../acp/connection.ts"
+import { AgentSessions } from "./sessions.ts"
+import type { AgentSnapshot } from "@deskfleet/protocol/agent"
+import { DaemonCatalog } from "../machine/catalog.ts"
+
+const execute = promisify(execFile)
+class ForkProvider implements AgentProvider {
+  id = "codex"
+  supported = true
+  failFork = false
+  created = 0
+  closed: string[] = []
+  forks: acp.ForkSessionRequest[] = []
+  resumes: string[] = []
+  promptBarrier?: Promise<void>
+  forkBarrier?: Promise<void>
+  async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
+    let id = ""
+    return {
+      initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {}, additionalDirectories: {}, ...(this.supported ? { fork: {} } : {}) } } },
+      newSession: async () => ({ sessionId: id = `original-${++this.created}` }),
+      forkSession: async params => {
+        this.forks.push(structuredClone(params))
+        await this.forkBarrier
+        if (this.failFork) throw new Error("Fork failed at provider")
+        return { sessionId: id = `fork-${this.forks.length}` }
+      },
+      resume: async params => { id = params.sessionId; this.resumes.push(id); return {} },
+      setConfigOption: async () => ({ configOptions: [] }),
+      prompt: async params => {
+        await this.promptBarrier
+        await client.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "An inherited answer" } } })
+        return { stopReason: "end_turn" }
+      },
+      steer: async () => ({ outcome: "inactive" }), cancel: async () => {}, close: async () => { this.closed.push(id) },
+    }
+  }
+}
+
+async function setup(t: { after(action: () => Promise<void>): void }, supported = true) {
+  const directory = await mkdtemp(join(tmpdir(), "df-fork-"))
+  const repository = join(directory, "repo")
+  await mkdir(repository)
+  await execute("git", ["init", repository])
+  await writeFile(join(repository, "README.md"), "committed\n")
+  await execute("git", ["-C", repository, "add", "."])
+  await execute("git", ["-C", repository, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "initial"])
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const workspace = await catalog.native.createWorkspace("Fork", [{ path: repository }])
+  const provider = new ForkProvider()
+  provider.supported = supported
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
+  await sessions.init()
+  t.after(async () => { await sessions.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const actor = sessions.actor()
+  const source = await sessions.handle("_deskfleet/session/create", {
+    workspaceId: workspace.id, operationId: randomUUID(), provider: "codex", context: "directory", title: "Original",
+  }, actor) as AgentSnapshot
+  const fork = (context: "directory" | "worktree" = "directory", operationId = randomUUID()) => sessions.handle("_deskfleet/session/fork", { sessionId: source.session.id, operationId, context }, actor) as Promise<AgentSnapshot>
+  return { catalog, sessions, actor, provider, source, fork, repository }
+}
+
+async function until(read: () => Promise<AgentSnapshot>, ready: (snapshot: AgentSnapshot) => boolean): Promise<AgentSnapshot> {
+  for (let n = 0; n < 300; n++) { const value = await read(); if (ready(value)) return value; await delay(10) }
+  throw new Error("Agent state did not settle")
+}
+
+async function forkAfterTurn(fork: (operationId: ReturnType<typeof randomUUID>) => Promise<AgentSnapshot>) {
+  // A completed turn is persisted before runtime cleanup and its final backlog
+  // check finish. Rejected operation IDs keep their result, so each attempt is new.
+  for (let n = 0; n < 300; n++) {
+    const operationId = randomUUID()
+    try { return { snapshot: await fork(operationId), operationId } }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== "Wait for the current Agent operation before forking") throw error
+    }
+    await delay(10)
+  }
+  throw new Error("Agent remained busy after turn completion")
+}
+
+test("fork creates an independent conversation, history and owned context, and retries reuse it", async t => {
+  const f = await setup(t)
+  assert.equal(f.source.session.capabilities?.fork, true)
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId: f.source.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Remember this" }], delivery: "backlog" }, f.actor)
+  const original = await until(() => f.sessions.journal.read(f.source.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: child, operationId } = await forkAfterTurn(operationId => f.fork("worktree", operationId))
+  assert.equal(child.session.lifecycle, "ready")
+  assert.notEqual(child.session.id, original.session.id)
+  assert.notEqual(child.session.providerSessionId, original.session.providerSessionId)
+  assert.equal(child.session.provider, original.session.provider)
+  assert.equal(child.session.workspaceId, original.session.workspaceId)
+  assert.equal(f.provider.created, 1, "fork must never fall back to a blank conversation")
+  assert.equal(f.provider.forks[0]!.sessionId, original.session.providerSessionId)
+  const tree = await f.catalog.sessionWorktree(child.session.id)
+  assert.ok(tree)
+  assert.notEqual(tree.directories[0]!.path, f.repository)
+  assert.equal(f.provider.forks[0]!.cwd, tree.directories[0]!.path)
+  const history = await f.sessions.journal.history(child.session.id, "0", 200)
+  assert.ok(history.some(event => event.kind === "input" && JSON.stringify(event.payload).includes("Remember this")))
+  assert.ok(history.some(event => event.kind === "acp" && JSON.stringify(event.payload).includes("An inherited answer")))
+  assert.equal(child.inputs.length, 0, "inherited inputs cannot enter the new backlog")
+  assert.equal(child.session.inheritedTurnCount, 1)
+  assert.equal(child.turns.length, 0)
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId: child.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Continue fork" }], delivery: "backlog" }, f.actor)
+  await until(() => f.sessions.journal.read(child.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: grandchild } = await forkAfterTurn(operationId => f.sessions.handle("_deskfleet/session/fork", {
+    sessionId: child.session.id, operationId, context: "directory",
+  }, f.actor) as Promise<AgentSnapshot>)
+  assert.equal(grandchild.session.inheritedTurnCount, 2, "fork-of-fork includes inherited and own dispatched turns")
+  assert.ok(child.runs.at(-1)!.generation > original.runs.at(-1)!.generation)
+  assert.equal((await f.fork("worktree", operationId)).session.id, child.session.id)
+  assert.equal(f.provider.forks.length, 2)
+  await assert.rejects(f.fork("directory", operationId), /reused/)
+  await f.sessions.handle("_deskfleet/session/stop", { sessionId: child.session.id, operationId: randomUUID() }, f.actor)
+  await f.sessions.handle("_deskfleet/session/resume", { sessionId: child.session.id, operationId: randomUUID() }, f.actor)
+  assert.equal(f.provider.resumes.at(-1), child.session.providerSessionId)
+  assert.equal(f.provider.closed.includes(original.session.providerSessionId!), false)
+  assert.deepEqual((await f.sessions.journal.read(original.session.id)).inputs, original.inputs)
+})
+
+test("machine-scoped Sessions cannot fork into a worktree context", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-fork-home-"))
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const provider = new ForkProvider()
+  const sessions = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
+  await sessions.init()
+  t.after(async () => { await sessions.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+  const actor = sessions.actor()
+  const source = await sessions.handle("_deskfleet/session/create", {
+    operationId: randomUUID(), provider: "codex", context: "directory", title: "Home",
+  }, actor) as AgentSnapshot
+  assert.equal(source.session.workspaceId, undefined)
+  await assert.rejects(
+    sessions.handle("_deskfleet/session/fork", { sessionId: source.session.id, operationId: randomUUID(), context: "worktree" }, actor),
+    /home directory/,
+  )
+  assert.equal((await sessions.journal.list()).length, 1)
+})
+
+test("unsupported and busy source sessions cannot allocate a fork", async t => {
+  const unsupported = await setup(t, false)
+  const unsupportedOperation = randomUUID()
+  await assert.rejects(unsupported.fork("directory", unsupportedOperation), /does not support/)
+  await assert.rejects(unsupported.fork("directory", unsupportedOperation), /does not support/)
+  assert.equal((await unsupported.sessions.journal.list()).length, 1)
+  const f = await setup(t)
+  let release!: () => void
+  f.provider.promptBarrier = new Promise(resolve => { release = resolve })
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId: f.source.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Work" }], delivery: "backlog" }, f.actor)
+  await until(() => f.sessions.journal.read(f.source.session.id), value => value.turns.at(-1)?.state === "running")
+  const busyOperation = randomUUID()
+  try {
+    await assert.rejects(f.fork("directory", busyOperation), /Wait for the current/)
+    await assert.rejects(f.fork("directory", busyOperation), /Wait for the current/)
+    assert.equal((await f.sessions.journal.list()).length, 1)
+  }
+  finally { release() }
+})
+
+test("directory fork keeps the source Session's custom working directory", async t => {
+  const f = await setup(t)
+  const custom = join(f.repository, "..", "custom-cwd")
+  await mkdir(custom)
+  const source = await f.sessions.handle("_deskfleet/session/create", {
+    workspaceId: (await f.catalog.native.snapshot()).workspaces[0]!.id,
+    operationId: randomUUID(), provider: "codex", context: "directory", cwd: custom, title: "Custom cwd",
+  }, f.actor) as AgentSnapshot
+  assert.equal(source.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(source.session.id))!.directories[0]!.path, custom)
+
+  await f.sessions.handle("_deskfleet/input/submit", {
+    sessionId: source.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Remember cwd" }], delivery: "backlog",
+  }, f.actor)
+  await until(() => f.sessions.journal.read(source.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: child } = await forkAfterTurn(operationId =>
+    f.sessions.handle("_deskfleet/session/fork", { sessionId: source.session.id, operationId, context: "directory" }, f.actor) as Promise<AgentSnapshot>)
+  assert.equal(child.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, custom)
+})
+
+test("directory fork from a worktree Session uses Workspace directories, not the owned checkout", async t => {
+  const f = await setup(t)
+  const worktreeSource = await f.sessions.handle("_deskfleet/session/create", {
+    workspaceId: (await f.catalog.native.snapshot()).workspaces[0]!.id,
+    operationId: randomUUID(), provider: "codex", context: "worktree", title: "Owned checkout",
+  }, f.actor) as AgentSnapshot
+  assert.equal(worktreeSource.session.lifecycle, "ready")
+  const owned = (await f.catalog.sessionWorktree(worktreeSource.session.id))!.directories[0]!.path
+  assert.notEqual(owned, f.repository)
+
+  await f.sessions.handle("_deskfleet/input/submit", {
+    sessionId: worktreeSource.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Fork into directory" }], delivery: "backlog",
+  }, f.actor)
+  await until(() => f.sessions.journal.read(worktreeSource.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: child } = await forkAfterTurn(operationId =>
+    f.sessions.handle("_deskfleet/session/fork", { sessionId: worktreeSource.session.id, operationId, context: "directory" }, f.actor) as Promise<AgentSnapshot>)
+  assert.equal(child.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, f.repository)
+  assert.notEqual((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, owned)
+})
+
+test("failed fork remains failed and cannot turn into a blank conversation after retry or restart", async t => {
+  const f = await setup(t)
+  f.provider.failFork = true
+  const operationId = randomUUID()
+  const child = await f.fork("directory", operationId)
+  assert.equal(child.session.lifecycle, "provision_failed")
+  assert.match(child.session.error!, /Fork failed at provider/)
+  assert.equal(child.session.providerSessionId, undefined)
+  assert.equal((await f.fork("directory", operationId)).session.id, child.session.id)
+  await assert.rejects(f.sessions.handle("_deskfleet/session/resume", { sessionId: child.session.id, operationId: randomUUID() }, f.actor), /no usable execution context/)
+  await f.sessions.init()
+  await assert.rejects(f.sessions.handle("_deskfleet/input/submit", { sessionId: child.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Continue" }], delivery: "backlog" }, f.actor), /no usable execution context/)
+  assert.equal(f.provider.created, 1)
+  assert.equal(f.provider.forks.length, 1)
+})

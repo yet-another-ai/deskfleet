@@ -1,0 +1,444 @@
+import assert from "node:assert/strict"
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import test from "node:test"
+import { fileURLToPath } from "node:url"
+import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { agentConfiguration } from "@deskfleet/protocol/agent-configuration"
+import { AgentProviders } from "./providers.ts"
+import { configureAdapterHost } from "../acp/adapter-host.ts"
+import { validateControlParams } from "../control/request.ts"
+import type { AgentProviderSettings } from "@deskfleet/protocol/provider"
+
+test("new machines start with no configured providers and remain empty after restart", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-empty-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  assert.deepEqual(registry.snapshot().providers, [])
+  assert.deepEqual(registry.metadata().providers, [])
+  assert.ok(registry.snapshot().templates.some(template => template.id === "codex"))
+  const reopened = new AgentProviders(directory)
+  await reopened.init()
+  assert.deepEqual(reopened.snapshot().providers, [])
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "agent-providers.json"), "utf8")).providers, [])
+})
+
+test("initialization preserves existing provider settings including the legacy codex ID", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-existing-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const providers = [
+    { id: "codex", template: "codex", name: "Work Codex", binaryPath: "/opt/codex", env: { CODEX_HOME: "/account/codex" } },
+    { id: "custom-agent", template: "acp", name: "Custom agent", icon: "openai", binaryPath: "/opt/agent", env: {} },
+  ]
+  const path = join(directory, "agent-providers.json")
+  const persisted = JSON.stringify({ providers })
+  await writeFile(path, persisted)
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  assert.deepEqual(registry.snapshot().providers, providers)
+  assert.equal(await readFile(path, "utf8"), persisted)
+})
+
+test("provider settings persist with private permissions and removal preserves an empty registry", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  let changes = 0
+  registry.onChanged(() => { changes += 1 })
+  const first = await registry.create({ template: "codex", name: " Work Codex ", binaryPath: "  ", env: { API_KEY: "secret", EMPTY: "" } })
+  const second = await registry.create({ template: "acp", name: "Custom agent", binaryPath: "/opt/custom agent", env: {} })
+  assert.equal(first.name, "Work Codex")
+  assert.equal(first.binaryPath, undefined)
+  const updated = await registry.update(first.id, { name: "Renamed", binaryPath: "/opt/codex", env: { MODE: "work" } })
+  assert.equal(updated.template, "codex")
+  assert.deepEqual(registry.resolve(first.id).config, { name: "Renamed", binaryPath: "/opt/codex", env: { MODE: "work" } })
+  const reopened = new AgentProviders(directory)
+  await reopened.init()
+  assert.deepEqual(reopened.snapshot().providers, registry.snapshot().providers)
+  assert.deepEqual(reopened.snapshot().templates, registry.snapshot().templates)
+  assert.notEqual(reopened.snapshot().revision, registry.snapshot().revision, "A daemon restart invalidates retained metadata")
+  const path = join(directory, "agent-providers.json")
+  assert.ok(!(await readFile(path, "utf8")).includes("secret"))
+  if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600)
+  await Promise.all([registry.remove(first.id), registry.remove(second.id)])
+  assert.equal(changes, 5)
+  await reopened.init()
+  assert.deepEqual(reopened.snapshot().providers, [])
+  assert.throws(() => registry.resolve(first.id), /unavailable/u)
+})
+
+test("templates resolve their own binary defaults and cannot change after creation", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const fixture = { id: "fixture", connect: async () => { throw new Error("fixture") } }
+  const registry = new AgentProviders(directory, fixture)
+  await registry.init()
+  const codex = await registry.create({ template: "codex", name: "Codex", inheritShellEnvironment: false, env: {} })
+  assert.equal(registry.resolve(codex.id).provider, fixture)
+  assert.equal(registry.resolve(codex.id).config.binaryPath, "codex")
+  const custom = await registry.create({ template: "acp", name: "Local ACP", env: { CUSTOM: "yes" } })
+  assert.equal(registry.resolve(custom.id).provider.id, "acp")
+  assert.deepEqual(registry.resolve(custom.id).config, { name: "Local ACP", binaryPath: "acp-agent", env: { CUSTOM: "yes" } })
+  const cursor = await registry.create({ template: "cursor", name: "Cursor", env: { CURSOR_API_KEY: "secret" } })
+  assert.equal(registry.resolve(cursor.id).provider.id, "cursor")
+  assert.deepEqual(registry.resolve(cursor.id).config, { name: "Cursor", binaryPath: "agent", env: { CURSOR_API_KEY: "secret" } })
+  const grok = await registry.create({ template: "grok", name: "Grok", env: { XAI_API_KEY: "secret" } })
+  assert.equal(registry.resolve(grok.id).provider.id, "grok")
+  assert.deepEqual(registry.resolve(grok.id).config, { name: "Grok", binaryPath: "grok", env: { XAI_API_KEY: "secret" } })
+  const pi = await registry.create({ template: "pi", name: "Pi Coding Agent", env: { PI_CODING_AGENT_DIR: "/account/pi" } })
+  assert.equal(registry.resolve(pi.id).provider.id, "pi")
+  assert.deepEqual(registry.resolve(pi.id).config, { name: "Pi Coding Agent", binaryPath: "pi", env: { PI_CODING_AGENT_DIR: "/account/pi" } })
+  const omp = await registry.create({ template: "omp", name: "Oh My Pi", env: { ANTHROPIC_API_KEY: "secret" } })
+  assert.equal(registry.resolve(omp.id).provider.id, "omp")
+  assert.deepEqual(registry.resolve(omp.id).config, { name: "Oh My Pi", binaryPath: "omp", env: { ANTHROPIC_API_KEY: "secret" } })
+  const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
+  assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
+  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret", DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "deepseek-harness", ".credentials.yaml") } })
+  const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
+  assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
+  assert.equal(registry.snapshot().templates.find(template => template.id === "antigravity")?.defaultBinaryPath, "agy")
+  assert.deepEqual(registry.resolve(antigravity.id).config, { name: "Antigravity", binaryPath: "agy", env: { GEMINI_HOME: "/account/antigravity" } })
+  assert.throws(() => registry.update(custom.id, { template: "codex", name: "Changed", env: {} } as AgentProviderSettings), /template is fixed/u)
+  assert.equal(registry.get(custom.id).template, "acp")
+  const copy = registry.get(custom.id)
+  copy.env.CUSTOM = "mutated"
+  assert.equal(registry.resolve(custom.id).config.env?.CUSTOM, "yes")
+})
+
+test("bundled DeepSeek sessions isolate registration credentials without persisting inferred paths", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-deepseek-registrations-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const first = new AgentProviders(join(directory, "first"))
+  const second = new AgentProviders(join(directory, "second"))
+  await Promise.all([first.init(), second.init()])
+  const input = { template: "deepseek-harness" as const, name: "DeepSeek", env: {} }
+  const a = await first.create(input)
+  const b = await second.create(input)
+  assert.equal(first.resolve(a.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, join(directory, "first", "deepseek-harness", ".credentials.yaml"))
+  assert.equal(second.resolve(b.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, join(directory, "second", "deepseek-harness", ".credentials.yaml"))
+  assert.equal(first.resolve(a.id).config.env?.DSH_HOME, undefined, "existing profiles and session history must stay in their original home")
+  assert.deepEqual(first.get(a.id).env, {})
+  assert.deepEqual(first.metadata().providers[0], { id: a.id, name: "DeepSeek", template: "deepseek-harness" })
+  await first.update(a.id, { name: "Custom home", env: { DSH_HOME: "/chosen/home" } })
+  assert.equal(first.resolve(a.id).config.env?.DSH_HOME, "/chosen/home")
+  assert.equal(first.resolve(a.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, undefined)
+  await first.update(a.id, { name: "External", binaryPath: "/tools/dsh", env: {} })
+  assert.deepEqual(first.resolve(a.id).config.env, {})
+})
+
+test("public provider revision changes on settings edits without exposing launch configuration", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-revision-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const codex = await registry.create({ template: "codex", name: "Codex", env: {} })
+  const before = registry.metadata()
+  assert.equal(before.revision, registry.snapshot().revision)
+  assert.equal(registry.metadata().revision, before.revision, "Ordinary catalog/history refreshes keep the same revision")
+  await registry.update(codex.id, { name: "Codex", binaryPath: "/private/tool", env: { API_KEY: "test-secret" } })
+  const after = registry.metadata()
+  assert.notEqual(after.revision, before.revision, "An environment-only change invalidates metadata even when its display fields are unchanged")
+  assert.deepEqual(after.providers, before.providers)
+  assert.equal(after.revision, registry.snapshot().revision)
+  assert.match(after.revision, /^[0-9a-f-]{36}$/u)
+  assert.equal(JSON.stringify(after).includes("test-secret"), false)
+  assert.equal(JSON.stringify(after).includes("/private/tool"), false)
+})
+
+test("provider icons persist, remain editable, and can return to the template default", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-icons-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const created = await registry.create({ template: "codex", name: "Work", icon: "openai", env: {} })
+  const reopened = new AgentProviders(directory)
+  await reopened.init()
+  assert.equal(reopened.get(created.id).icon, "openai")
+  const launch = registry.resolve(created.id)
+  await registry.update(created.id, { name: "Work", icon: "deepseek", env: {} })
+  await reopened.init()
+  assert.equal(reopened.get(created.id).icon, "deepseek")
+  assert.deepEqual(registry.resolve(created.id), launch, "Icon selection does not change process launch settings")
+  await registry.update(created.id, { name: "Work", env: {} })
+  await reopened.init()
+  assert.equal(reopened.get(created.id).icon, undefined)
+})
+
+test("generic ACP launches the configured binary with added variables and inherited environment", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-launch-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "custom acp agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)}\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "acp", name: "Fixture ACP", binaryPath, inheritShellEnvironment: false,
+    env: {
+      LANG: "deskfleet-provider-test", DESKFLEET_TEST_VALUE: "provider override",
+    },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "deskfleet-test-agent")
+  assert.deepEqual(connection.initialization._meta?.environment, {
+    PATH: process.env.PATH, LANG: "deskfleet-provider-test", extra: "provider override",
+  })
+  await connection.close()
+})
+
+test("Claude Code runs its bundled adapter with the installed CLI and added variables", { timeout: 15_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-claude-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  configureAdapterHost({ command: process.execPath, args: [fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))] })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const fallback = await registry.create({ template: "claude-code", name: "Claude Code", env: {} })
+  assert.deepEqual(registry.resolve(fallback.id).config, { name: "Claude Code", binaryPath: "claude", env: {} })
+  const configured = await registry.create({
+    template: "claude-code", name: "Work Claude", binaryPath: "/opt/claude",
+    env: { CLAUDE_CODE_EXECUTABLE: "/ignored/claude", DESKFLEET_TEST_VALUE: "work" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  assert.equal(provider.id, "claude-code")
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.deepEqual(connection.initialization._meta?.launch, { args: ["--claude-agent-acp"], cwd: process.cwd(), claudeCodeExecutable: "/opt/claude" })
+  assert.equal((connection.initialization._meta?.environment as { extra?: string }).extra, "work")
+  await connection.close()
+})
+
+test("Cursor launches agent acp, authenticates, and continues through session/load without replaying history", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-cursor-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "cursor agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "cursor", name: "Cursor", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "cursor", CURSOR_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const updates: acp.SessionNotification[] = []
+  const connection = await provider.connect({ ...config, cwd: directory }, { onUpdate(update) { updates.push(update) } })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "cursor-agent")
+  assert.deepEqual(connection.initialization.authMethods?.map(method => method.id), ["cursor_login"])
+  assert.equal(connection.initialization.agentCapabilities?.loadSession, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume, undefined)
+  const launch = connection.initialization._meta?.launch as { args?: string[]; cwd?: string }
+  assert.deepEqual(launch.args, ["acp"])
+  assert.equal(launch.cwd, await realpath(directory))
+  assert.equal((connection.initialization._meta?.clientCapabilities as { _meta?: { parameterizedModelPicker?: boolean } } | undefined)?._meta?.parameterizedModelPicker, true)
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.equal(created._meta?.authenticated, true)
+  const discovered = agentConfiguration(created.configOptions ?? [], { id: "cursor", name: "Cursor" })
+  assert.deepEqual(discovered.reasoningEfforts?.options.map(option => option.id), ["low", "medium", "high", "xhigh"])
+  const changed = await connection.setConfigOption({ sessionId: created.sessionId, configId: "effort", value: "low" }, created.configOptions ?? undefined)
+  assert.equal(agentConfiguration(changed.configOptions).reasoningEfforts?.currentValue, "low")
+  const loaded = await connection.resume({ cwd: directory, mcpServers: [], sessionId: created.sessionId })
+  assert.equal(loaded._meta?.method, "session/load")
+  assert.deepEqual(updates.map(update => update.update.sessionUpdate), ["config_option_update"])
+  await connection.close()
+})
+
+test("Antigravity launches agy acp without interactive authentication and migrates legacy agy_acp_server paths", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-antigravity-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "agy")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  await writeFile(join(directory, "agent-providers.json"), JSON.stringify({
+    providers: [{
+      id: "legacy-antigravity",
+      template: "antigravity",
+      name: "Antigravity",
+      binaryPath: "/Users/someone/.local/share/deskfleet/providers/antigravity/agy_acp_server.par",
+      env: {},
+    }],
+  }))
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  assert.equal(registry.get("legacy-antigravity").binaryPath, undefined)
+  assert.equal(registry.resolve("legacy-antigravity").config.binaryPath, "agy")
+  const configured = await registry.create({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-background" } })
+  const { provider, config } = registry.resolve(configured.id)
+  const updates: string[] = []
+  const connection = await provider.connect(config, { capabilities: { subagents: true }, onUpdate(notification) { updates.push(notification.update.sessionUpdate) } })
+  t.after(() => connection.close())
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["acp"])
+  const sessionId = (await connection.newSession({ cwd: directory, mcpServers: [] })).sessionId
+  assert.match(sessionId, /^fixture-session-/u)
+  const started = Date.now()
+  assert.deepEqual(await connection.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] }), { stopReason: "end_turn" })
+  assert.ok(Date.now() - started >= 80, "the wrapper must wait for the running subagent before completing the turn")
+  assert.equal(updates.filter(update => update === "subagent_update").length, 2)
+  await connection.close()
+  await assert.rejects(registry.test({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-signed-out" } }), /Use the Log in button before testing the connection/u)
+})
+
+test("Grok launches grok agent stdio and authenticates with xai.api_key", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-grok-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "grok agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "grok", name: "Grok", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "grok", XAI_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "grok")
+  assert.deepEqual(connection.initialization.authMethods?.map(method => method.id), ["xai.api_key", "cached_token"])
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["agent", "stdio"])
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.equal(created._meta?.authMethod, "xai.api_key")
+  assert.equal(created._meta?.headless, true)
+  await connection.close()
+})
+
+test("DeepSeek Harness launches dsh --profile acp without interactive authenticate", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-deepseek-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "dsh agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const configured = await registry.create({
+    template: "deepseek-harness", name: "DeepSeek Harness", binaryPath,
+    env: { DESKFLEET_TEST_AGENT_MODE: "deepseek-harness", DEEPSEEK_API_KEY: "present" },
+  })
+  const { provider, config } = registry.resolve(configured.id)
+  const connection = await provider.connect(config, { onUpdate() {} })
+  t.after(() => connection.close())
+  assert.equal(connection.initialization.agentInfo?.name, "deepseek-harness")
+  assert.equal(connection.initialization.agentInfo?.title, "DeepSeek Harness")
+  assert.equal(connection.initialization.authMethods, undefined)
+  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["--profile", "acp"])
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.list !== undefined, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume !== undefined, true)
+  assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.close !== undefined, true)
+  const created = await connection.newSession({ cwd: directory, mcpServers: [] })
+  assert.ok(created.sessionId)
+  await connection.close()
+})
+
+test("provider tests use their temporary session directory at process startup without persisting it", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-test-cwd-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  let startupCwd: string | undefined
+  const unexpected = async () => { assert.fail("Connection tests must only initialize and open a session") }
+  const registry = new AgentProviders(directory, {
+    id: "codex",
+    async connect(config) {
+      startupCwd = config.cwd
+      return {
+        initialization: { protocolVersion: 1, agentInfo: { name: "fixture", version: "1" } },
+        async newSession(params) {
+          assert.equal(config.cwd, params.cwd)
+          assert.notEqual(config.cwd, process.cwd())
+          assert.equal((await stat(params.cwd)).isDirectory(), true)
+          return { sessionId: "probe" }
+        },
+        setConfigOption: unexpected, resume: unexpected, prompt: unexpected, steer: unexpected,
+        cancel: unexpected, async close() {},
+      }
+    },
+  })
+  await registry.init()
+  assert.deepEqual(await registry.test({ template: "codex", name: "Fixture", env: {} }), { agentName: "fixture" })
+  assert.ok(startupCwd)
+  await assert.rejects(stat(startupCwd), { code: "ENOENT" })
+  assert.deepEqual(registry.snapshot().providers, [])
+})
+
+test("provider tests open a prompt-free session from unsaved settings and report the agent's own failure", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-test-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "fixture agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)}\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  let changes = 0
+  registry.onChanged(() => { changes += 1 })
+  assert.deepEqual(await registry.test({ template: "acp", name: "Fixture", binaryPath, env: {} }), { agentName: "deskfleet-test-agent" })
+  await assert.rejects(
+    registry.test({ template: "acp", name: "Fixture", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "session-error" } }),
+    /^Error: fixture cannot open .*df-provider-test-/u,
+  )
+  await assert.rejects(registry.test({ template: "acp", name: "Missing", binaryPath: join(directory, "missing"), env: {} }), /Could not start/u)
+  await assert.rejects(registry.test({ template: "unknown", name: "Agent", env: {} } as never), /Unknown Agent provider template/u)
+  assert.equal(changes, 0)
+  assert.deepEqual(registry.snapshot().providers, [])
+})
+
+test("invalid provider inputs and template edits are rejected by the IPC boundary", () => {
+  for (const method of ["providerProbe", "providerInstall", "providerLogin"] as const) {
+    assert.throws(() => validateControlParams(method, { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
+    assert.throws(() => validateControlParams(method, { provider: { template: "codex", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
+  }
+  assert.throws(() => validateControlParams("providerCreate", { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
+  assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: " ", env: {} } }), /Provider names/u)
+  assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
+  assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", env: { "BAD=KEY": "yes" } } }), /variable name/u)
+  assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", env: { TOKEN: 12 } } }), /values must be strings/u)
+  assert.throws(() => validateControlParams("providerUpdate", { providerId: "codex", changes: { template: "acp", name: "Agent", env: {} } }), /template is fixed/u)
+  assert.throws(() => validateControlParams("providerRemove", { providerId: "../codex" }), /provider ID/u)
+  assert.throws(() => validateControlParams("providerTest", { provider: { template: "unknown", name: "Agent", env: {} } }), /Unknown Agent provider template/u)
+  assert.throws(() => validateControlParams("providerTest", { provider: { template: "acp", name: "Agent", binaryPath: "bad\0path", env: {} } }), /binary path/u)
+  for (const icon of ["", "../openai", "https://example.com/icon.svg", "OpenAI", "bad--slug", "a".repeat(81), 12]) {
+    assert.throws(() => validateControlParams("providerCreate", { provider: { template: "codex", name: "Agent", icon, env: {} } }), /provider icon/u)
+    assert.throws(() => validateControlParams("providerUpdate", { providerId: "codex", changes: { name: "Agent", icon, env: {} } }), /provider icon/u)
+  }
+})
+
+test("connection tests never request Cursor login, including when cached credentials expire", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-auth-test-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const binaryPath = join(directory, "cursor agent")
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+  const fixture = fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))
+  await writeFile(binaryPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} "$@"\n`, { mode: 0o700 })
+  const registry = new AgentProviders(directory)
+  const provider = { template: "cursor" as const, name: "Cursor", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-test" } }
+  assert.deepEqual(await registry.test(provider), { agentName: "cursor-agent" })
+  await assert.rejects(registry.test({ ...provider, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-test-signed-out" } }), /Use the Log in button/u)
+})
+
+test("Codex connection tests disable the bridge's automatic login setting", { timeout: 15_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-codex-auth-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  configureAdapterHost({ command: process.execPath, args: [fileURLToPath(new URL("../fixtures/acp-agent.ts", import.meta.url))] })
+  const registry = new AgentProviders(directory)
+  assert.deepEqual(await registry.test({ template: "codex", name: "Codex", env: {
+    DEFAULT_AUTH_REQUEST: JSON.stringify({ methodId: "chatgpt" }), DESKFLEET_TEST_AGENT_MODE: "test-no-login",
+  } }), { agentName: "deskfleet-test-agent" })
+})
+
+test("invalid persisted settings do not silently reset the user's providers", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-providers-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, "agent-providers.json")
+  const invalid = JSON.stringify({ providers: [{ id: "custom", template: "unknown", name: "Agent", env: {} }] })
+  await writeFile(path, invalid)
+  await assert.rejects(new AgentProviders(directory).init(), /Unknown Agent provider template/u)
+  assert.equal(await readFile(path, "utf8"), invalid)
+})

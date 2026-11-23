@@ -2,7 +2,7 @@ import { constants } from "node:fs"
 import { access, readFile, stat } from "node:fs/promises"
 import { posix, win32 } from "node:path"
 import { launchProviderCommand } from "./process.ts"
-import type { McpServerInput, ProviderWorkspaceCandidate, ProviderWorkspaceDiscovery } from "./protocol.ts"
+import type { McpServerInput, ProviderWorkspaceCandidate, ProviderWorkspaceDiscovery } from "@deskfleet/protocol/agents/core"
 import type { ProviderWorkspaceDiscoveryContext } from "./types.ts"
 
 export interface McpImportContext {

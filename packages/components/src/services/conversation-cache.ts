@@ -1,5 +1,5 @@
 import { hasInjectionContext, inject, toRaw, type InjectionKey } from "vue"
-import type { AgentEvent, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentSnapshot } from "@deskfleet/protocol/agent"
 import { maxConversationCacheBytes, serializeConversation } from "./conversation-cache-serializer.ts"
 
 export interface CachedConversation { snapshot: AgentSnapshot; events: AgentEvent[] }

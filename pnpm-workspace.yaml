@@ -10,6 +10,7 @@ packages:
   - packages/components
   - packages/dsh-runtime
   - packages/mcp
+  - packages/protocol
   - docs
 
 allowBuilds:

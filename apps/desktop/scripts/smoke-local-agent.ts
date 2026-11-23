@@ -7,9 +7,9 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { build } from "esbuild"
-import { DaemonClient } from "../../daemon/src/control-client.ts"
+import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { startDaemon } from "../../daemon/src/daemon.ts"
-import { daemonDiscoveryPath, readDaemonDiscovery } from "../../daemon/src/control-discovery.ts"
+import { daemonDiscoveryPath, readDaemonDiscovery } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentSmokeContext, LocalAgentSmokeResult } from "./fixtures/local-agent-main.ts"
 
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-agent-smoke-")))

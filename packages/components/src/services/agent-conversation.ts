@@ -1,6 +1,6 @@
 import { createConversationProjector } from "./conversation-projector.ts"
 import { isRemoteMcpTool } from "./remote-mcp-tool.ts"
-import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSessionRecord, AgentSnapshot, AgentTurn } from "@deskfleet/protocol/agent"
 import type { CompactionUpdate, PlanUpdateContent, SessionMessage, SubagentUpdate } from "@agentclientprotocol/sdk/unstable"
 
 /** A completion remains unread until any viewer acknowledges it on the owning daemon. */

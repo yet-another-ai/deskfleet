@@ -1,4 +1,4 @@
-import type { AgentAuthStatus } from "./protocol.ts"
+import type { AgentAuthStatus } from "@deskfleet/protocol/agents/core"
 
 export const AUTH_STATUS_UPDATE_METHOD = "_auth/status_update"
 const kinds = new Set(["account", "api_key", "gateway", "external", "none"])

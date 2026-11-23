@@ -1,6 +1,6 @@
 import { ipcRenderer } from "electron"
-import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateApi, type UpdateState } from "../../../../packages/client/src/updates.ts"
-import type { SettingsResult } from "../../../../packages/client/src/settings.ts"
+import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateApi, type UpdateState } from "@deskfleet/client/updates"
+import type { SettingsResult } from "@deskfleet/client/settings"
 
 export function updatesApi(): UpdateApi {
   async function invoke<T>(method: "get" | "check" | "install"): Promise<T> {

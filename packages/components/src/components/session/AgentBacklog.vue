@@ -4,7 +4,7 @@ import UiScrollArea from "../common/UiScrollArea.vue"
 import { CircleAlert, CornerDownRight, ListEnd, RotateCw, X } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentInput } from "@deskfleet/protocol/agent"
 import { commandDraft } from "../../services/composer-mentions.ts"
 import AgentActor from "./AgentActor.vue"
 const props = defineProps<{ inputs: AgentInput[]; canSteer: boolean; disabled: boolean; excludeInputId?: string; excludeInputIds?: string[] }>()

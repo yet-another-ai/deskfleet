@@ -1,6 +1,6 @@
 import { configureClient, getClient } from "@deskfleet/client/platform"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
-import type { ProviderSnapshot } from "../../../../apps/daemon/src/provider-protocol.ts"
+import type { ProviderSnapshot } from "@deskfleet/protocol/provider"
 import { createPinia, disposePinia, type Pinia } from "pinia"
 import { createApp } from "vue"
 import { afterEach, expect, test, vi } from "vitest"

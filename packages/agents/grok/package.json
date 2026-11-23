@@ -5,11 +5,11 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts",
-    "./protocol": "./src/protocol.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "2.8.0",
-    "@deskfleet/agent-core": "workspace:*"
+    "@deskfleet/agent-core": "workspace:*",
+    "@deskfleet/protocol": "workspace:*"
   }
 }

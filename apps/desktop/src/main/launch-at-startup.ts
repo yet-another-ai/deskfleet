@@ -1,6 +1,6 @@
 import { app } from "electron"
 import { isAbsolute, join } from "node:path"
-import type { LaunchAtStartupState } from "../../../../packages/client/src/settings.ts"
+import type { LaunchAtStartupState } from "@deskfleet/client/settings"
 import { LinuxLaunchAtStartup } from "./linux-launch-at-startup.ts"
 
 function available(): boolean {

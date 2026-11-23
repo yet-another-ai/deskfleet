@@ -3,7 +3,7 @@ import { createI18n } from "vue-i18n"
 import enUS from "../../locales/en-US.json"
 import jaJP from "../../locales/ja-JP.json"
 import zhCmnHansCN from "../../locales/zh-cmn-Hans-CN.json"
-import { DEFAULT_LOCALE } from "../../../client/src/i18n.ts"
+import { DEFAULT_LOCALE } from "@deskfleet/client/i18n"
 
 // Components use `useI18n()`; Vapor components do not receive global `$t`.
 export const i18n = createI18n({

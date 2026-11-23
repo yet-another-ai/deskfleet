@@ -1,5 +1,5 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { findReasoningEffortOption, REASONING_CONFIG_IDS } from "./protocol.ts"
+import { findReasoningEffortOption, REASONING_CONFIG_IDS } from "@deskfleet/protocol/agents/core"
 
 const MODEL_REASONING = "deskfleet/modelReasoningEffort"
 const SESSION_CONFIG_MODEL = "deskfleet/sessionConfigModel"

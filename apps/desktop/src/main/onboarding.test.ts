@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest"
 import type { IpcMainInvokeEvent } from "electron"
-import { ONBOARDING_CHANNEL } from "../../../../packages/client/src/onboarding.ts"
+import { ONBOARDING_CHANNEL } from "@deskfleet/client/onboarding"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 import type { OnboardingController } from "./onboarding-controller.ts"
 import { installOnboarding } from "./onboarding.ts"

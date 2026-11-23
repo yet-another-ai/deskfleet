@@ -1,5 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import type { AgentEvent } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent } from "@deskfleet/protocol/agent"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test } from "vitest"
 import { i18n } from "../../i18n/index.ts"

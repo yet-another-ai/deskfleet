@@ -2,7 +2,7 @@ import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { AdminPlanQuota, GithubRepositoryItemsPage, GithubRepositoryItemsQuery, PeerStartOptions } from "./central.ts"
 import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, PushSubscriptionInput, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
-import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentSnapshot } from "@deskfleet/protocol/agent"
 import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
@@ -15,7 +15,7 @@ import { apiRequest, API_RETRY_STATUS_CODES, type ApiRequestOptions } from "./ap
 import { HttpError } from "./request-diagnostics.ts"
 import { APP_FOREGROUND_EVENT } from "./app-foreground.ts"
 import type { CentralSocket, CentralTransport } from "./central-transport.ts"
-import type { Machine as WireMachine, NetworkConfiguration } from "../../../crates/protocol/control.ts"
+import type { Machine as WireMachine, NetworkConfiguration } from "@deskfleet/protocol/generated/central-control"
 
 export { HttpError } from "./request-diagnostics.ts"
 

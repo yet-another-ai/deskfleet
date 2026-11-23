@@ -2,7 +2,7 @@ import * as acp from "@agentclientprotocol/sdk/unstable"
 import {
   CURSOR_CREATE_PLAN_METHOD, cursorPlanApproval, parseCursorPlanPhases, parseCursorPlanTodos,
   type CursorPlanApproval, type CursorPlanTodo,
-} from "./protocol.ts"
+} from "@deskfleet/protocol/agents/cursor"
 
 export { CURSOR_CREATE_PLAN_METHOD, cursorPlanApproval, type CursorPlanApproval, type CursorPlanTodo }
 

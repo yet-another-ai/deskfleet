@@ -1,9 +1,9 @@
-import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
-import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
+import type { DesktopEvent, IceCandidate, TerminalOffer } from "@deskfleet/protocol/control"
+import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "@deskfleet/protocol/terminal"
 import type { DataChannel } from "./data-channel.ts"
 import type { RelayDeniedReason } from "./relay.ts"
 
-export type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
+export type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "@deskfleet/protocol/terminal"
 
 export const TERMINAL_SESSION_EVENT = "deskfleet:terminal-session"
 

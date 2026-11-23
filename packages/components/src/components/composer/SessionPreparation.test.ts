@@ -1,7 +1,7 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
-import type { GitPreparationSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitPreparationSnapshot } from "@deskfleet/protocol/git"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"

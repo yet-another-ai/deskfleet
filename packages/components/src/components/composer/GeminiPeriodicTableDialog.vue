@@ -3,7 +3,7 @@ import { Check, LoaderCircle, RotateCw, X } from "@lucide/vue"
 import { DialogTitle } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentChoice } from "../../../../client/src/agent-configuration.ts"
+import type { AgentChoice } from "@deskfleet/client/agent-configuration"
 import {
   PERIODIC_TABLE_ELEMENTS,
   buildGeminiPeriodicEntries,

@@ -1,6 +1,6 @@
-import type { MarketingAttribution } from "../../../crates/protocol/control.ts"
+import type { MarketingAttribution } from "@deskfleet/protocol/generated/central-control"
 
-export type { MarketingAttribution } from "../../../crates/protocol/control.ts"
+export type { MarketingAttribution } from "@deskfleet/protocol/generated/central-control"
 
 export const TELEMETRY_CONSENT_STORAGE_KEY = "deskfleet-telemetry-consent"
 export const MARKETING_ATTRIBUTION_STORAGE_KEY = "deskfleet-marketing-attribution"

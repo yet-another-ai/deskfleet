@@ -5,12 +5,12 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts",
-    "./protocol": "./src/protocol.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "2.3.0",
     "@deskfleet/agent-core": "workspace:*",
+    "@deskfleet/protocol": "workspace:*",
     "smol-toml": "1.9.1"
   }
 }

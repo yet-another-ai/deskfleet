@@ -3,7 +3,7 @@ import { ArrowRight, Cable, Check, Code2, Copy, Database, Globe, Plus, RefreshCw
 import { useIntervalFn, useTimeoutFn, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
-import type { PortForward, PortForwardTarget, PortsApi } from "../../../../client/src/ports.ts"
+import type { PortForward, PortForwardTarget, PortsApi } from "@deskfleet/client/ports"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 import UiSelect from "../common/UiSelect.vue"

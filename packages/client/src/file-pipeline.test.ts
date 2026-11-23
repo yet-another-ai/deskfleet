@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { FILE_CHUNK_BYTES, FILE_PIPELINE_BYTES, type FileEndpoint, type FileMethods } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, FILE_PIPELINE_BYTES, type FileEndpoint, type FileMethods } from "@deskfleet/protocol/files"
 import { copyFileChunks, FILE_PIPELINE_CHUNKS } from "./file-pipeline.ts"
 
 const file = { name: "payload.bin", path: "/payload.bin", kind: "file", size: FILE_CHUNK_BYTES * FILE_PIPELINE_CHUNKS * 2 + 7, modifiedAt: 1 } as const

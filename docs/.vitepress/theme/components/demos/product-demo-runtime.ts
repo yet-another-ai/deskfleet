@@ -8,11 +8,11 @@ import { useFleetStore, type TerminalLocation } from "@deskfleet/components/stor
 import { useLayoutStore } from "@deskfleet/components/stores/layout.ts"
 import { useProvidersStore } from "@deskfleet/components/stores/providers.ts"
 import { useTerminalsStore } from "@deskfleet/components/stores/terminals.ts"
-import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import type { TerminalListener } from "../../../../../packages/components/src/services/terminal-client.ts"
-import en from "../../../../../packages/components/locales/en-US.json"
-import ja from "../../../../../packages/components/locales/ja-JP.json"
-import zh from "../../../../../packages/components/locales/zh-cmn-Hans-CN.json"
+import type { AgentEvent, AgentInput, AgentSnapshot } from "@deskfleet/protocol/agent"
+import type { TerminalListener } from "@deskfleet/components/services/terminal-client.ts"
+import en from "@deskfleet/components/locales/en-US.json"
+import ja from "@deskfleet/components/locales/ja-JP.json"
+import zh from "@deskfleet/components/locales/zh-cmn-Hans-CN.json"
 import { configuration, demoPatch, demoProviders, fixtures, input } from "./product-demo-fixtures.ts"
 
 export interface ProductDemoOptions {

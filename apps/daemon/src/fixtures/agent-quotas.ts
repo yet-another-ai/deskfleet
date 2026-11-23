@@ -1,4 +1,4 @@
-import type { AdmissionRequest, AgentQuotaAuthority, SessionAdmission } from "../agent-quotas.ts"
+import type { AdmissionRequest, AgentQuotaAuthority, SessionAdmission } from "../agent/quotas.ts"
 
 /** Explicit local authority for tests; production always contacts the Team server. */
 export class TestAgentQuotas implements AgentQuotaAuthority {

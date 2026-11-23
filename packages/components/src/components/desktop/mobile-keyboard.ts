@@ -1,4 +1,4 @@
-import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage } from "../../../../client/src/desktop-input.ts"
+import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage } from "@deskfleet/client/desktop-input"
 
 type Sender = (message: DesktopInputMessage) => boolean
 

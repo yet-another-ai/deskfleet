@@ -2,7 +2,7 @@
 import { RotateCcw } from "@lucide/vue"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { LinuxKeyringState } from "../../../../client/src/settings.ts"
+import type { LinuxKeyringState } from "@deskfleet/client/settings"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"

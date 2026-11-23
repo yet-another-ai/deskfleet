@@ -2,7 +2,7 @@
 import { ChevronRight, ListTree, LoaderCircle, RefreshCw } from "@lucide/vue"
 import { computed, reactive, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { GitChangeKind, GitFileChange } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitChangeKind, GitFileChange } from "@deskfleet/protocol/git"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { gitDiffCardKey } from "./git-diff-card.ts"
 import UiButton from "../common/UiButton.vue"

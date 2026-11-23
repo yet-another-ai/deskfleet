@@ -9,7 +9,7 @@ import type {
   ProviderMcpServerDiscovery,
   ProviderProbeResult,
   ProviderWorkspaceDiscovery,
-} from "./protocol.ts"
+} from "@deskfleet/protocol/agents/core"
 import type { ProbeCommand } from "./process.ts"
 
 export interface AgentConfig {

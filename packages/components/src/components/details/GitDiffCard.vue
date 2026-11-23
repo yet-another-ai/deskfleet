@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import type { GitFileChange, GitFileDiff } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileChange, GitFileDiff } from "@deskfleet/protocol/git"
 import type { GitDiffCard } from "./git-diff-card.ts"
 import GitChangeFile from "./GitChangeFile.vue"
 import GitDiffView from "./GitDiffView.vue"

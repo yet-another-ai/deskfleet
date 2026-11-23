@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@catppuccin/palette": "1.8.0",
+    "@deskfleet/protocol": "workspace:*",
     "ky": "2.2.0"
   }
 }

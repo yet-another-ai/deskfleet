@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest"
 import type { LocalPeerGrant } from "@deskfleet/client/central"
 import { LOCAL_CHANNEL_BUFFER_BYTES, LOCAL_CHANNEL_BUFFER_MESSAGES, LOCAL_CHANNEL_MESSAGE_BYTES, type LocalChannelOpen } from "@deskfleet/client/local-channels"
-import type { DaemonEvent } from "../../../daemon/src/control-protocol.ts"
+import type { DaemonEvent } from "@deskfleet/protocol/control"
 import { WindowLocalChannels, type ConnectLocalDaemon, type LocalChannelDaemon } from "./local-channels-controller.ts"
 
 const request: LocalChannelOpen = { connectionId: "view", teamId: "team", machineId: "machine", purpose: "agent" }

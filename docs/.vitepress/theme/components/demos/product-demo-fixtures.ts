@@ -1,8 +1,8 @@
 import type { AppLocale } from "@deskfleet/client/i18n"
-import type { AgentEvent, AgentInput, AgentSessionRecord, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import type { AgentConfiguration } from "../../../../../apps/daemon/src/agent-configuration-protocol.ts"
-import type { MachineSummary } from "../../../../../packages/components/src/stores/fleet-types.ts"
-import type { ProviderDisplay } from "../../../../../packages/client/src/providers.ts"
+import type { AgentEvent, AgentInput, AgentSessionRecord, AgentSnapshot } from "@deskfleet/protocol/agent"
+import type { AgentConfiguration } from "@deskfleet/protocol/agent-configuration"
+import type { MachineSummary } from "@deskfleet/components/stores/fleet-types.ts"
+import type { ProviderDisplay } from "@deskfleet/client/providers"
 
 export const demoProviders: ProviderDisplay[] = [
   { id: "claude-code", name: "Claude Code", template: "claude-code" },

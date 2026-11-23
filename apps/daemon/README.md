@@ -8,6 +8,33 @@ management operations and stores queryable catalog/history replicas. The daemon'
 [file service](../../agents/docs/files.md) serves authorized file transfers and
 Agent Markdown resources over an independent files WebRTC peer.
 
+## Source layout
+
+`src/` groups modules by the feature that owns them. Entry points stay at the
+top: `index.ts` is the library entry, `daemon.ts` starts one host, `main.ts`
+and `standalone.ts` run the CLI, and `native-contracts.ts` checks the
+restated native records in `@deskfleet/protocol`.
+
+| Directory | Owns |
+| --- | --- |
+| `machine/` | Registration runtimes, machine operations, the Workspace catalog, and host settings |
+| `control/` | Local control IPC: server, socket framing, discovery, and client |
+| `central/` | Central backend enrollment, credentials, and catalog/history sync |
+| `peers/` | Authorized WebRTC peers, admission, and multiplexed channels |
+| `agent/` | Agent Sessions: request routing (`sessions.ts`), provisioning, conversation, archive and deletion transitions, runtime, journal store, configuration discovery, quotas, and the Agent channel |
+| `acp/` | ACP agent processes: connections, adapter host, plugin registry, and ACP terminals |
+| `providers/` | Provider settings, setup, updates, environments, and provider MCP discovery |
+| `worktrees/` | Session-owned worktrees, branch naming, and archive cleanup |
+| `git/` | Git execution, inspection, watchers, preparation, and GitHub branches |
+| `terminals/` | Terminal sessions, history, shell integration, images, and their channel |
+| `files/` | File service, uploads, directory listing, and the files channel |
+| `mcp/` | Daemon MCP dispatch, configured MCP servers, and remote MCP calls |
+| `schedules/` | Scheduled tasks |
+| `desktop/` | Desktop capabilities, permissions, and input |
+
+Tests sit next to the module they cover; shared ACP and MCP fixtures live in
+`src/fixtures/`. Wire contracts belong in `@deskfleet/protocol`, not here.
+
 ## Development and enrollment
 
 From the repository root:
@@ -367,7 +394,7 @@ The CLI cancels permission requests and emits `permission_cancelled` events.
 It has no approval UI; prompts requiring approval cannot proceed through it.
 
 The pinned adapter uses
-[`patches/@agentclientprotocol__codex-acp@2.2.2.patch`](../../patches/@agentclientprotocol__codex-acp@2.2.2.patch).
+[`patches/@agentclientprotocol__codex-acp@2.3.0.patch`](../../patches/@agentclientprotocol__codex-acp@2.3.0.patch).
 It makes steering return `promptRequired` when the target turn ends, allowing the
 daemon to start and track the next prompt. It also clears the app-server shutdown
 timers after the child exits, so configuration discovery does not wait through an

@@ -4,7 +4,7 @@ import { startDaemon } from "@deskfleet/daemon"
 import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { daemonDiscoveryPath } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentRuntime } from "./local-agent-controller.ts"
-import type { DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
 import { desktopCentralTransport } from "./central-transport.ts"
 
 export interface HostedDaemon {

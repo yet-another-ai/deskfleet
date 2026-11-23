@@ -6,7 +6,7 @@ import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/
 import { CENTRAL_METHODS, centralIpcFailure } from "@deskfleet/client/central-bridge"
 import type { CentralEvent } from "@deskfleet/client/central"
 import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
-import type { ControlMethods } from "../../../daemon/src/control-protocol.ts"
+import type { ControlMethods } from "@deskfleet/protocol/control"
 import { DaemonClient } from "./daemon-client.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"

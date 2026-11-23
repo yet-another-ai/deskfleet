@@ -8,7 +8,7 @@ import { getBrowserNotificationPermission, requestBrowserNotificationPermission 
 import { useEventListener } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { NotificationSettings } from "../../../../client/src/settings.ts"
+import type { NotificationSettings } from "@deskfleet/client/settings"
 import SettingsRow from "./SettingsRow.vue"
 
 const client = usePlatformClient()

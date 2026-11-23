@@ -1,7 +1,7 @@
 import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import type { RemoteAgentSettings as Settings } from "../../../../client/src/settings.ts"
+import type { RemoteAgentSettings as Settings } from "@deskfleet/client/settings"
 import { i18n } from "../../i18n/index.ts"
 import RemoteAgentSettings from "./RemoteAgentSettings.vue"
 

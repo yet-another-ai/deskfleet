@@ -1,6 +1,6 @@
 // Client view models for the resource catalog.
 
-import type { AgentSessionContext, AgentSessionRecord } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSessionContext, AgentSessionRecord } from "@deskfleet/protocol/agent"
 
 export interface AgentSessionSummary extends Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq" | "lastMessageAt"> {
   id: string

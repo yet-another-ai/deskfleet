@@ -417,11 +417,16 @@ run = "node scripts/check-rust-skills-harness.ts"
 description = "Validate pnpm patchedDependencies against Renovate and the lockfile"
 run = "node scripts/check-pnpm-patches.ts"
 
+[tasks."check:package-boundaries"]
+description = "Require package-name imports across workspace packages and keep the protocol package a neutral leaf"
+run = "node scripts/check-package-boundaries.ts"
+
 [tasks."check:static"]
 hide = true
 depends = [
     "check:rust-skills-harness",
     "check:pnpm-patches",
+    "check:package-boundaries",
     "check:types",
     "check:desktop-types",
     "web:typecheck",
@@ -446,7 +451,8 @@ hide = true
 depends = ["native:debug"]
 # Both suites create many SQLite catalogs; avoid competing for runner storage.
 wait_for = ["rust:test"]
-run = "node --test apps/daemon/src/*.test.ts packages/agents/*/src/*.test.ts packages/mcp/src/*.test.ts"
+# Node expands the quoted recursive pattern; POSIX shells would treat `**` as `*`.
+run = "node --test 'apps/daemon/src/**/*.test.ts' packages/agents/*/src/*.test.ts packages/mcp/src/*.test.ts packages/protocol/src/*.test.ts"
 
 [tasks."check:desktop"]
 hide = true
@@ -523,6 +529,7 @@ hide = true
 depends = [
     "check:rust-skills-harness",
     "check:pnpm-patches",
+    "check:package-boundaries",
     "rust:format:check",
     "rust:shear",
     "check:scripts",

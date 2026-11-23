@@ -1,6 +1,6 @@
 import { mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
+import type { CatalogDirectory } from "@deskfleet/client/catalog"
 import { i18n } from "../../i18n/index.ts"
 import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 import DirectoryBindingsEditor from "./DirectoryBindingsEditor.vue"

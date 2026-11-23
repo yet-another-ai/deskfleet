@@ -1,5 +1,5 @@
-import { FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_BYTES, FILE_RPC_METADATA_BYTES, FILE_RPC_QUEUE_BYTES, type FileEndpoint, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
-import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
+import { FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_BYTES, FILE_RPC_METADATA_BYTES, FILE_RPC_QUEUE_BYTES, type FileEndpoint, type FileMethod, type FileMethods, type FileReply } from "@deskfleet/protocol/files"
+import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "@deskfleet/protocol/files-wire"
 
 export interface FileTransport { send(data: Uint8Array): Promise<void>; close(): Promise<void> }
 export type FileTransportFactory = (receive: (data: Uint8Array) => void, fail: (error: Error) => void) => Promise<FileTransport>

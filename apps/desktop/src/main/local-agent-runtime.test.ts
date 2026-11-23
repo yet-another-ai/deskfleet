@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
-import type { DaemonEvent } from "../../../daemon/src/control-protocol.ts"
-import type { DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import type { DaemonEvent } from "@deskfleet/protocol/control"
+import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
 import { desktopCentralTransport } from "./central-transport.ts"
 

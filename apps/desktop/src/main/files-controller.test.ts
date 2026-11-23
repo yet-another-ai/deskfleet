@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { FileTarget, FileTransfer } from "@deskfleet/client/files"
-import { FilesService } from "../../../daemon/src/files-service.ts"
+import { FilesService } from "@deskfleet/daemon/files-service"
 import { WindowFiles } from "./files-controller.ts"
 
 const roots: string[] = []

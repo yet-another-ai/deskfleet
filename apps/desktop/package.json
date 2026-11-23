@@ -24,6 +24,7 @@
     "@deskfleet/daemon": "workspace:*",
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/native": "workspace:*",
+    "@deskfleet/protocol": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.8",
     "@lobehub/icons-static-svg": "1.104.0",
     "@lucide/vue": "1.76.0",

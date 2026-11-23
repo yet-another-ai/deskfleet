@@ -2,7 +2,7 @@ import type { CentralEvent, Machine } from "@deskfleet/client/central"
 import type { ProviderTemplateUpdates, ProviderUpdate } from "@deskfleet/client/providers"
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { onScopeDispose, provide, ref } from "vue"
-import type { AgentProviderTemplateId } from "../../../../../apps/daemon/src/provider-protocol.ts"
+import type { AgentProviderTemplateId } from "@deskfleet/protocol/provider"
 import { accountSessionKey, useAccountSession } from "../../composables/useAccountSession.ts"
 import ProviderUpdateNotice from "./ProviderUpdateNotice.vue"
 

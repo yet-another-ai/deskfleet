@@ -5,7 +5,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { LocalAgentState } from "../../../../client/src/local-agent.ts"
+import type { LocalAgentState } from "@deskfleet/client/local-agent"
 import SettingsRow from "./SettingsRow.vue"
 
 const platformClient = usePlatformClient()

@@ -1,0 +1,218 @@
+import { randomUUID } from "node:crypto"
+import { isSubagentNotification } from "@deskfleet/protocol/agent-session-scope"
+import { compactCommandEvent, compactCommandResult } from "@deskfleet/protocol/agent-command-results"
+import { AgentLiveState } from "./live.ts"
+import { AGENT_HISTORY_MAX_EVENTS, AGENT_MESSAGE_BYTES } from "@deskfleet/protocol/agent"
+import type {
+  AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
+  AgentPreview, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
+} from "@deskfleet/protocol/agent"
+
+export interface AgentPersistence {
+  agentIdentity(): Promise<string>
+  agentAllocateId(): Promise<string>
+  agentList(): Promise<string>
+  agentSession(sessionId: string): Promise<string>
+  agentSnapshot(sessionId: string): Promise<string>
+  agentHistory(sessionId: string, afterSeq: string, limit: number): Promise<string>
+  agentCommand(operationId: string): Promise<string>
+  agentCommands(sessionId: string): Promise<string>
+  agentCommandsSince(sessionId: string, afterRevision: string): Promise<string>
+  agentAdmissionDeleted(operationId: string): Promise<boolean>
+  agentCommit(transaction: string): Promise<string>
+  agentCreateSession(request: string): Promise<string>
+}
+
+export const timestamp = () => new Date().toISOString()
+export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+const STREAM_COMMIT_MS = 5_000
+const HISTORY_READ_SIZE = 200
+interface PendingStream {
+  preview: AgentPreview
+  session: AgentSessionRecord
+  timer: ReturnType<typeof setTimeout>
+}
+
+/** A turn in these states may still reach or hear from its provider. */
+export const liveTurn = (turn: Pick<AgentTurn, "state">) => ["starting", "running", "cancelling"].includes(turn.state)
+
+export function requireActiveSession(session: AgentSessionRecord): void {
+  if (session.archiveState !== "active") throw new Error("Restore this Session before starting or changing its execution")
+}
+
+/** The journal's queue orders commits, never the lifetime of an ACP request. */
+export class AgentJournal {
+  readonly live = new AgentLiveState()
+  readonly native: AgentPersistence
+  readonly #queues = new Map<string, Promise<unknown>>()
+  readonly #listeners = new Set<(event: AgentEvent) => void>()
+  readonly #previewListeners = new Set<(preview: AgentPreview) => void>()
+  readonly #streams = new Map<string, PendingStream>()
+  identity!: { originId: string; machineId: string }
+
+  constructor(native: AgentPersistence) { this.native = native }
+  async init(): Promise<void> { this.identity = JSON.parse(await this.native.agentIdentity()) }
+  actor(): AgentActor {
+    return { kind: "local_token", sourceMachine: { originId: this.identity.originId, id: this.identity.machineId } }
+  }
+  id(): Promise<string> { return this.native.agentAllocateId() }
+  async list(): Promise<AgentSessionRecord[]> { return JSON.parse(await this.native.agentList()) }
+  async session(id: string): Promise<AgentSessionRecord> {
+    const session = JSON.parse(await this.native.agentSession(id)) as AgentSessionRecord | null
+    if (!session) throw new Error("Agent Session was not found")
+    return session
+  }
+  async read(id: string): Promise<AgentSnapshot> {
+    const snapshot = JSON.parse(await this.native.agentSnapshot(id)) as AgentSnapshot | null
+    if (!snapshot) throw new Error("Agent Session was not found")
+    return snapshot
+  }
+  async command(operationId: string): Promise<AgentCommand | null> {
+    const command = JSON.parse(await this.native.agentCommand(operationId)) as AgentCommand | null
+    return command && compactCommandResult(command)
+  }
+  async commands(sessionId: string): Promise<AgentCommand[]> {
+    return (JSON.parse(await this.native.agentCommands(sessionId)) as AgentCommand[]).map(compactCommandResult)
+  }
+  async commandsSince(sessionId: string, afterRevision: string): Promise<{ commands: AgentCommand[]; revision: string }> {
+    const changes = JSON.parse(await this.native.agentCommandsSince(sessionId, afterRevision)) as { commands: AgentCommand[]; revision: string }
+    return { ...changes, commands: changes.commands.map(compactCommandResult) }
+  }
+  /** Publish receipt changes so synchronization observes outcomes after domain events. */
+  async saveCommand(command: AgentCommand): Promise<void> {
+    if (!command.sessionId) { await this.commit(undefined, { command }); return }
+    const sessionId = command.sessionId
+    await this.serial(sessionId, async () => {
+      const session = JSON.parse(await this.native.agentSession(sessionId)) as AgentSessionRecord | null
+      await this.commit(session ?? undefined, {
+        command,
+        ...(session ? { events: [this.event(sessionId, "command", command, { commandId: command.id })] } : {}),
+      })
+    })
+  }
+  /** Records a command's result once its effects are committed. */
+  complete(command: AgentCommand, result: unknown): Promise<void> {
+    return this.saveCommand({ ...command, status: "completed", result, completedAt: timestamp() })
+  }
+  async history(id: string, afterSeq: string, limit = 100): Promise<AgentEvent[]> {
+    const size = Math.max(1, Math.min(limit, AGENT_HISTORY_MAX_EVENTS))
+    const events: AgentEvent[] = []
+    let cursor = afterSeq
+    let bytes = 0
+    while (events.length < size) {
+      const readSize = Math.min(HISTORY_READ_SIZE, size - events.length)
+      const json = await this.native.agentHistory(id, cursor, readSize)
+      const page = JSON.parse(json) as AgentEvent[]
+      events.push(...page)
+      if (page.length < readSize || events.length === size) break
+      // Stop reading more rows once there is enough history for a wire page.
+      bytes += Buffer.byteLength(json)
+      if (bytes >= AGENT_MESSAGE_BYTES) break
+      cursor = page.at(-1)!.seq
+    }
+    return events.map(compactCommandEvent)
+  }
+  serial<T>(id: string, action: () => Promise<T>, options: { flushStreaming?: boolean } = {}): Promise<T> {
+    const running = (this.#queues.get(id) ?? Promise.resolve()).then(async () => {
+      if (options.flushStreaming !== false) await this.#flushStream(id)
+      return action()
+    })
+    const settled = running.catch(() => {})
+    this.#queues.set(id, settled)
+    void settled.then(() => {
+      if (this.#queues.get(id) === settled) this.#queues.delete(id)
+    })
+    return running
+  }
+  onEvent(listener: (event: AgentEvent) => void): () => void {
+    this.#listeners.add(listener)
+    return () => this.#listeners.delete(listener)
+  }
+  onPreview(listener: (preview: AgentPreview) => void): () => void {
+    this.#previewListeners.add(listener)
+    return () => this.#previewListeners.delete(listener)
+  }
+  preview(id: string): AgentPreview | undefined {
+    const preview = this.#streams.get(id)?.preview
+    return preview && { ...preview, events: preview.events.slice() }
+  }
+  /** Display text immediately, then persist it at most five seconds after the first chunk. */
+  stream(event: AgentEventDraft, failed: (error: unknown) => void): Promise<void> {
+    return this.serial(event.sessionId, async () => {
+      let pending = this.#streams.get(event.sessionId)
+      if (!pending) {
+        const session = await this.session(event.sessionId)
+        const timer = setTimeout(() => {
+          void this.serial(event.sessionId, async () => {}).catch(failed)
+        }, STREAM_COMMIT_MS)
+        timer.unref()
+        pending = {
+          session, timer,
+          preview: { sessionId: event.sessionId, streamId: randomUUID(), baseSeq: session.lastEventSeq, offset: 0, events: [] },
+        }
+        this.#streams.set(event.sessionId, pending)
+      }
+      const offset = pending.preview.events.length
+      pending.preview.events.push(event)
+      const preview = { ...pending.preview, offset, events: [event] }
+      for (const listener of this.#previewListeners) listener(preview)
+    }, { flushStreaming: false })
+  }
+  async #flushStream(id: string): Promise<void> {
+    const pending = this.#streams.get(id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    // Keep the tail available until persistence succeeds. A failed write must
+    // not turn already displayed text into an acknowledged history cursor.
+    await this.commit(pending.session, { events: pending.preview.events })
+    this.#streams.delete(id)
+  }
+  event(sessionId: string, kind: AgentEvent["kind"], payload: AgentEvent["payload"], context: Partial<AgentEventDraft> = {}): AgentEventDraft {
+    return { sessionId, kind, payload, createdAt: timestamp(), ...context }
+  }
+  async commit(current: AgentSnapshot | AgentSessionRecord | undefined, changes: AgentCommit): Promise<AgentEvent[]> {
+    const session = current && ("session" in current ? current.session : current)
+    const msgAt = changes.events?.findLast(event =>
+      event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload)
+      && event.payload.update.sessionUpdate === "agent_message_chunk")?.createdAt
+    if (session && msgAt) {
+      const base = changes.session ?? session
+      if (!base.lastMessageAt || msgAt > base.lastMessageAt) changes = { ...changes, session: { ...base, lastMessageAt: msgAt } }
+    }
+    const terminal = (turn: AgentTurn) => ["completed", "cancelled", "interrupted", "failed"].includes(turn.state)
+    if (session && changes.turns?.some(terminal)) {
+      const snapshot = current && "session" in current ? current : await this.read(session.id)
+      const finished = new Set(changes.turns.filter(turn => terminal(turn)
+        && snapshot.turns.some(previous => previous.id === turn.id && !terminal(previous))).map(turn => turn.id))
+      if (finished.size) {
+        const events = [...changes.events ?? []]
+        const index = events.findLastIndex(event => event.kind === "turn"
+          && finished.has((event.payload as AgentTurn).id) && terminal(event.payload as AgentTurn))
+        if (index < 0) throw new Error("Finishing a turn requires its journal event")
+        const completed = { ...changes.session ?? session,
+          lastCompletedSeq: String(BigInt(session.lastEventSeq) + BigInt(index) + 1n) }
+        if (!events.some(event => event.kind === "session")) events.push(this.event(session.id, "session", completed))
+        changes = { ...changes, session: completed, events }
+      }
+    }
+    const transaction: AgentCommit = session ? {
+      sessionId: session.id, expectedSeq: session.lastEventSeq,
+      ...changes,
+    } : changes
+    const result = JSON.parse(await this.native.agentCommit(JSON.stringify({ ...transaction,
+      ...(transaction.command ? { command: compactCommandResult(transaction.command) } : {}),
+      ...(transaction.events ? { events: transaction.events.map(compactCommandEvent) } : {}),
+    }))) as { events: AgentEvent[] }
+    for (const event of result.events) {
+      for (const listener of this.#listeners) listener(event)
+    }
+    return result.events
+  }
+  async create(command: AgentCommand, workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, accounting: { admissionGeneration?: string; inheritedTurnCount?: number; yolo?: boolean; yoloActor?: AgentActor; superAgent?: boolean } = {}): Promise<AgentSessionRecord> {
+    const result = JSON.parse(await this.native.agentCreateSession(JSON.stringify({
+      command, provider, title, context, ...accounting, ...(workspaceId ? { workspaceId } : {}),
+    }))) as { session: AgentSessionRecord }
+    return result.session
+  }
+}

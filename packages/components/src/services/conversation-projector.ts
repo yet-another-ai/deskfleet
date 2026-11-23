@@ -1,5 +1,5 @@
-import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
-import { isSubagentNotification } from "@deskfleet/client/agent-session-scope"
+import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "@deskfleet/protocol/agent"
+import { isSubagentNotification } from "@deskfleet/protocol/agent-session-scope"
 import { createPromotedInputTracker, promotedPendingInputs, type AgentTerminalOutput, type CompactionEntry, type ConversationEntry, type ConversationStep, type ConversationTool, type SessionMessageEntry, type StructuredPlanEntry, type SubagentEntry } from "./agent-conversation.ts"
 
 type Content = AgentInput["content"]

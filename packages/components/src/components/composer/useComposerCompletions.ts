@@ -1,6 +1,6 @@
 import { useDebounceFn } from "@vueuse/core"
 import { computed, nextTick, onScopeDispose, ref, watch, type Ref } from "vue"
-import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import type { AgentConfiguration } from "@deskfleet/client/agent-configuration"
 import { composerTrigger, reconcileComposerMentions, validComposerMentions, type ComposerMention } from "../../services/composer-mentions.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"

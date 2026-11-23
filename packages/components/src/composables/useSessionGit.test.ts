@@ -1,7 +1,7 @@
 import { flushPromises } from "@vue/test-utils"
 import { effectScope, nextTick, reactive, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
+import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { deferred } from "../test/desktop-media.ts"
 import { gitDiffCardKey } from "../components/details/git-diff-card.ts"
 import { useSessionGit } from "./useSessionGit.ts"

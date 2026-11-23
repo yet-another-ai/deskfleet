@@ -3,7 +3,7 @@ import childProcess from "node:child_process"
 import { syncBuiltinESMExports } from "node:module"
 import { basename } from "node:path"
 import { createInterface } from "node:readline"
-import { runAuvMcp } from "../agents/auv-mcp.ts"
+import { runAuvMcp } from "../acp/auv-mcp.ts"
 
 if (process.argv[2] === "serve") {
   // Preloaded before Node resolves `mcp`: use a real executable on Windows too.

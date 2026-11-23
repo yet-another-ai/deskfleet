@@ -6,12 +6,12 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
-import { DaemonClient } from "../../daemon/src/control-client.ts"
+import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { startDaemon } from "../../daemon/src/daemon.ts"
-import { connectAcpProcess } from "../../daemon/src/agents/acp.ts"
-import { createPeer } from "../../../crates/node/index.ts"
-import type { OnboardingState } from "../../../packages/client/src/onboarding.ts"
-import type { LocalEnrollment, LocalMachineStatus } from "../../../packages/client/src/central.ts"
+import { connectAcpProcess } from "../../daemon/src/acp/connection.ts"
+import { createPeer } from "@deskfleet/native"
+import type { OnboardingState } from "@deskfleet/client/onboarding"
+import type { LocalEnrollment, LocalMachineStatus } from "@deskfleet/client/central"
 
 // Exercise the real package entry, including its static imports and startup
 // routing. Feature fixtures replace main and cannot detect import-time crashes.

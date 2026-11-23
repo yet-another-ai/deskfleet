@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { browserMuxPeer } from "./mux-peer.ts"
-import { MUX_LABELS } from "./mux/protocol.ts"
+import { MUX_LABELS } from "@deskfleet/protocol/mux"
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 

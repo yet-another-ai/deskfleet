@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { toRaw, watch } from "vue"
-import { cachedAgentConfiguration, type AgentConfiguration, type AgentConfigurationMatrix, type AgentConfigurationSelection } from "../../../client/src/agent-configuration.ts"
+import { cachedAgentConfiguration, type AgentConfiguration, type AgentConfigurationMatrix, type AgentConfigurationSelection } from "@deskfleet/client/agent-configuration"
 import { useProvidersStore } from "./providers.ts"
 import { useFleetStore } from "./fleet.ts"
 

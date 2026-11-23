@@ -1,7 +1,7 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
-import type { CatalogWorkspace } from "../../../../client/src/catalog.ts"
+import type { CatalogWorkspace } from "@deskfleet/client/catalog"
 import { i18n } from "../../i18n/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import FolderPickerDialog from "../common/FolderPickerDialog.vue"

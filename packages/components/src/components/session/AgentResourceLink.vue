@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
-import type { FileResourceRequest } from "../../../../client/src/files.ts"
+import type { FileResourceRequest } from "@deskfleet/client/files"
 import { Link } from "@lucide/vue"
 import { computed, inject, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"

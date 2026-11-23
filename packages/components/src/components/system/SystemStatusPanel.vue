@@ -2,7 +2,7 @@
 import { Activity, RefreshCw } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { useSystemStatus } from "../../composables/useSystemStatus.ts"
 import { fileSize } from "../../services/file-format.ts"
 import UiButton from "../common/UiButton.vue"

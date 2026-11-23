@@ -1,4 +1,4 @@
-import type { GitFileChange } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileChange } from "@deskfleet/protocol/git"
 
 export interface ChangeDirectory {
   name: string

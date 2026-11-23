@@ -5,7 +5,7 @@ import { ArrowUp, Check, ChevronRight, File, Folder, Home, Pencil } from "@lucid
 import { DialogTitle } from "reka-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileEntry, FileListing, FilesApi, FileTarget } from "../../../../client/src/files.ts"
+import type { FileEntry, FileListing, FilesApi, FileTarget } from "@deskfleet/client/files"
 import { fileSize } from "../../services/file-format.ts"
 import UiCheckbox from "./UiCheckbox.vue"
 import UiDialog from "./UiDialog.vue"

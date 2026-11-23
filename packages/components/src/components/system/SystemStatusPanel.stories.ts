@@ -1,7 +1,7 @@
 import { getClient } from "@deskfleet/client/platform"
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { provide } from "vue"
-import type { SystemStatus } from "../../../../client/src/system.ts"
+import type { SystemStatus } from "@deskfleet/client/system"
 import { storybookSystemStatus } from "../../../.storybook/storybook-fixtures.ts"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import SystemStatusPanel from "./SystemStatusPanel.vue"

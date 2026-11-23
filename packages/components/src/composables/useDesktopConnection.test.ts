@@ -1,9 +1,9 @@
 import { flushPromises } from "@vue/test-utils"
 import { effectScope } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { HttpError } from "../../../client/src/http-central.ts"
-import { DESKTOP_START_TIMEOUT_MS } from "../../../client/src/desktop-media.ts"
-import { PEER_DISCONNECT_GRACE_MS, PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
+import { HttpError } from "@deskfleet/client/http-central"
+import { DESKTOP_START_TIMEOUT_MS } from "@deskfleet/client/desktop-media"
+import { PEER_DISCONNECT_GRACE_MS, PEER_SETUP_TIMEOUT_MS } from "@deskfleet/client/peer-lifecycle"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import { browserCodecPreferences, commonDesktopCodecs, commonPreviewCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
 

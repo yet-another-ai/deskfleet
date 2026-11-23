@@ -16,7 +16,7 @@ export {
   type AgentComposerSkillParser, type AgentProviderTemplateMetadata, type AgentQuotaItem, type McpServerInput,
   type McpServerSettings, type ProviderMcpServerCandidate, type ProviderMcpServerDiscovery,
   type ProviderProbeResult, type ProviderWorkspaceCandidate, type ProviderWorkspaceDiscovery,
-} from "./protocol.ts"
+} from "@deskfleet/protocol/agents/core"
 export {
   buildQuestionForm, isQuestionRecord, nonEmptyText, parseQuestionFlag, parseQuestionOptions, selectedQuestionValues,
   type VendorParsedQuestion, type VendorParsedQuestions, type VendorQuestionOption,

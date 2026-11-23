@@ -1,4 +1,4 @@
-import { AGENT_MESSAGE_BYTES } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { AGENT_MESSAGE_BYTES } from "@deskfleet/protocol/agent"
 
 /** DataChannel messages are byte fragments, not JSON-RPC message boundaries. */
 export class AgentMessageDecoder {

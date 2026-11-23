@@ -6,7 +6,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileTransfer } from "../../../../client/src/files.ts"
+import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileTransfer } from "@deskfleet/client/files"
 import { fileSize } from "../../services/file-format.ts"
 import FileBrowserPane from "./FileBrowserPane.vue"
 

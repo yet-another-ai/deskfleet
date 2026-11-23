@@ -255,7 +255,7 @@ and shows output-only metadata on non-terminal tools as text content.
 
 ## Wire contract and flow control
 
-`apps/daemon/src/terminal-protocol.ts` owns the provisional TypeScript contract.
+`packages/protocol/src/terminal.ts` owns the provisional TypeScript contract.
 Shell lifecycle belongs to authenticated backend management: `terminalList` returns the
 catalog, `terminalDial` creates or resumes a stable terminal ID, and
 `terminalHangup` ends it. Creation uses a client-selected ID so retrying a dial
@@ -407,7 +407,7 @@ interpreter is missing. The latter exercises the child error pipe after
 this smoke under Xvfb. The WebRTC terminal smoke above hosts its daemon in the
 outer Node process, so it does not exercise Chromium's FD ownership checks.
 
-`mise exec -- node --test apps/daemon/src/local-channel.test.ts` verifies Agent
+`mise exec -- node --test apps/daemon/src/control/local-channel.test.ts` verifies Agent
 and terminal IPC with WebRTC creation disabled, including input, output, resize,
 replay after disconnect, socket ownership, and delivery credit. Remote machines
 and Web clients use authenticated central signaling and server-provided STUN/TURN

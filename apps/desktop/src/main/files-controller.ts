@@ -1,4 +1,4 @@
-import type { FileEndpoint } from "../../../daemon/src/files-protocol.ts"
+import type { FileEndpoint } from "@deskfleet/protocol/files"
 import { FileTransferManager } from "@deskfleet/client/file-transfers"
 import type { FileAttachmentUploadOptions, FileAttachmentUploadRequest, FileAttachmentUploadResult, FileConflict, FileListing, FileReadResourceOptions, FileResource, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
 import { FileGrants } from "./files-grants.ts"

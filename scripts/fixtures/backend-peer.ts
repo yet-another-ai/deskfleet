@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { setTimeout as delay } from "node:timers/promises"
 import { createPeer, type IceCandidate, type IceServer } from "../../crates/node/index.ts"
-import { AGENT_CHANNEL } from "../../apps/daemon/src/agent-protocol.ts"
-import type { PeerAuthorization } from "../../apps/daemon/src/central-protocol.ts"
-import { normalizeCandidate } from "../../apps/daemon/src/authorized-peers.ts"
-import { TERMINAL_CHANNEL, type TerminalEvent } from "../../apps/daemon/src/terminal-protocol.ts"
+import { AGENT_CHANNEL } from "../../packages/protocol/src/agent.ts"
+import type { PeerAuthorization } from "../../packages/protocol/src/central.ts"
+import { normalizeCandidate } from "../../apps/daemon/src/peers/authorized-peers.ts"
+import { TERMINAL_CHANNEL, type TerminalEvent } from "../../packages/protocol/src/terminal.ts"
 
 export type BackendRequest = <T>(path: string, body?: unknown, method?: string) => Promise<T>
 export async function until<T>(read: () => Promise<T> | T, ready: (value: T) => boolean, description: string, timeout = 15_000): Promise<T> {

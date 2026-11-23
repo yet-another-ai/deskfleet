@@ -5,7 +5,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p packages/protocol --noEmit"
   },
   "devDependencies": {
     "@sentry/cli": "3.8.2",

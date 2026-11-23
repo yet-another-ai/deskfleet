@@ -1,5 +1,5 @@
 import type { IceCandidate } from "./desktop-media.ts"
-import { MUX_LABELS, type MuxLane } from "./mux/protocol.ts"
+import { MUX_LABELS, type MuxLane } from "@deskfleet/protocol/mux"
 
 export interface MuxPeerEvents {
   data(lane: MuxLane, bytes: Uint8Array): void

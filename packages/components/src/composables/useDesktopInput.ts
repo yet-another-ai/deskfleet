@@ -1,7 +1,7 @@
 import { useDocumentVisibility, useEventListener, watchImmediate } from "@vueuse/core"
 import { onScopeDispose, ref, watch, type Ref } from "vue"
 import { useDesktopTouch, type DesktopPointerMode } from "./useDesktopTouch.ts"
-import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPointerButton } from "../../../client/src/desktop-input.ts"
+import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPointerButton } from "@deskfleet/client/desktop-input"
 
 interface Point { x: number; y: number }
 const buttonMasks: readonly (readonly [DesktopPointerButton, number])[] = [[0, 1], [1, 4], [2, 2], [3, 8], [4, 16]]

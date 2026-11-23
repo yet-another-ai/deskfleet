@@ -1,8 +1,8 @@
 import { ImageAddon } from "@xterm/addon-image"
 import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
-import { decodeTerminalBytes, TerminalClient } from "../../../../packages/components/src/services/terminal-client.ts"
-import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
+import { decodeTerminalBytes, TerminalClient } from "@deskfleet/components/services/terminal-client.ts"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 
 const { deskfleet, terminalSmoke } = window as unknown as {
   deskfleet: DeskfleetDesktopApi

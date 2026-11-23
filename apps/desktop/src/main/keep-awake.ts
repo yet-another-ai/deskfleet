@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import type { PowerSaveBlocker } from "electron"
-import type { KeepAwakeState } from "../../../../packages/client/src/settings.ts"
+import type { KeepAwakeState } from "@deskfleet/client/settings"
 
 /** Keeps the system and display awake, independently of windows and the local Agent. */
 export class KeepAwakeController {

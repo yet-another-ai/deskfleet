@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentInput, AgentSnapshot } from "@deskfleet/protocol/agent"
 import { projectConversation } from "./agent-conversation.ts"
 import type { AgentSessionSummary } from "../stores/fleet-types.ts"
 

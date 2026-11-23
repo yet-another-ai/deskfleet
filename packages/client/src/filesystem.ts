@@ -1,6 +1,6 @@
-import type { DirectoryListing } from "../../../apps/daemon/src/filesystem-protocol.ts"
+import type { DirectoryListing } from "@deskfleet/protocol/filesystem"
 
-export type { DirectoryEntry, DirectoryListing } from "../../../apps/daemon/src/filesystem-protocol.ts"
+export type { DirectoryEntry, DirectoryListing } from "@deskfleet/protocol/filesystem"
 
 /** Browse directories on the connected daemon's machine. Paths stay opaque to the client. */
 export interface FilesystemApi {

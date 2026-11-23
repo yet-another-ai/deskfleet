@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import type { AgentEventDraft, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEventDraft, AgentPreview } from "@deskfleet/protocol/agent"
 import { AgentPreviews } from "./agent-preview.ts"
 
 function draft(text: string, sessionId = "session"): AgentEventDraft {

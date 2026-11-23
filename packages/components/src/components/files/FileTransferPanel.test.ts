@@ -1,8 +1,8 @@
 import { client } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import type { CentralApi, CentralEvent } from "../../../../client/src/central.ts"
-import type { FileListing, FilesApi, FileTransfer, FileTransferRequest } from "../../../../client/src/files.ts"
+import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
+import type { FileListing, FilesApi, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
 import { i18n } from "../../i18n/index.ts"
 import FileTransferPanel from "./FileTransferPanel.vue"
 

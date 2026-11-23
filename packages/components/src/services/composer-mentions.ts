@@ -1,4 +1,4 @@
-import type { ComposerReference } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+import type { ComposerReference } from "@deskfleet/protocol/composer-reference"
 
 export interface ComposerSkillReference { kind: "skill"; id: string; name: string; invocation: string; providerId: string }
 export interface ComposerMention {

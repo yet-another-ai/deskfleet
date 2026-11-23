@@ -2,8 +2,8 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
 import { defineStore } from "pinia"
 import { computed, onScopeDispose, reactive, ref } from "vue"
-import type { RelayDeniedReason } from "../../../client/src/relay.ts"
-import type { TerminalSummary } from "../../../../apps/daemon/src/terminal-protocol.ts"
+import type { RelayDeniedReason } from "@deskfleet/client/relay"
+import type { TerminalSummary } from "@deskfleet/protocol/terminal"
 import { TerminalClient, type TerminalConnectionState, type TerminalListener } from "../services/terminal-client.ts"
 
 interface TerminalTransportStatus {

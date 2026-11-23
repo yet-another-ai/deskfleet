@@ -4,7 +4,7 @@ import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { AppLocale } from "@deskfleet/client/i18n"
 import type { CatalogWorkspace } from "@deskfleet/client/catalog"
 import type { NotificationSettings, WorktreePreferences } from "@deskfleet/client/settings"
-import { AGENT_PROVIDER_TEMPLATES } from "../../../../../apps/daemon/src/provider-protocol.ts"
+import { AGENT_PROVIDER_TEMPLATES } from "@deskfleet/protocol/provider"
 import { desktopPreview } from "./product-demo-media.ts"
 
 const subscribe = () => () => {}

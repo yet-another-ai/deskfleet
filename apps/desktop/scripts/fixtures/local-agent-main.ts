@@ -17,7 +17,7 @@ import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { attachSettings, installSettings, publishLocalAgentState } from "../../src/main/settings.ts"
 import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
-import type { DeskfleetDesktopApi } from "../../../../packages/client/src/desktop-api.ts"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 
 export interface LocalAgentSmokeContext {
   phase: "start" | "restart" | "disabled" | "external"

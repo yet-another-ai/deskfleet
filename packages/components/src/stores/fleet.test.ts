@@ -1,6 +1,6 @@
 import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
-import type { CatalogSnapshot } from "../../../client/src/catalog.ts"
-import type { LocalEnrollment } from "../../../client/src/central.ts"
+import type { CatalogSnapshot } from "@deskfleet/client/catalog"
+import type { LocalEnrollment } from "@deskfleet/client/central"
 import { createPinia, getActivePinia, setActivePinia } from "pinia"
 import { createApp } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"

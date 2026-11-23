@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "vitest"
-import { readWorktreeRoot } from "../../../daemon/src/worktree-settings.ts"
-import { defaultWorktreePreferences, readWorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
+import { readWorktreePreferences, readWorktreeRoot } from "@deskfleet/daemon/host-settings"
+import { defaultWorktreePreferences } from "@deskfleet/protocol/worktree-preferences"
 import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 
 const directories: string[] = []

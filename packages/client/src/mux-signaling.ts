@@ -4,7 +4,7 @@ import { createPeerDisconnectGuard, PEER_SETUP_TIMEOUT_MS } from "./peer-lifecyc
 import { observePeerGrant } from "./peer-telemetry.ts"
 import { relayFailureError } from "./relay.ts"
 import { MuxConnection } from "./mux/connection.ts"
-import { MUX_LABELS, type MuxLane } from "./mux/protocol.ts"
+import { MUX_LABELS, type MuxLane } from "@deskfleet/protocol/mux"
 import type { MuxPeer, MuxPeerFactory } from "./mux-peer.ts"
 
 export interface MuxTarget { teamId: string; machineId: string }

@@ -4,7 +4,7 @@ import { Check, ChevronRight, CircleX, LoaderCircle, Monitor } from "@lucide/vue
 import { computed, inject } from "vue"
 import { CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentPermission } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import type { ConversationTool } from "../../services/agent-conversation.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"

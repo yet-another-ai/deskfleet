@@ -3,7 +3,7 @@ import {
   connectAcpProcess, hostedProcess, jsonVersionParser, launchProviderCommand, npmLocations,
   resolveStandardUrlInstaller, type AgentProvider, type AgentProviderPlugin,
 } from "@deskfleet/agent-core"
-import { parsePiComposerSkill } from "./protocol.ts"
+import { parsePiComposerSkill } from "@deskfleet/protocol/agents/pi"
 
 export { parsePiComposerSkill }
 

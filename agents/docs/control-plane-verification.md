@@ -205,10 +205,10 @@ Named runs use the same identifiers as the invariants they witness:
 
 | Run | Implementation evidence already present |
 | --- | --- |
-| `signaling_loss_keeps_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/files-signaling.test.ts`, `ports-signaling.test.ts`, and `mux-client.test.ts` cover files, ports, and Mux streams. `apps/daemon/src/local-channel.test.ts` keeps an authorized local channel and shell when central signaling is lost. |
+| `signaling_loss_keeps_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/files-signaling.test.ts`, `ports-signaling.test.ts`, and `mux-client.test.ts` cover files, ports, and Mux streams. `apps/daemon/src/control/local-channel.test.ts` keeps an authorized local channel and shell when central signaling is lost. |
 | `reconnect_does_not_extend_expiry` | The remote client test above closes authorization at the original 24-hour deadline after signaling loss. The model additionally checks that the reconnect action cannot write a later deadline. |
 | `expired_reservation_cannot_activate` | `apps/server/src/peers/shared_tests.rs` `cancelled_creation_holds_only_a_short_reservation_and_cannot_activate_after_expiry`. |
-| `local_claim_is_single_use` | `apps/daemon/src/local-channel.test.ts` rejects a second `localOpen` of a live claim. The model additionally checks that closing the socket does not make the secret reusable; a renewal is a new grant. |
+| `local_claim_is_single_use` | `apps/daemon/src/control/local-channel.test.ts` rejects a second `localOpen` of a live claim. The model additionally checks that closing the socket does not make the secret reusable; a renewal is a new grant. |
 | `expiry_leaves_accepted_work_running` | The local-channel test retains the shell across IPC reconnect. Server and client tests cover grant close separately from session lifetime. |
 
 `changed_offer_keeps_binding`, `transports_are_not_interchangeable`, and
@@ -387,7 +387,7 @@ Named runs: `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`,
 | Run | Implementation evidence already present |
 | --- | --- |
 | `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`, `probe_ok_keeps_the_socket`, `probe_miss_replaces_only_the_client`, `resume_idle_replaces_the_client_only` | `packages/client/src/http-central.test.ts` skips liveness traffic while hidden, probes a resumed socket, keeps a socket that answers, replaces a socket that misses the probe, and replaces an idle suspended socket on return. A native foreground event takes that same resume path when the page never becomes hidden. |
-| `both_links_down_keep_the_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/http-central.test.ts` reports signaling loss without a peer revocation. `apps/daemon/src/central-client.test.ts` `a silent control link is abandoned after a bounded grace and replaced` reports the daemon disconnected before the replacement socket exists. |
+| `both_links_down_keep_the_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/http-central.test.ts` reports signaling loss without a peer revocation. `apps/daemon/src/central/client.test.ts` `a silent control link is abandoned after a bounded grace and replaced` reports the daemon disconnected before the replacement socket exists. |
 | `closing_daemon_reports_down_before_replace`, `closing_socket_cannot_be_replaced` | The daemon test above sets `connected` false when the close begins, then replaces the socket only after the close grace. `packages/client/src/http-central.ts` does the same for the client signaling socket. |
 | `daemon_replace_fences_the_old_identity` | The daemon test above replaces the control link. Fencing a late frame on the retired identity remains a model run until a trace shows that frame changing the new route. |
 | `grace_recovers_without_closing`, `recovery_due_closes_the_peer` | `packages/client/src/peer-lifecycle.test.ts` `a recovered disconnected state never fails the peer`. `packages/components/src/composables/useDesktopConnection.test.ts` `a transient disconnected state does not tear down a recoverable desktop peer`. |
@@ -448,10 +448,10 @@ Named runs: `hello_blip_reconnects_the_same_machine`,
 
 | Run | Implementation evidence already present |
 | --- | --- |
-| `hello_blip_reconnects_the_same_machine`, `hello_reject_keeps_the_machine_identity`, `hello_reject_reenrolls_the_same_machine` | `apps/server/src/websocket.rs` `pre_auth_close` uses 1012 for an interrupted hello and 4401 for an invalid authenticate frame. `apps/daemon/src/central-client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. `apps/daemon/src/central-client.ts` `enroll` retains the Team machine identity. |
-| `retryable_close_keeps_the_peer` | `apps/daemon/src/central-client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. |
-| `credential_rejection_closes_peers_without_reconnect` | `apps/daemon/src/central-client.test.ts` `explicit credential rejection persists logout without treating transport loss as revocation`. `#revoked` closes the registration's peers and retains execution. |
-| `late_rejection_keeps_the_reenrolled_credential` | `apps/daemon/src/central-client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
+| `hello_blip_reconnects_the_same_machine`, `hello_reject_keeps_the_machine_identity`, `hello_reject_reenrolls_the_same_machine` | `apps/server/src/websocket.rs` `pre_auth_close` uses 1012 for an interrupted hello and 4401 for an invalid authenticate frame. `apps/daemon/src/central/client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. `apps/daemon/src/central/client.ts` `enroll` retains the Team machine identity. |
+| `retryable_close_keeps_the_peer` | `apps/daemon/src/central/client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. |
+| `credential_rejection_closes_peers_without_reconnect` | `apps/daemon/src/central/client.test.ts` `explicit credential rejection persists logout without treating transport loss as revocation`. `#revoked` closes the registration's peers and retains execution. |
+| `late_rejection_keeps_the_reenrolled_credential` | `apps/daemon/src/central/client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
 
 ## Local claim
 
@@ -491,10 +491,10 @@ Named runs: `unclaimed_window_spends_the_secret`,
 
 | Run | Implementation evidence already present |
 | --- | --- |
-| `unclaimed_window_spends_the_secret`, `unclaimed_window_rejects_another_prepare` | `apps/daemon/src/authorized-peers.test.ts` `an unclaimed local secret expires after 30 seconds without extending its grant`. |
-| `second_open_fails`, `claimed_close_spends_the_secret` | `apps/daemon/src/authorized-peers.test.ts` `unclaimed local peers are capped and a closed claim retains replay protection`. `apps/daemon/src/local-channel.test.ts` rejects a second `localOpen` of a live claim. |
+| `unclaimed_window_spends_the_secret`, `unclaimed_window_rejects_another_prepare` | `apps/daemon/src/peers/authorized-peers.test.ts` `an unclaimed local secret expires after 30 seconds without extending its grant`. |
+| `second_open_fails`, `claimed_close_spends_the_secret` | `apps/daemon/src/peers/authorized-peers.test.ts` `unclaimed local peers are capped and a closed claim retains replay protection`. `apps/daemon/src/control/local-channel.test.ts` rejects a second `localOpen` of a live claim. |
 | `authorization_due_spends_the_secret` | The closed-claim test above retains replay protection through close. Grant expiry uses the same `#used` entry, which is removed only when that expiry has passed. |
-| `webrtc_grant_cannot_be_claimed` | `apps/daemon/src/authorized-peers.test.ts` rejects `prepareLocal` unless the grant transport is `local`. |
+| `webrtc_grant_cannot_be_claimed` | `apps/daemon/src/peers/authorized-peers.test.ts` rejects `prepareLocal` unless the grant transport is `local`. |
 
 ## Revocation cleanup
 
@@ -543,9 +543,9 @@ Named runs: `failed_cleanup_is_retried_by_reenrollment`,
 
 | Run | Implementation evidence already present |
 | --- | --- |
-| `failed_cleanup_is_retried_by_reenrollment`, `faulty_retry_fails_only_that_attempt` | `apps/daemon/src/central-client.test.ts` `a failed revocation cleanup does not block re-enrollment after the fault clears`. |
-| `cleanup_settles_after_both_steps` | `apps/daemon/src/central-client.ts` `#retire` waits for both steps with `Promise.allSettled`. |
-| `reenrollment_waits_for_pending_cleanup`, `reenrolled_registration_opens_peers` | `apps/daemon/src/central-client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
+| `failed_cleanup_is_retried_by_reenrollment`, `faulty_retry_fails_only_that_attempt` | `apps/daemon/src/central/client.test.ts` `a failed revocation cleanup does not block re-enrollment after the fault clears`. |
+| `cleanup_settles_after_both_steps` | `apps/daemon/src/central/client.ts` `#retire` waits for both steps with `Promise.allSettled`. |
+| `reenrollment_waits_for_pending_cleanup`, `reenrolled_registration_opens_peers` | `apps/daemon/src/central/client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
 
 ## Offer revocation
 

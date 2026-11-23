@@ -1,5 +1,5 @@
 import { vi } from "vitest"
-import type { DesktopEvent, DesktopMediaApi } from "../../../client/src/desktop-media.ts"
+import type { DesktopEvent, DesktopMediaApi } from "@deskfleet/client/desktop-media"
 
 export const browserCodecs: RTCRtpCodec[] = [
   { mimeType: "video/H264", clockRate: 90000, sdpFmtpLine: "profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1" },

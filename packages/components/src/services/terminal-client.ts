@@ -1,8 +1,8 @@
-import type { TerminalSignalingApi } from "../../../client/src/terminal.ts"
-import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "../../../client/src/relay.ts"
-import type { IceCandidate } from "../../../client/src/desktop-media.ts"
-import { DataChannelErrorEvent, type DataChannel } from "../../../client/src/data-channel.ts"
-import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
+import type { TerminalSignalingApi } from "@deskfleet/client/terminal"
+import { RelayConnectionError, relayFailureError, type RelayDeniedReason } from "@deskfleet/client/relay"
+import type { IceCandidate } from "@deskfleet/client/desktop-media"
+import { DataChannelErrorEvent, type DataChannel } from "@deskfleet/client/data-channel"
+import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "@deskfleet/client/peer-lifecycle"
 import {
   MAX_TERMINAL_MESSAGE_BYTES,
   TERMINAL_CHANNEL,
@@ -10,7 +10,7 @@ import {
   type TerminalEvent,
   type TerminalMessage,
   type TerminalMethods,
-} from "../../../../apps/daemon/src/terminal-protocol.ts"
+} from "@deskfleet/protocol/terminal"
 
 export type TerminalConnectionState = "idle" | "connecting" | "connected" | "error"
 export type TerminalListener = (event: TerminalEvent, acknowledge: () => void) => void

@@ -5,8 +5,8 @@ import type {
   DesktopOffer,
   DesktopStart,
   IceCandidate,
-} from "../../../apps/daemon/src/control-protocol.ts"
-export { desktopErrorReason, isDesktopErrorReason } from "../../../apps/daemon/src/control-protocol.ts"
+} from "@deskfleet/protocol/control"
+export { desktopErrorReason, isDesktopErrorReason } from "@deskfleet/protocol/control"
 import type { RelayDeniedReason } from "./relay.ts"
 import type { NativeDesktopOptions } from "./native-desktop.ts"
 
@@ -19,7 +19,7 @@ export type {
   DesktopStart,
   IceCandidate,
   VideoCodec,
-} from "../../../apps/daemon/src/control-protocol.ts"
+} from "@deskfleet/protocol/control"
 
 /** Starts after SDP/ICE setup and covers the server RPC plus first-frame delivery. */
 export const DESKTOP_START_TIMEOUT_MS = 120_000

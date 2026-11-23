@@ -1,6 +1,6 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { LocalDataChannel, type LocalChannelEvent, type LocalChannelsApi } from "../../../client/src/local-channels.ts"
+import { LocalDataChannel, type LocalChannelEvent, type LocalChannelsApi } from "@deskfleet/client/local-channels"
 import { AgentClient } from "./agent-client.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
 import { TerminalClient } from "./terminal-client.ts"

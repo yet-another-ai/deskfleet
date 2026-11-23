@@ -2,7 +2,7 @@ import type { CentralApi } from "./central.ts"
 import { FileTransferManager } from "./file-transfers.ts"
 import { createBrowserFileEndpoint } from "./files-peer.ts"
 import type { FilesApi, FileTransfer } from "./files.ts"
-import { FILE_CHUNK_BYTES, FILE_MAX_OPEN_READS, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, FILE_MAX_OPEN_READS, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "@deskfleet/protocol/files"
 
 type DirectoryHandle = FileSystemDirectoryHandle
 export interface LocalFilesEndpoint extends FileEndpoint {

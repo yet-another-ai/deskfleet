@@ -1,5 +1,5 @@
 import { computed, toValue, type MaybeRefOrGetter } from "vue"
-import type { AgentEvent, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentSnapshot } from "@deskfleet/protocol/agent"
 import { createConversationProjector } from "../services/conversation-projector.ts"
 
 /** One mounted conversation retains its reducer across display commits. */

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { afterEach, expect, test, vi } from "vitest"
 import type { FileListing } from "@deskfleet/client/files"
-import { FilesService } from "../../../daemon/src/files-service.ts"
+import { FilesService } from "@deskfleet/daemon/files-service"
 import { canonicalGrantedPath, FileGrants, grantedPath } from "./files-grants.ts"
 
 const fixtures: Array<{ path: string; grants: FileGrants[] }> = []

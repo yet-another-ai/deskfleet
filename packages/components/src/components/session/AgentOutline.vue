@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentInput, AgentSnapshot } from "@deskfleet/protocol/agent"
 import type { ConversationEntry } from "../../services/agent-conversation.ts"
 
 interface OutlineItem {

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events"
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateState } from "../../../../packages/client/src/updates.ts"
+import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateState } from "@deskfleet/client/updates"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import type { UpdateController } from "./update-controller.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"

@@ -1,5 +1,5 @@
 import { computed, toValue, type MaybeRefOrGetter } from "vue"
-import type { FileTarget } from "../../../client/src/files.ts"
+import type { FileTarget } from "@deskfleet/client/files"
 import { useAccountSession } from "./useAccountSession.ts"
 
 /** Machine IDs come from the account, never from a Markdown-authored URL. */

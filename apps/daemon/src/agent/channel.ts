@@ -1,0 +1,505 @@
+import { randomUUID } from "node:crypto"
+import { setTimeout as delay } from "node:timers/promises"
+import { promisify } from "node:util"
+import { gzip } from "node:zlib"
+import type { AgentLiveUpdate } from "@deskfleet/protocol/agent-live"
+import {
+  AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES,
+  type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
+} from "@deskfleet/protocol/agent"
+
+export interface AgentChannelSessions {
+  readonly journal: { readonly identity: unknown }
+  sessionDirectory?(sessionId: string): Promise<string>
+  sessionAttachmentDirectory?(sessionId: string): Promise<string>
+  draftAttachmentDirectory?(draftId: string): Promise<string>
+  handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
+  onEvent(listener: (event: AgentEvent) => void): () => void
+  onPreview?(listener: (preview: AgentPreview) => void): () => void
+  preview?(sessionId: string): AgentPreview | undefined
+  onLive?(listener: (update: AgentLiveUpdate) => void): () => void
+  live?(sessionId: string): AgentLiveUpdate | undefined
+  watchGit?(sessionId: string, actor: AgentActor, listener: (error?: string) => void): Promise<() => void>
+  attend?(sessionId: string, connectionId: string, actor: AgentActor): Promise<void>
+  leave?(sessionId: string, connectionId: string): void
+  leaveAll?(connectionId: string): void
+  onPresence?(listener: (update: { sessionId: string; userIds: string[] }) => void): () => void
+  presence?(): { sessionId: string; userIds: string[] }[]
+}
+
+type RpcId = string | number | null
+type JsonObject = Record<string, unknown>
+interface Subscription { ready: boolean; events: { event: AgentEvent; bytes: number }[] }
+interface PermissionCall { sessionId: string; permissionId: string; resolved: boolean }
+interface GitSubscription { stop?: () => void }
+
+const METHODS = new Set<AgentMethod>([
+  "_deskfleet/composer/references", "_deskfleet/composer/resolve",
+  "_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
+  "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/subscribe", "_deskfleet/session/history",
+  "_deskfleet/session/read", "_deskfleet/session/unread",
+  "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
+  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+  "_deskfleet/elicitation/respond",
+  "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/yolo", "_deskfleet/session/delete", "_deskfleet/command/get",
+  "_deskfleet/git/branches", "_deskfleet/git/prepare", "_deskfleet/git/status", "_deskfleet/git/diff", "_deskfleet/git/subscribe", "_deskfleet/git/unsubscribe",
+  "_deskfleet/session/attend", "_deskfleet/session/leave",
+])
+const MAX_PENDING_REQUESTS = 128
+const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2
+const SEND_TIMEOUT_MS = 30_000
+const gzipAsync = promisify(gzip)
+
+function object(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+function rpcId(value: unknown): value is RpcId {
+  return value === null || typeof value === "string" || typeof value === "number" && Number.isFinite(value)
+}
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+/** A viewer attachment. Session processes and pending approvals belong to the service. */
+export class AgentChannel {
+  readonly #sessions: AgentChannelSessions
+  readonly #actor: AgentActor
+  readonly #send: (bytes: Uint8Array) => Promise<void>
+  readonly #onFailure: (error: unknown) => void
+  readonly #connectionId = randomUUID()
+  readonly #unsubscribe: () => void
+  readonly #unsubscribePreview: (() => void) | undefined
+  readonly #unsubscribeLive: (() => void) | undefined
+  readonly #unsubscribePresence: (() => void) | undefined
+  readonly #subscriptions = new Map<string, Subscription>()
+  readonly #gitSubscriptions = new Map<string, GitSubscription>()
+  readonly #permissionCalls = new Map<string, PermissionCall>()
+  readonly #requests = new Set<RpcId>()
+  readonly #decoder = new TextDecoder("utf-8", { fatal: true })
+  readonly #closing = new AbortController()
+  #fragments: Uint8Array[] = []
+  #fragmentBytes = 0
+  #requestBytes = 0
+  #outgoing: Uint8Array[] = []
+  #queuedBytes = 0
+  #writeScheduled: ReturnType<typeof setImmediate> | undefined
+  #writing = false
+  #initialized = false
+  #closed = false
+  #nextPermission = 0
+
+  constructor(sessions: AgentChannelSessions, actor: AgentActor, send: (bytes: Uint8Array) => Promise<void>, onFailure: (error: unknown) => void) {
+    this.#sessions = sessions
+    this.#actor = actor
+    this.#send = send
+    this.#onFailure = onFailure
+    this.#unsubscribe = sessions.onEvent(event => this.#event(event))
+    this.#unsubscribePreview = sessions.onPreview?.(preview => {
+      if (this.#subscriptions.get(preview.sessionId)?.ready) this.#preview(preview)
+    })
+    this.#unsubscribeLive = sessions.onLive?.(update => {
+      if (this.#subscriptions.get(update.sessionId)?.ready) this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: update })
+    })
+    this.#unsubscribePresence = sessions.onPresence?.(update => {
+      if (this.#closed || !this.#initialized) return
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/presence", params: update })
+    })
+  }
+
+  receive(data: Uint8Array, isString = false): void {
+    if (this.#closed) return
+    if (isString) { this.#fail(new Error("ACP DataChannel requires binary NDJSON chunks")); return }
+    let start = 0
+    for (let end = 0; end <= data.byteLength; end++) {
+      if (end !== data.byteLength && data[end] !== 10) continue
+      const fragment = data.subarray(start, end)
+      if (this.#fragmentBytes + fragment.byteLength > AGENT_MESSAGE_BYTES) {
+        this.#fail(new Error("ACP message exceeds its byte limit")); return
+      }
+      if (fragment.byteLength) this.#fragments.push(fragment.slice())
+      this.#fragmentBytes += fragment.byteLength
+      if (end < data.byteLength) {
+        const line = Buffer.concat(this.#fragments, this.#fragmentBytes)
+        this.#fragments = []
+        this.#fragmentBytes = 0
+        this.#line(line)
+        if (this.#closed) return
+      }
+      start = end + 1
+    }
+  }
+
+  close(): void {
+    if (this.#closed) return
+    this.#closed = true
+    this.#closing.abort()
+    clearImmediate(this.#writeScheduled)
+    this.#writeScheduled = undefined
+    this.#sessions.leaveAll?.(this.#connectionId)
+    this.#unsubscribe()
+    this.#unsubscribePreview?.()
+    this.#unsubscribeLive?.()
+    this.#unsubscribePresence?.()
+    for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
+    this.#gitSubscriptions.clear()
+    this.#subscriptions.clear()
+    this.#permissionCalls.clear()
+    this.#requests.clear()
+    this.#fragments = []
+    this.#fragmentBytes = 0
+    this.#outgoing = []
+    this.#queuedBytes = 0
+  }
+
+  #line(line: Uint8Array): void {
+    let message: unknown
+    try {
+      const text = this.#decoder.decode(line).trim()
+      if (!text) return
+      message = JSON.parse(text)
+    } catch {
+      this.#error(null, -32700, "Invalid JSON")
+      return
+    }
+    if (!object(message) || message.jsonrpc !== "2.0") {
+      this.#error(null, -32600, "Invalid JSON-RPC message"); return
+    }
+    if (!("method" in message)) {
+      const hasResult = Object.hasOwn(message, "result")
+      const hasError = Object.hasOwn(message, "error")
+      if (!rpcId(message.id) || hasResult === hasError || hasError &&
+        (!object(message.error) || !Number.isInteger(message.error.code) || typeof message.error.message !== "string")) {
+        this.#fail(new Error("Invalid JSON-RPC response")); return
+      }
+      this.#permissionResponse(message)
+      return
+    }
+    const hasId = Object.hasOwn(message, "id")
+    if (typeof message.method !== "string" || hasId && !rpcId(message.id)) {
+      this.#error(null, -32600, "Invalid JSON-RPC request"); return
+    }
+    if (!hasId) {
+      // Viewer RPC cancellation does not cancel a shared Session operation.
+      return
+    }
+    const id = message.id as RpcId
+    if (this.#requests.has(id)) { this.#error(id, -32600, "Request ID is already pending"); return }
+    if (this.#requests.size >= MAX_PENDING_REQUESTS || this.#requestBytes + line.byteLength > AGENT_MESSAGE_BYTES) {
+      this.#fail(new Error("Too much pending ACP input")); return
+    }
+    this.#requests.add(id)
+    this.#requestBytes += line.byteLength
+    // Keep receiving permission responses/cancellation while any request awaits.
+    void this.#request(id, message.method, message.params).finally(() => {
+      this.#requests.delete(id)
+      this.#requestBytes -= line.byteLength
+    })
+  }
+
+  async #request(id: RpcId, method: string, params: unknown): Promise<void> {
+    let subscribing: { sessionId: string; subscription: Subscription } | undefined
+    try {
+      if (method === "initialize") {
+        if (this.#initialized) { this.#error(id, -32600, "ACP is already initialized"); return }
+        if (!object(params) || !Number.isInteger(params.protocolVersion)) {
+          this.#error(id, -32602, "Invalid initialize parameters"); return
+        }
+        this.#initialized = true
+        this.#queue({ jsonrpc: "2.0", id, result: {
+          protocolVersion: 1,
+          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.22.0" },
+          agentCapabilities: { _meta: { deskfleet: { sessions: true, maxMessageBytes: AGENT_MESSAGE_BYTES } } },
+          _meta: { deskfleet: { identity: this.#sessions.journal.identity } },
+        } })
+        for (const update of this.#sessions.presence?.() ?? []) {
+          this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/presence", params: update })
+        }
+        return
+      }
+      if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
+      if (!METHODS.has(method as AgentMethod)) { this.#error(id, -32601, "Method not found"); return }
+      if (method === "_deskfleet/git/subscribe" || method === "_deskfleet/git/unsubscribe") {
+        await this.#gitSubscription(method, params)
+        this.#queue({ jsonrpc: "2.0", id, result: null })
+        return
+      }
+      if (method === "_deskfleet/session/attend" || method === "_deskfleet/session/leave") {
+        await this.#attendance(method, params)
+        this.#queue({ jsonrpc: "2.0", id, result: null })
+        return
+      }
+      if (method === "_deskfleet/session/subscribe" && object(params) && typeof params.sessionId === "string") {
+        const existing = this.#subscriptions.get(params.sessionId)
+        if (existing && !existing.ready) throw new Error("Session subscription is already pending")
+        const subscription: Subscription = { ready: false, events: [] }
+        this.#subscriptions.set(params.sessionId, subscription)
+        subscribing = { sessionId: params.sessionId, subscription }
+      }
+      const result = await this.#sessions.handle(method as AgentMethod, params, this.#actor)
+      if (this.#closed) return
+      if (method === "_deskfleet/session/history" && Array.isArray(result)) {
+        await this.#queueHistory(id, result, object(params) && params.responseEncoding === "gzip")
+        return
+      }
+      this.#queue({ jsonrpc: "2.0", id, result })
+      if (this.#closed) return
+      if (subscribing) {
+        const { subscription } = subscribing
+        const permissionChanges = new Map<string, AgentPermission["state"]>()
+        for (const { event } of subscription.events) {
+          if (event.kind === "permission") {
+            const permission = event.payload as AgentPermission
+            permissionChanges.set(permission.id, permission.state)
+          }
+        }
+        // The service authorized the subscription. Publish its response before
+        // events captured while its consistent snapshot was being read.
+        for (const { event, bytes } of subscription.events) {
+          this.#queuedBytes -= bytes
+          this.#forward(event)
+          if (this.#closed) return
+        }
+        subscription.events = []
+        const snapshot = result as AgentSnapshot
+        // Every authorized attachment gets an authoritative identity snapshot,
+        // including absence after stop/sign-out. Queue it before enabling live
+        // forwarding so a later auth update cannot be overwritten by this clear.
+        const live: AgentLiveUpdate = this.#sessions.live?.(subscribing.sessionId) ?? {
+          sessionId: subscribing.sessionId, kind: "auth", auth: null,
+          runGeneration: Math.max(0, ...snapshot.runs.map(run => run.generation)),
+        }
+        this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: live })
+        subscription.ready = true
+        const preview = this.#sessions.preview?.(subscribing.sessionId)
+        if (preview) this.#preview(preview)
+        for (const permission of snapshot.permissions) {
+          if ((permissionChanges.get(permission.id) ?? permission.state) === "pending") this.#permission(permission)
+        }
+      }
+    } catch (error) {
+      if (subscribing) {
+        this.#subscriptions.delete(subscribing.sessionId)
+        for (const item of subscribing.subscription.events) this.#queuedBytes -= item.bytes
+      }
+      this.#error(id, -32000, errorMessage(error))
+    }
+  }
+
+  async #attendance(method: string, params: unknown): Promise<void> {
+    if (!object(params) || typeof params.sessionId !== "string" || !params.sessionId) throw new Error("Missing Session ID")
+    const sessionId = params.sessionId
+    if (method === "_deskfleet/session/leave") {
+      this.#sessions.leave?.(sessionId, this.#connectionId)
+      return
+    }
+    if (!this.#sessions.attend) throw new Error("Session presence is unavailable")
+    await this.#sessions.attend(sessionId, this.#connectionId, this.#actor)
+  }
+
+  async #gitSubscription(method: string, params: unknown): Promise<void> {
+    if (!object(params) || typeof params.subscriptionId !== "string" || !params.subscriptionId || params.subscriptionId.length > 128) {
+      throw new Error("Invalid Git subscription ID")
+    }
+    const subscriptionId = params.subscriptionId
+    if (method === "_deskfleet/git/unsubscribe") {
+      this.#gitSubscriptions.get(subscriptionId)?.stop?.()
+      this.#gitSubscriptions.delete(subscriptionId)
+      return
+    }
+    if (typeof params.sessionId !== "string" || !params.sessionId) throw new Error("Missing Session ID")
+    if (!this.#sessions.watchGit) throw new Error("Git observation is unavailable")
+    if (this.#gitSubscriptions.has(subscriptionId)) throw new Error("Git subscription ID is already in use")
+    if (this.#gitSubscriptions.size >= MAX_PENDING_REQUESTS) throw new Error("Too many Git subscriptions")
+    const sessionId = params.sessionId
+    const subscription: GitSubscription = {}
+    this.#gitSubscriptions.set(subscriptionId, subscription)
+    try {
+      const stop = await this.#sessions.watchGit(sessionId, this.#actor, error => {
+        if (this.#closed || this.#gitSubscriptions.get(subscriptionId) !== subscription) return
+        this.#queue({ jsonrpc: "2.0", method: "_deskfleet/git/changed", params: { sessionId, subscriptionId, ...(error ? { error } : {}) } })
+      })
+      // The viewer can hide the panel or disconnect while directory watches attach.
+      if (this.#closed || this.#gitSubscriptions.get(subscriptionId) !== subscription) stop()
+      else subscription.stop = stop
+    } catch (error) {
+      if (this.#gitSubscriptions.get(subscriptionId) === subscription) this.#gitSubscriptions.delete(subscriptionId)
+      throw error
+    }
+  }
+
+  #event(event: AgentEvent): void {
+    if (this.#closed) return
+    const subscription = this.#subscriptions.get(event.sessionId)
+    if (!subscription) return
+    if (subscription.ready) { this.#forward(event); return }
+    const bytes = Buffer.byteLength(JSON.stringify(event))
+    if (this.#queuedBytes + bytes > MAX_QUEUED_BYTES) { this.#fail(new Error("ACP viewer cannot keep up")); return }
+    this.#queuedBytes += bytes
+    subscription.events.push({ event, bytes })
+  }
+
+  #forward(event: AgentEvent): void {
+    this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/event", params: event })
+    if (event.kind !== "permission") return
+    const permission = event.payload as AgentPermission
+    if (permission.state === "pending") { this.#permission(permission); return }
+    for (const [id, call] of this.#permissionCalls) {
+      if (call.sessionId !== permission.sessionId || call.permissionId !== permission.id || call.resolved) continue
+      call.resolved = true
+      this.#queue({ jsonrpc: "2.0", method: "$/cancel_request", params: { requestId: id } })
+    }
+  }
+
+  #preview(preview: AgentPreview): void {
+    // A reconnect can replay five seconds of text. Keep each notification
+    // bounded like an ordinary event instead of encoding the whole tail once.
+    for (const [index, event] of preview.events.entries()) {
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/preview", params: {
+        ...preview, offset: preview.offset + index, events: [event],
+      } })
+      if (this.#closed) return
+    }
+  }
+
+  #permission(permission: AgentPermission): void {
+    if (this.#closed) return
+    for (const call of this.#permissionCalls.values()) {
+      if (call.sessionId === permission.sessionId && call.permissionId === permission.id) return
+    }
+    if (this.#permissionCalls.size >= MAX_PENDING_REQUESTS) { this.#fail(new Error("Too many unanswered ACP permission requests")); return }
+    const id = `permission-${++this.#nextPermission}`
+    this.#permissionCalls.set(id, { sessionId: permission.sessionId, permissionId: permission.id, resolved: false })
+    this.#queue({ jsonrpc: "2.0", id, method: "session/request_permission", params: {
+      ...permission.request,
+      sessionId: permission.sessionId,
+      _meta: { ...permission.request._meta, deskfleet: { permissionId: permission.id } },
+    } })
+  }
+
+  #permissionResponse(message: JsonObject): void {
+    if (typeof message.id !== "string") return
+    const call = this.#permissionCalls.get(message.id)
+    if (!call) return
+    this.#permissionCalls.delete(message.id)
+    if ("error" in message || !object(message.result) || !object(message.result.outcome)) return
+    const { outcome } = message.result
+    if (outcome.outcome !== "selected" || typeof outcome.optionId !== "string") return
+    const meta = message.result._meta
+    const deskfleet = object(meta) ? meta.deskfleet : undefined
+    const operationId = object(deskfleet) && typeof deskfleet.operationId === "string" ? deskfleet.operationId : randomUUID()
+    void this.#sessions.handle("_deskfleet/permission/respond", {
+      sessionId: call.sessionId, permissionId: call.permissionId, operationId, optionId: outcome.optionId,
+    }, this.#actor).then(result => {
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/permission/receipt", params: { operationId, permissionId: call.permissionId, result } })
+    }, error => {
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/permission/receipt", params: { operationId, permissionId: call.permissionId, error: errorMessage(error) } })
+    })
+  }
+
+  #error(id: RpcId, code: number, message: string): void {
+    this.#queue({ jsonrpc: "2.0", id, error: { code, message } })
+  }
+
+  async #queueHistory(id: RpcId, events: AgentEvent[], compress: boolean): Promise<void> {
+    const prefix = `{"jsonrpc":"2.0","id":${JSON.stringify(id)},"result":`
+    const suffix = "}\n"
+    const limit = AGENT_MESSAGE_BYTES + 1 - Buffer.byteLength(prefix) - suffix.length
+    const encoded: string[] = []
+    let size = 2 // Array brackets
+    for (const event of events) {
+      const item = JSON.stringify(event)
+      const nextSize = size + Buffer.byteLength(item) + (encoded.length ? 1 : 0)
+      if (nextSize > limit) {
+        if (encoded.length) break
+        throw new Error(`Conversation event ${event.seq} exceeds the Agent message size limit. Ask the machine owner to inspect the Session journal.`)
+      }
+      size = nextSize
+      encoded.push(item)
+    }
+    // Continue with the last event's seq if the byte budget shortened this page.
+    let json = `[${encoded.join(",")}]`
+    if (compress && size >= 4096) {
+      const gzip = await gzipAsync(Buffer.from(json), { level: 4 })
+      const compressed = JSON.stringify({ encoding: "gzip", data: gzip.toString("base64") })
+      if (compressed.length < size) json = compressed
+    }
+    this.#queueBytes(Buffer.from(prefix + json + suffix))
+  }
+
+  #queue(message: JsonObject): void {
+    if (this.#closed) return
+    this.#queueBytes(Buffer.from(JSON.stringify(message) + "\n"))
+  }
+
+  #queueBytes(bytes: Uint8Array): void {
+    if (this.#closed) return
+    if (bytes.byteLength > AGENT_MESSAGE_BYTES + 1 || this.#queuedBytes + bytes.byteLength > MAX_QUEUED_BYTES) {
+      this.#fail(new Error("ACP viewer exceeded its output byte limit")); return
+    }
+    this.#queuedBytes += bytes.byteLength
+    this.#outgoing.push(bytes)
+    if (!this.#writing && !this.#writeScheduled) {
+      // Collect the current burst without adding a timer to interactive replies.
+      this.#writeScheduled = setImmediate(() => {
+        this.#writeScheduled = undefined
+        void this.#write()
+      })
+    }
+  }
+
+  #chunk(): Uint8Array {
+    const parts: Uint8Array[] = []
+    let bytes = 0
+    while (this.#outgoing.length && bytes < AGENT_CHUNK_BYTES) {
+      const message = this.#outgoing[0]!
+      const size = Math.min(message.byteLength, AGENT_CHUNK_BYTES - bytes)
+      parts.push(message.subarray(0, size))
+      bytes += size
+      if (size === message.byteLength) this.#outgoing.shift()
+      else this.#outgoing[0] = message.subarray(size)
+    }
+    return parts.length === 1 ? parts[0]! : Buffer.concat(parts, bytes)
+  }
+
+  async #write(): Promise<void> {
+    this.#writing = true
+    try {
+      while (!this.#closed && this.#outgoing.length) {
+        // NDJSON is a byte stream: a frame can contain several messages or part
+        // of one. Keep the same bytes in flight when retrying backpressure.
+        const chunk = this.#chunk()
+        const deadline = Date.now() + SEND_TIMEOUT_MS
+        for (;;) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const stopped = () => rejectStopped(new Error("ACP channel closed"))
+          let rejectStopped!: (error: Error) => void
+          try {
+            const stopping = new Promise<never>((_, reject) => { rejectStopped = reject })
+            this.#closing.signal.addEventListener("abort", stopped, { once: true })
+            await Promise.race([
+              this.#send(chunk),
+              stopping,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("ACP send buffer stalled")), Math.max(1, deadline - Date.now()))
+              }),
+            ])
+            break
+          } catch (error) {
+            if (!/backpressure|send buffer is full/i.test(errorMessage(error)) || Date.now() >= deadline) throw error
+            await delay(10, undefined, { signal: this.#closing.signal })
+            if (this.#closed) return
+          } finally {
+            clearTimeout(timer)
+            this.#closing.signal.removeEventListener("abort", stopped)
+          }
+        }
+        this.#queuedBytes = Math.max(0, this.#queuedBytes - chunk.byteLength)
+      }
+    } catch (error) { this.#fail(error) }
+    finally { this.#writing = false }
+  }
+
+  #fail(error: unknown): void {
+    if (this.#closed) return
+    this.close()
+    this.#onFailure(error)
+  }
+}

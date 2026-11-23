@@ -342,10 +342,10 @@ SDP signature/JWT verification subsystem is needed for this trust model.
 | Boundary | Implementation responsibility |
 | --- | --- |
 | [Native peer](../../crates/native/src/rtc/mod.rs) uses default certificate generation and standard remote SDP processing | Preserve stack-owned key generation and fingerprint verification; do not disable verification or expose private keys through napi |
-| [Generated control protocol](../../crates/protocol/control.ts) carries authenticated peer context | Keep central peer identity, immutable description binding, and expiry separate from resource IDs |
-| [Authorized peers](../../apps/daemon/src/authorized-peers.ts) owns local and remote access | Bind terminal access and Agent actors to daemon-owned authorization/lifetime state |
+| [Generated control protocol](../../packages/protocol/src/generated/central-control.ts) carries authenticated peer context | Keep central peer identity, immutable description binding, and expiry separate from resource IDs |
+| [Authorized peers](../../apps/daemon/src/peers/authorized-peers.ts) owns local and remote access | Bind terminal access and Agent actors to daemon-owned authorization/lifetime state |
 | [Remote client adapter](../../packages/client/src/remote.ts) tracks signaling and grants | Distinguish signaling availability from RTC failure and explicit revocation; preserve working peers within their grant |
-| [Agent journal actor](../../apps/daemon/src/agent-store.ts) records the authorized caller | Supply verified user/device identity from the bound peer, with source Machine absent for browsers that have none |
+| [Agent journal actor](../../apps/daemon/src/agent/store.ts) records the authorized caller | Supply verified user/device identity from the bound peer, with source Machine absent for browsers that have none |
 | [Native ICE configuration](../../crates/native/src/rtc/types.rs) already supports servers and relay-only policy | Pass authorized server-provided ICE configuration to both endpoints |
 
 The locked native dependency generates a certificate for each default

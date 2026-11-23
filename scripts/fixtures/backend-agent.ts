@@ -1,4 +1,4 @@
-import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../apps/daemon/src/agents/acp.ts"
+import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../apps/daemon/src/acp/connection.ts"
 
 /** Fixture ACP provider deliberately waits for approval so archive must cancel a live turn. */
 export class BackendAgent implements AgentProvider {

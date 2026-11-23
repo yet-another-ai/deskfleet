@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { UpdateController, UPDATE_CHECK_INTERVAL, type UpdateDriver } from "./update-controller.ts"
-import type { UpdateState } from "../../../../packages/client/src/updates.ts"
+import type { UpdateState } from "@deskfleet/client/updates"
 
 const controllers: UpdateController[] = []
 afterEach(() => {

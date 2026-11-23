@@ -2,7 +2,7 @@
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { UserRound } from "@lucide/vue"
-import type { AgentAuthStatus } from "../../../../client/src/agent-live.ts"
+import type { AgentAuthStatus } from "@deskfleet/protocol/agent-live"
 
 const props = defineProps<{ status: AgentAuthStatus }>()
 const { t } = useI18n()

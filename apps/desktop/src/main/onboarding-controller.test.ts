@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
-import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import type { AuvPermissionsState, LocalNetworkAccessRequest, OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
-import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
+import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "@deskfleet/client/local-agent"
+import type { AuvPermissionsState, LocalNetworkAccessRequest, OnboardingPermission } from "@deskfleet/client/onboarding"
+import type { WindowsDesktopServiceState } from "@deskfleet/client/windows-desktop-service"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const macPermissions = { permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }

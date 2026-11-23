@@ -2,7 +2,7 @@ import { effectScope, nextTick, ref, shallowRef } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { desktopPoint, useDesktopInput } from "./useDesktopInput.ts"
 import type { DesktopPointerMode } from "./useDesktopTouch.ts"
-import type { DesktopInputMessage } from "../../../client/src/desktop-input.ts"
+import type { DesktopInputMessage } from "@deskfleet/client/desktop-input"
 
 const disposers: (() => void)[] = []
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose() })

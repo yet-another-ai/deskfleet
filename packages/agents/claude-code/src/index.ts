@@ -8,7 +8,7 @@ import {
   type ProviderMcpDiscoveryContext, type ProviderMcpServerCandidate, type ProviderMcpServerDiscovery,
   type ProviderWorkspaceDiscovery, type ProviderWorkspaceDiscoveryContext,
 } from "@deskfleet/agent-core"
-import { parseClaudeCodeComposerSkill } from "./protocol.ts"
+import { parseClaudeCodeComposerSkill } from "@deskfleet/protocol/agents/claude-code"
 
 export { parseClaudeCodeComposerSkill }
 

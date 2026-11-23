@@ -1,4 +1,4 @@
-import type { AgentChoice } from "../../../client/src/agent-configuration.ts"
+import type { AgentChoice } from "@deskfleet/client/agent-configuration"
 
 export interface PeriodicElement {
   number: number

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { app, ipcMain, type BrowserWindow, type WebContents } from "electron"
-import { WINDOWS_DESKTOP_SERVICE_CHANNEL } from "../../../../packages/client/src/windows-desktop-service.ts"
+import { WINDOWS_DESKTOP_SERVICE_CHANNEL } from "@deskfleet/client/windows-desktop-service"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { WindowsDesktopServiceController } from "./windows-desktop-service-controller.ts"
 

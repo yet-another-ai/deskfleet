@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { AutoDownloadUpdatesState, UpdateInstallSource } from "../../../../packages/client/src/settings.ts"
+import type { AutoDownloadUpdatesState, UpdateInstallSource } from "@deskfleet/client/settings"
 
 /** Owns the desktop client's automatic update download preference. */
 export class UpdateSettingsController {

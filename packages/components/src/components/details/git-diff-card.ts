@@ -1,4 +1,4 @@
-import type { GitChangeKind, GitDiffRequest, GitFileDiff } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitChangeKind, GitDiffRequest, GitFileDiff } from "@deskfleet/protocol/git"
 
 export interface GitDiffCard {
   request: GitDiffRequest

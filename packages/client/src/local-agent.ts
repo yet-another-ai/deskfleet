@@ -1,6 +1,6 @@
-import type { DesktopPermissionsState } from "../../../apps/daemon/src/control-protocol.ts"
+import type { DesktopPermissionsState } from "@deskfleet/protocol/control"
 
-export type { DesktopPermission, DesktopPermissionKind, DesktopPermissionsState } from "../../../apps/daemon/src/control-protocol.ts"
+export type { DesktopPermission, DesktopPermissionKind, DesktopPermissionsState } from "@deskfleet/protocol/control"
 
 export interface LocalAgentState extends Partial<DesktopPermissionsState> {
   enabled: boolean

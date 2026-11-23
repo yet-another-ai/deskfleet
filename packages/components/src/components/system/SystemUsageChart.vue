@@ -7,7 +7,7 @@ import { SVGRenderer } from "echarts/renderers"
 import { storeToRefs } from "pinia"
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { SYSTEM_STATUS_HISTORY, SYSTEM_STATUS_INTERVAL } from "../../composables/useSystemStatus.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 
