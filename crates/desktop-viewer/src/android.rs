@@ -469,9 +469,11 @@ fn send_command(raw: &str) {
             paste_code,
             paste_shift,
         }) => {
-            if let Some(events) = crate::input_text::paste_events(text, paste_code, paste_shift) {
-                send_view_input(events);
-            }
+            send_view_input(crate::input_text::mobile_commit_events(
+                text,
+                paste_code,
+                paste_shift,
+            ));
         }
         Ok(command) => {
             #[cfg(target_os = "ios")]

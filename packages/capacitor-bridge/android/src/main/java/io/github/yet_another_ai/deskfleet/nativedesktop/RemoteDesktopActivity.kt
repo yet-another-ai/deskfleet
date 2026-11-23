@@ -112,13 +112,13 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         runCatching {
             val clip = clipboardManager?.primaryClip
             val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
-            val command = if (onFocus) {
+            val command = (if (onFocus) {
                 clipboardSync.takeFocusCommand(text, controls.input.enabled, controls.clipboardSharing)
             } else if (beforePaste) {
                 clipboardSync.takePasteCommand(text, controls.input.enabled, controls.clipboardSharing)
             } else {
                 clipboardSync.takeOutgoingCommand(text, controls.input.enabled, controls.clipboardSharing, explicit = force)
-            } ?: return
+            }) ?: return
             DeskFleetBridge.nativeSendCommand(command)
         }
     }
