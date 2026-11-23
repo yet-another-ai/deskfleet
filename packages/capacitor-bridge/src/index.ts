@@ -17,6 +17,7 @@ import {
 import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outline-audio"
 import { createBrowserFiles } from "@deskfleet/client/browser-files"
 import { CapacitorFilesEndpoint, type FilesBridgePlugin } from "./files.ts"
+import { createCapacitorPortsApi as portsApi, type PortsBridgePlugin } from "./ports.ts"
 import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "./speech.ts"
 export {
   ANDROID_TASK_NOTIFICATION_CHANNEL_ID,
@@ -37,7 +38,7 @@ export interface TelemetryBridgePlugin {
   }): Promise<{ configured: boolean }>
 }
 
-export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin, TelemetryBridgePlugin {
+export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin, PortsBridgePlugin, TelemetryBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   getInstallSource?(): Promise<{ installerPackageName: string | null }>
   /** Android's metered status for the active network. */
@@ -67,6 +68,10 @@ export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, File
     eventName: "outlineAudioStopped",
     listenerFunc: () => void,
   ): Promise<PluginListenerHandle>
+  addListener(
+    eventName: "portsEvent",
+    listenerFunc: Parameters<PortsBridgePlugin["addListener"]>[1],
+  ): Promise<PluginListenerHandle>
 }
 
 export type ViewerBridgePlugin = Pick<
@@ -83,6 +88,10 @@ export const DeskFleetBridge = registerPlugin<DeskFleetBridgeCapacitorPlugin>("D
 
 export function createCapacitorFilesApi(central: CentralApi, plugin: FilesBridgePlugin = DeskFleetBridge) {
   return createBrowserFiles(central, () => new CapacitorFilesEndpoint(plugin))
+}
+
+export function createCapacitorPortsApi(central: CentralApi, plugin: PortsBridgePlugin = DeskFleetBridge) {
+  return portsApi(central, plugin)
 }
 
 export function createCapacitorSpeechApi(plugin: SpeechBridgePlugin = DeskFleetBridge) {

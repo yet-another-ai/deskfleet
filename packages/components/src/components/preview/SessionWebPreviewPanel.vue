@@ -160,7 +160,9 @@ async function reload(): Promise<void> {
 
 function openExternal(): void {
   const url = actualUrl.value
-  if (url) window.open(url, "_blank", "noopener,noreferrer")
+  if (!url) return
+  if (client.openExternal) void client.openExternal(url)
+  else window.open(url, "_blank", "noopener,noreferrer")
 }
 </script>
 
