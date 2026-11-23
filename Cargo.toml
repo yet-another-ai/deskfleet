@@ -5,6 +5,7 @@ members = [
     "apps/maintenance-service",
     "crates/control-store",
     "crates/desktop-viewer",
+    "crates/viewer-controls",
     "crates/capture",
     "crates/encoder",
     "crates/input",
@@ -44,6 +45,7 @@ publish = false
 [workspace.dependencies]
 deskfleet-capture = { path = "crates/capture" }
 deskfleet-encoder = { path = "crates/encoder" }
+deskfleet-viewer-controls = { path = "crates/viewer-controls" }
 deskfleet-input = { path = "crates/input" }
 deskfleet-linux-desktop = { path = "crates/linux-desktop" }
 deskfleet-gstreamer-media = { path = "crates/gstreamer-media" }

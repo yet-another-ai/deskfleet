@@ -240,22 +240,19 @@ fn keyboard(state: &ToolbarState, p: Palette) -> impl IntoElement + use<> {
 
 fn clipboard(state: &ToolbarState, p: Palette) -> impl IntoElement + use<> {
     let locale = state.ui.locale.as_deref();
-    let mut clipboard = section(label(locale, "clipboardSection"), p).child(toggle_row(
+    let clipboard = section(label(locale, "clipboardSection"), p).child(toggle_row(
         label(locale, "clipboard"),
         state.clipboard_sharing,
         false,
         ToolbarAction::SetClipboardSharing,
         p,
     ));
-    if state.mobile {
-        clipboard = clipboard.child(action_button(
-            label(locale, "syncClipboard"),
-            ToolbarAction::SyncClipboard,
-            p,
-            !state.controls_enabled(),
-        ));
-    }
-    clipboard
+    clipboard.child(action_button(
+        label(locale, "syncClipboard"),
+        ToolbarAction::SyncClipboard,
+        p,
+        !state.controls_enabled(),
+    ))
 }
 
 pub(super) fn panel(state: &ToolbarState, live: Live, p: Palette) -> impl IntoElement + use<> {

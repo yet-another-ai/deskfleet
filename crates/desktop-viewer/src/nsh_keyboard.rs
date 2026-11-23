@@ -8,7 +8,7 @@ use nsh_core::prelude::*;
 use crate::nsh_controls::{ToolbarAction, ToolbarState, emit};
 use crate::nsh_ui::{Palette, icon, label};
 
-pub(crate) const MODIFIERS: [&str; 4] = ["ControlLeft", "AltLeft", "ShiftLeft", "MetaLeft"];
+use deskfleet_viewer_controls::MODIFIERS;
 
 const ROWS: &[&[(&str, &str)]] = &[
     &[
@@ -158,29 +158,6 @@ pub(crate) fn panel(state: &ToolbarState, p: Palette) -> impl IntoElement + use<
         .child(keys)
 }
 
-/// A complete one-shot chord; no selected modifier remains down remotely.
-#[cfg(any(test, not(any(target_os = "android", target_os = "ios"))))]
-pub(crate) fn key_events(modifiers: [bool; 4], code: &str) -> Vec<InputEvent> {
-    let key = |code: &str, pressed| InputEvent::Key {
-        code: code.into(),
-        pressed,
-        repeat: false,
-    };
-    let mut events = vec![InputEvent::ReleaseAll];
-    for (selected, modifier) in modifiers.into_iter().zip(MODIFIERS) {
-        if selected {
-            events.push(key(modifier, true));
-        }
-    }
-    events.extend([key(code, true), key(code, false)]);
-    for (selected, modifier) in modifiers.into_iter().zip(MODIFIERS).rev() {
-        if selected {
-            events.push(key(modifier, false));
-        }
-    }
-    events
-}
-
 /// One shortcut chord: earlier codes are held while the last is pressed.
 #[cfg(any(test, not(target_os = "android")))]
 pub(crate) fn chord_events(codes: &[impl AsRef<str>]) -> Vec<InputEvent> {
@@ -217,41 +194,6 @@ mod tests {
                 pressed("Escape", false),
                 pressed("ShiftLeft", false),
                 pressed("ControlLeft", false),
-            ]
-        );
-    }
-
-    #[test]
-    fn selected_modifiers_wrap_one_complete_key_in_order() {
-        let events = key_events([true, true, false, true], "Delete");
-        assert_eq!(events[0], InputEvent::ReleaseAll);
-        let keys: Vec<_> = events
-            .iter()
-            .skip(1)
-            .map(|event| {
-                let InputEvent::Key {
-                    code,
-                    pressed,
-                    repeat,
-                } = event
-                else {
-                    panic!("expected key")
-                };
-                assert!(!repeat);
-                (code.as_str(), *pressed)
-            })
-            .collect();
-        assert_eq!(
-            keys,
-            [
-                ("ControlLeft", true),
-                ("AltLeft", true),
-                ("MetaLeft", true),
-                ("Delete", true),
-                ("Delete", false),
-                ("MetaLeft", false),
-                ("AltLeft", false),
-                ("ControlLeft", false)
             ]
         );
     }

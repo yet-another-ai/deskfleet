@@ -38,13 +38,17 @@ changing the daemon's lifetime.
 
 Native viewers share a pure-Rust NSH control surface: the floating toolbar, its
 Control, Config, and Monitor dropdowns, and the Hacker Keyboard use the same
-components, translations, theme, and typed actions. Desktop hosts these components
+components, translations, theme, and typed actions. The workspace Rust nshm
+`deskfleet-viewer-controls` computes ordered effects from each window’s current
+state. GPUI, Kotlin, and Swift apply those effects on their UI thread. Desktop hosts these components
 in GPUI. Rust mounts the video surface, system IME editor, and NSH overlay inside
 an Android activity or iOS view controller. One Rust layout places and hit-tests
 the controls on both platforms. UIKit's Metal view receives hardware key presses
 and indirect pointer events. Android dispatches key and motion events from the
 activity. Both feed the same Rust viewer input queue and video coordinate mapping.
-Swift and Kotlin supply lifecycle, clipboard, and system IME adapters.
+Swift and Kotlin supply lifecycle and system IME adapters. Kotlin connects
+Android's clipboard to the shared Rust policy. On iOS the mounted Rust video
+view owns the policy and accesses UIKit's pasteboard through `objc2-ui-kit`.
 Decoded pixels stay in Rust. Control gathers input (pointer, keyboards, shortcuts, clipboard, and
 mobile pinch zoom); Config gathers display, control permission, full screen, and
 the connection; Monitor shows receiver-side stream health.
@@ -1918,6 +1922,7 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 | `deskfleet-desktop-service` | Thin Windows service executable in `apps/desktop-service`, hosting native desktop workers |
+| `deskfleet-viewer-controls` | Rust nshm defining viewer actions, input gates, and ordered host effects |
 | `deskfleet-desktop-viewer` | Native H.264/HEVC/AV1 receive/decode, bounded decoded-frame queue, NSH/GPUI desktop presentation, and remote input; thin viewer executable |
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,

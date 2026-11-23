@@ -39,10 +39,11 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
 
         controls = RemoteDesktopControls(this, DeskFleetBridge::nativeSendCommand,
-            DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote(force = true) }, ::requestCloseAndFinish) {
-            fullscreen = !fullscreen
+            DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote(force = true) }, ::requestCloseAndFinish) { value ->
+            fullscreen = value
             updateSystemBars()
         }
+        controls.input.beforePaste = ::syncClipboardBeforePaste
         controls.surface.holder.addCallback(this)
         touch = RemoteDesktopTouch(controls.surface, controls).also { it.attach() }
         pointer = RemoteDesktopPointer(controls)
@@ -85,24 +86,38 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     internal fun applyRemoteClipboard(payload: String) {
-        if (::controls.isInitialized && !controls.clipboardSharing) return
-        val text = clipboardSync.acceptIncomingEvent(payload) ?: return
         runOnUiThread {
+            if (!::controls.isInitialized) return@runOnUiThread
+            val text = clipboardSync.acceptIncomingEvent(payload, controls.input.enabled, controls.clipboardSharing)
+                ?: return@runOnUiThread
             runCatching {
                 clipboardManager?.setPrimaryClip(ClipData.newPlainText("DeskFleet", text))
             }
         }
     }
 
-    private fun syncLocalClipboardToRemote(onFocus: Boolean = false, force: Boolean = false) {
-        if (!::controls.isInitialized || !controls.input.enabled || (!force && !controls.clipboardSharing)) return
+    internal fun resetClipboardSession() {
+        runOnUiThread {
+            clipboardSync.resetSession()
+            syncLocalClipboardToRemote(onFocus = true)
+        }
+    }
+
+    internal fun syncClipboardBeforePaste() {
+        syncLocalClipboardToRemote(beforePaste = true)
+    }
+
+    private fun syncLocalClipboardToRemote(onFocus: Boolean = false, force: Boolean = false, beforePaste: Boolean = false) {
+        if (!::controls.isInitialized || (!controls.input.enabled && !onFocus) || (!force && !controls.clipboardSharing)) return
         runCatching {
             val clip = clipboardManager?.primaryClip
             val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
             val command = if (onFocus) {
-                clipboardSync.takeFocusCommand(text)
+                clipboardSync.takeFocusCommand(text, controls.input.enabled, controls.clipboardSharing)
+            } else if (beforePaste) {
+                clipboardSync.takePasteCommand(text, controls.input.enabled, controls.clipboardSharing)
             } else {
-                clipboardSync.takeOutgoingCommand(text)
+                clipboardSync.takeOutgoingCommand(text, controls.input.enabled, controls.clipboardSharing, explicit = force)
             } ?: return
             DeskFleetBridge.nativeSendCommand(command)
         }
@@ -146,6 +161,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onDestroy() {
         if (::controls.isInitialized) controls.destroy()
         runCatching { clipboardManager?.removePrimaryClipChangedListener(clipListener) }
+        clipboardSync.close()
         val active = DeskFleetBridge.activeActivity?.get() === this
         if (active) DeskFleetBridge.activeActivity = null
         if (active && isFinishing && !closeSent) {

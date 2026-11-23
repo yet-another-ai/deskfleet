@@ -237,6 +237,7 @@ class DeskFleetBridge : Plugin() {
         runCatching {
             activeViewerPlugin = WeakReference(this)
             viewerUiState = null
+            activeActivity?.get()?.resetClipboardSession()
             nativeStart(this)
             currentActivity.startActivity(Intent(currentActivity, RemoteDesktopActivity::class.java))
         }.fold({ call.resolve() }, { call.reject(it.message ?: "Failed to open native desktop") })
@@ -248,6 +249,9 @@ class DeskFleetBridge : Plugin() {
             ?: return call.reject("Missing command payload")
         runCatching {
             val value = JSONObject(command)
+            if (value.optString("type") in listOf("start", "stop", "close")) {
+                activeActivity?.get()?.resetClipboardSession()
+            }
             if (value.optString("type") == "ui") {
                 val state = value.getJSONObject("state")
                 viewerUiState = state
@@ -414,6 +418,7 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativePhysicalKeyCode(scan: Int): String?
         @JvmStatic external fun nativeInputSequence(eventsJson: String)
         @JvmStatic external fun nativeControlsOwnFocus(handle: Long): Boolean
+        @JvmStatic external fun nativeControlEffects(state: String, action: String): String
         @JvmStatic external fun nativeMountViewer(activity: Activity, keyboard: View, overlay: NshView): SurfaceView
         @JvmStatic external fun nativeDismissPanel(handle: Long): Boolean
         @JvmStatic external fun nativeControlsHit(handle: Long, x: Float, y: Float, grip: Boolean): Boolean

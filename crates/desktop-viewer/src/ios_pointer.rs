@@ -17,8 +17,10 @@ use objc2_ui_kit::{
     UIPanGestureRecognizer, UIScrollTypeMask, UITouch, UITouchType, UIView,
 };
 
-use crate::android::{deskfleet_ios_touch, send_pointer};
+use crate::android::{send_pointer, send_touch};
+use crate::clipboard::ClipboardIntent;
 use crate::input::PointerPhase;
+use crate::ios_window::VideoView;
 
 #[derive(Default)]
 struct Settings {
@@ -82,16 +84,22 @@ define_class!(
             let direction = if self.ivars().reverse_scroll.get() { 1. } else { -1. };
             // UIKit reports scroll distances in logical points, as do the
             // desktop viewer and browser's pixel-mode wheel events.
-            deskfleet_ios_touch(5, x, y, direction * delta.x, direction * delta.y);
+            send_touch(5, x, y, direction * delta.x, direction * delta.y);
         }
     }
 );
 
 impl PointerRecognizer {
     fn sample(&self, touches: &NSSet<UITouch>, phase: PointerPhase) {
-        if let Some(view) = self.view()
+        if let Some(view) = self.view().and_then(|v| v.downcast::<VideoView>().ok())
+            && !view.stopped()
             && let Some(touch) = touches.anyObject()
         {
+            if self.isEnabled()
+                && matches!(phase, PointerPhase::Begin(buttons) if buttons & !1 != 0)
+            {
+                view.sync_clipboard(ClipboardIntent::Paste);
+            }
             send_pointer(phase, pixels(touch.locationInView(Some(&view)), &view));
         }
     }

@@ -13,6 +13,9 @@ use gpui::{
 use serde_json::json;
 use tokio::sync::watch;
 
+#[path = "nsh_window_actions.rs"]
+mod actions;
+
 use crate::clipboard::ClipboardSync;
 use crate::gpui_input::Input;
 use crate::host::Host;
@@ -244,13 +247,28 @@ impl Viewer {
     }
 
     fn event(&mut self, event: WindowEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let previous_control = self.toolbar_state.ui.control;
+        let previous_display = self.toolbar_state.ui.display_id;
+        let previously_enabled = self.toolbar_state.controls_enabled();
         self.session_state
             .update(&mut self.toolbar_state.ui, &event);
-        if previous_control != self.toolbar_state.ui.control
-            || matches!(&event, WindowEvent::Start { .. })
-        {
-            self.toolbar_state.paused = false;
+        if matches!(
+            event,
+            WindowEvent::Start { .. }
+                | WindowEvent::Ui(_)
+                | WindowEvent::SessionEnded
+                | WindowEvent::Connected(_)
+                | WindowEvent::InputReady
+        ) {
+            let action = ToolbarAction::SessionChanged {
+                was_enabled: previously_enabled,
+                display_changed: previous_display != self.toolbar_state.ui.display_id,
+            };
+            let effects =
+                deskfleet_viewer_controls::ControlState::from(&self.toolbar_state).effects(&action);
+            self.apply_effects(effects, window, cx);
+        }
+        if matches!(event, WindowEvent::Start { .. }) {
+            self.clipboard.reset_session(cx);
         }
         if self.toolbar_state.ui.status != Status::Connected {
             self.toolbar_state.panel = None;
@@ -473,158 +491,6 @@ impl Viewer {
         self.release(window, cx);
         self.keyboard_focus.resume();
         self.resume_focus(window, cx);
-        self.sync_input(window, cx);
-        cx.notify();
-    }
-
-    fn action(&mut self, action: ToolbarAction, window: &mut Window, cx: &mut Context<Self>) {
-        let event = match action {
-            ToolbarAction::ToggleControl if self.toolbar_state.ui.control => {
-                self.toolbar_state.paused = !self.toolbar_state.paused;
-                self.release(window, cx);
-                if !self.toolbar_state.paused {
-                    self.keyboard_focus.resume();
-                    self.resume_focus(window, cx);
-                }
-                None
-            }
-            ToolbarAction::ToggleHackerKeyboard => {
-                self.toolbar_state.hacker_open =
-                    !self.toolbar_state.hacker_open && self.toolbar_state.controls_enabled();
-                self.toolbar_state.panel = None;
-                self.toolbar_state.keyboard_size = (520., 400.);
-                self.toolbar_state.modifiers = [false; 4];
-                self.release(window, cx);
-                None
-            }
-            ToolbarAction::ToggleModifier(code) if self.toolbar_state.controls_enabled() => {
-                if let Some(index) = crate::nsh_keyboard::MODIFIERS
-                    .iter()
-                    .position(|value| *value == code)
-                {
-                    self.toolbar_state.modifiers[index] = !self.toolbar_state.modifiers[index];
-                }
-                None
-            }
-            ToolbarAction::Key(code) if self.toolbar_state.controls_enabled() => {
-                let modifiers = std::mem::take(&mut self.toolbar_state.modifiers);
-                let events = crate::nsh_keyboard::key_events(modifiers, code);
-                let clip =
-                    self.clipboard
-                        .before_events(self.toolbar_state.clipboard_sharing, &events, cx);
-                self.send(clip.into_iter().chain(events), window, cx);
-                None
-            }
-            ToolbarAction::KeyboardMeasured(width, height) => {
-                if width.is_finite() && height.is_finite() && width > 0. && height > 0. {
-                    self.toolbar_state.keyboard_size = (width, height);
-                }
-                None
-            }
-            ToolbarAction::ToggleFullscreen => {
-                window.toggle_fullscreen();
-                None
-            }
-            ToolbarAction::Shortcut(codes) if self.toolbar_state.controls_enabled() => {
-                self.toolbar_state.modifiers = [false; 4];
-                let events = crate::nsh_keyboard::chord_events(codes);
-                let clip =
-                    self.clipboard
-                        .before_events(self.toolbar_state.clipboard_sharing, &events, cx);
-                self.send(clip.into_iter().chain(events), window, cx);
-                None
-            }
-            ToolbarAction::TogglePanel(panel) => {
-                if self.toolbar_state.panel == Some(panel) {
-                    self.dismiss_panel(window, cx);
-                    return;
-                }
-                self.toolbar_state.panel = Some(panel);
-                self.toolbar_state.hacker_open = false;
-                self.toolbar_state.modifiers = [false; 4];
-                self.release(window, cx);
-                None
-            }
-            ToolbarAction::SelectDisplay(display_id) => {
-                Some(json!({"type":"selectDisplay", "displayId":display_id}))
-            }
-            ToolbarAction::SetControl(control) => {
-                Some(json!({"type":"setControl", "control":control}))
-            }
-            ToolbarAction::SetReverseScroll(reverse_scroll) => {
-                self.toolbar_state.reverse_scroll = reverse_scroll;
-                None
-            }
-            ToolbarAction::SetClipboardSharing(clipboard_sharing) => {
-                self.toolbar_state.clipboard_sharing = clipboard_sharing;
-                if clipboard_sharing {
-                    self.sync_local_clipboard(window, cx);
-                }
-                None
-            }
-            ToolbarAction::SecureAttention
-                if self.toolbar_state.controls_enabled()
-                    && self.toolbar_state.ui.secure_attention =>
-            {
-                self.send([InputEvent::SecureAttention], window, cx);
-                self.keyboard_focus.resume();
-                self.resume_focus(window, cx);
-                None
-            }
-            ToolbarAction::Reconnect => Some(json!({"type":"reconnect"})),
-            ToolbarAction::Disconnect => Some(json!({"type":"disconnect"})),
-            ToolbarAction::Measured(width, height) => {
-                if width.is_finite() && height.is_finite() && width > 0. && height > 0. {
-                    self.toolbar_state.toolbar_size = (width, height);
-                    self.clamp_position(window);
-                }
-                None
-            }
-            ToolbarAction::PanelMeasured(height) => {
-                if height.is_finite() && height > 0. {
-                    self.toolbar_state.panel_height = height;
-                }
-                None
-            }
-            ToolbarAction::FocusHandle => {
-                self.handle_focused = true;
-                None
-            }
-            ToolbarAction::BlurHandle => {
-                self.handle_focused = false;
-                None
-            }
-            ToolbarAction::SelectOpen(open) => {
-                self.select_open = open;
-                return;
-            }
-            ToolbarAction::ToggleControl
-            | ToolbarAction::SecureAttention
-            | ToolbarAction::ToggleModifier(_)
-            | ToolbarAction::Key(_)
-            | ToolbarAction::Shortcut(_)
-            | ToolbarAction::SetPinchZoom(_)
-            | ToolbarAction::ResetZoom
-            | ToolbarAction::ToggleMouseMode
-            | ToolbarAction::ToggleKeyboard
-            | ToolbarAction::ToggleDrag
-            | ToolbarAction::ToggleCollapsed
-            | ToolbarAction::SyncClipboard
-            | ToolbarAction::Close
-            | ToolbarAction::SetPasteShift(_) => None,
-        };
-        if let Some(event) = event {
-            self.release(window, cx);
-            if matches!(action, ToolbarAction::Reconnect | ToolbarAction::Disconnect) {
-                self.toolbar_state.panel = None;
-                self.toolbar_state.hacker_open = false;
-                self.toolbar_state.modifiers = [false; 4];
-            }
-            if let Err(error) = protocol::emit(event) {
-                self.fail(error, window, cx);
-                return;
-            }
-        }
         self.sync_input(window, cx);
         cx.notify();
     }

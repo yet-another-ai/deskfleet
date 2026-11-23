@@ -3,13 +3,14 @@
 use std::cell::RefCell;
 
 use deskfleet_input::{InputEvent, NativeKeyCode};
-use objc2::MainThreadMarker;
+use objc2::MainThreadOnly;
 use objc2::rc::Retained;
 use objc2_foundation::{NSArray, NSSet, NSString};
 use objc2_ui_kit::{UIKeyModifierFlags as Flags, UIPress};
 
 use crate::android::send_view_input;
 use crate::ios_key_state::HeldKeys;
+use crate::ios_window::VideoView;
 
 #[derive(Default)]
 pub(crate) struct HardwareKeyboard {
@@ -19,18 +20,18 @@ pub(crate) struct HardwareKeyboard {
 impl HardwareKeyboard {
     pub(crate) fn presses(
         &self,
-        mtm: MainThreadMarker,
+        view: &VideoView,
         presses: &NSSet<UIPress>,
         pressed: bool,
     ) -> Retained<NSSet<UIPress>> {
-        self.route(mtm, presses, pressed, None)
+        self.route(view, presses, pressed, None)
     }
 
     /// In the editor, UIKit handles composition and ordinary printable keys.
     /// Shortcut and navigation presses use the same state as the video responder.
     pub(crate) fn route(
         &self,
-        mtm: MainThreadMarker,
+        view: &VideoView,
         presses: &NSSet<UIPress>,
         pressed: bool,
         composing: Option<bool>,
@@ -39,7 +40,7 @@ impl HardwareKeyboard {
         let mut keys = Vec::new();
         let mut held = self.held.borrow_mut();
         for press in presses {
-            let Some(input) = press.key(mtm) else {
+            let Some(input) = press.key(view.mtm()) else {
                 other.push(press);
                 continue;
             };
@@ -83,8 +84,10 @@ impl HardwareKeyboard {
             .map(|modifier| flags.contains(modifier));
             held.transition(code, active, pressed, &mut events);
         }
+        // A pasteboard read may reenter UIKit and resign this responder.
+        drop(held);
         if !events.is_empty() {
-            send_view_input(events)
+            view.send_keys(events);
         }
         NSSet::from_retained_slice(&other)
     }
@@ -98,10 +101,10 @@ impl HardwareKeyboard {
 }
 
 /// # Safety
-/// Swift borrows an NSArray of physical key code strings for this main-thread call.
+/// Swift borrows its mounted video view and an NSArray of key codes on the main thread.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
-unsafe extern "C" fn deskfleet_ios_send_key_chord(codes: &NSArray<NSString>) {
+unsafe extern "C" fn deskfleet_ios_send_key_chord(view: &VideoView, codes: &NSArray<NSString>) {
     let codes: Vec<_> = codes.iter().map(|code| code.to_string()).collect();
-    send_view_input(crate::nsh_keyboard::chord_events(&codes));
+    view.send_keys(crate::nsh_keyboard::chord_events(&codes));
 }

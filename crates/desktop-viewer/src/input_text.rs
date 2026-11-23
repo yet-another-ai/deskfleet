@@ -1,6 +1,6 @@
 //! Committed mobile IME text uses the existing bounded clipboard contract.
 
-use deskfleet_input::{InputEvent, MAX_CLIPBOARD_BYTES};
+use deskfleet_input::InputEvent;
 use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -12,10 +12,7 @@ pub(crate) enum PasteCode {
 /// Keep the text and its paste chord together on the ordered channel. In
 /// particular, a sticky Hacker Keyboard modifier must not modify the paste.
 pub(crate) fn paste_events(text: String, code: PasteCode, shift: bool) -> Option<Vec<InputEvent>> {
-    let text = text.replace('\0', "");
-    if text.is_empty() || text.len() > MAX_CLIPBOARD_BYTES {
-        return None;
-    }
+    let text = crate::clipboard::sanitize(&text)?;
     let code = match code {
         PasteCode::ControlLeft => "ControlLeft",
         PasteCode::MetaLeft => "MetaLeft",
@@ -44,6 +41,7 @@ pub(crate) fn paste_events(text: String, code: PasteCode, shift: bool) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskfleet_input::MAX_CLIPBOARD_BYTES;
 
     #[test]
     fn composed_unicode_is_pasted_after_releasing_sticky_modifiers() {

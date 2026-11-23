@@ -30,6 +30,23 @@ impl Input {
         Some(event)
     }
 
+    /// A toolbar chord starts with its own ordered release. A separate release
+    /// through Sender::send would discard earlier chords awaiting transmission.
+    pub(crate) fn send_chord(
+        &mut self,
+        sender: &crate::input_queue::Sender,
+        mut events: Vec<InputEvent>,
+        clipboard: Option<InputEvent>,
+    ) -> Result<(), crate::Error> {
+        debug_assert_eq!(events.first(), Some(&InputEvent::ReleaseAll));
+        if let Some(clipboard) = clipboard {
+            events.insert(1, clipboard);
+        }
+        self.buttons = 0;
+        self.release_pending = true;
+        sender.send_sequence(events)
+    }
+
     pub(crate) fn set_enabled(&mut self, enabled: bool) -> Option<InputEvent> {
         let was_enabled = self.enabled;
         self.enabled = enabled;
@@ -184,12 +201,14 @@ mod tests {
         // Opening local UI cancels a captured physical press before a new chord.
         let release = input.release_for_local_ui(true).unwrap();
         sender.send(input.prepare(release).unwrap()).unwrap();
-        let chord = crate::nsh_keyboard::key_events([true, false, false, false], "Tab");
-        for event in chord.iter().cloned() {
-            if let Some(event) = input.prepare(event) {
-                sender.send(event).unwrap();
-            }
-        }
+        let chord = crate::nsh_keyboard::chord_events(&["ControlLeft", "Tab"]);
+        let clipboard = InputEvent::Clipboard {
+            text: "local".into(),
+        };
+        input.send_chord(&sender, chord.clone(), None).unwrap();
+        input
+            .send_chord(&sender, chord.clone(), Some(clipboard.clone()))
+            .unwrap();
         // FrameReady, layout updates, and pointer motion inside the keyboard
         // leave physical capture disabled while the session drains the chord.
         for _ in 0..100 {
@@ -198,7 +217,11 @@ mod tests {
             }
         }
         drop(sender);
-        for event in chord {
+        let mut expected = vec![InputEvent::ReleaseAll];
+        expected.extend(chord.clone());
+        expected.extend([InputEvent::ReleaseAll, clipboard]);
+        expected.extend(chord.into_iter().skip(1));
+        for event in expected {
             assert_eq!(receiver.recv().await.unwrap(), Some(event));
         }
         assert_eq!(receiver.recv().await.unwrap(), None);

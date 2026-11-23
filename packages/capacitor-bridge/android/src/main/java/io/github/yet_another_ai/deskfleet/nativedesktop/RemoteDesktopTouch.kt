@@ -27,6 +27,7 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
         override fun onLongPress(e: MotionEvent) {
             if (!multiTouch && !dragging && !controls.dragging && controls.input.enabled) {
                 longPressed = true
+                controls.input.beforePaste()
                 touch(if (controls.relative) 10 else 4, e)
             }
         }

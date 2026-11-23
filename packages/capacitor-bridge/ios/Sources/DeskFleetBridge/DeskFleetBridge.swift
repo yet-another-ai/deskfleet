@@ -14,7 +14,8 @@ internal func deskfleetIosSendCommand(_ commandJson: UnsafePointer<CChar>?)
 internal func deskfleetIosStop()
 
 @_silgen_name("deskfleet_ios_touch")
-internal func deskfleetIosTouch(_ kind: Int32, _ x: Double, _ y: Double, _ dx: Double, _ dy: Double)
+internal func deskfleetIosTouch(_ video: UnsafeMutableRawPointer?, _ kind: Int32,
+                               _ x: Double, _ y: Double, _ dx: Double, _ dy: Double)
 
 @_silgen_name("deskfleet_ios_test_nat")
 internal func deskfleetIosTestNat(_ server: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
@@ -34,15 +35,6 @@ internal func deskfleetIosStringFree(_ ptr: UnsafeMutablePointer<CChar>?)
 private let viewerEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { payloadPtr in
     guard let payloadPtr else { return }
     let payload = String(cString: payloadPtr)
-    if payload.contains("\"clipboard\""),
-       let data = payload.data(using: .utf8),
-       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-       (obj["type"] as? String) == "clipboard",
-       let text = obj["text"] as? String {
-        DispatchQueue.main.async {
-            DeskFleetBridge.activeController?.applyRemoteClipboard(text)
-        }
-    }
     DeskFleetBridge.activePlugin?.notifyListeners("viewerEvent", data: ["payload": payload])
 }
 

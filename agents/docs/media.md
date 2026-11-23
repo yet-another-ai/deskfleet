@@ -754,6 +754,16 @@ that width, making newly available controls unfold across many frames. The
 toolbar now reaches its full width immediately while retaining layout coordinates
 for tooltip anchors.
 
+The workspace Rust nshm `deskfleet-viewer-controls` owns toolbar actions and
+the policy for executing them. The GPUI window calls its typed Rust API. Android
+and iOS run the same policy through JNI and C on the UI thread, using the current
+window snapshot when the queued action is delivered. Hosts execute the resulting
+effects in order. For example, selecting a display releases held input before
+requesting the switch. A keyboard shortcut consumes the selected modifiers and
+sends one ordered chord. The optional NSH module entry exposes
+`ViewerControls.effects(stateJson, actionJson)` to NSH consumers. DeskFleet links
+the crate through Cargo in each of its existing host builds.
+
 The pure-Rust `nsh_controls` component tree and `nsh_keyboard` panel are shared by
 desktop, Android, and iOS. `nsh_toolbar` mounts them in GPUI; `nsh_android` and
 `ios_controls` mount them in NSH's native Android and UIKit backends. Each view
@@ -935,7 +945,7 @@ plugins on the receiving machine.
 Linux builds of the NSH/GPUI backend additionally need the development libraries
 for Fontconfig, FreeType, XKB/XKB-X11, XCB, and Wayland. Runtime GPU rendering
 requires a working graphics driver and the corresponding platform libraries.
-NSH's core and platform backends are pinned to 0.6.0, with GPUI Fast 0.1.17 on
+NSH's core and platform backends are pinned to 0.6.1, with GPUI Fast 0.1.17 on
 desktop. The Android build stages the pinned crate's Java runtime sources and
 packages NSH and DeskFleet's JNI entry points together in `libnsh.so`. The iOS
 build links NSH into the viewer static library. Swift calls its C interface to
@@ -1099,6 +1109,10 @@ do not loop back. Both the embedded browser viewer and the native GPUI desktop
 window expose a **Clipboard sharing** setting (enabled by default) and sync on
 window focus and paste gestures. Android and iOS viewers expose the same setting
 for automatic `ClipboardManager` / `UIPasteboard` sync on focus and change events.
+On iOS the Rust video view observes the pasteboard on the main thread and
+uses its change count as the opening baseline. A paste gesture can read that
+baseline once. Hardware and toolbar paste keys carry the clipboard update in
+the same ordered input batch, after any leading release and before the keys.
 The native floating toolbar's explicit clipboard action works independently of
 automatic sharing while input is enabled. Target clipboard integration uses Win32
 `CF_UNICODETEXT` on the bound input desktop (including across the Windows
@@ -1145,7 +1159,9 @@ Absolute mouse mode maps taps to the visible remote image, ignoring letterboxing
 one-finger motion drags. Relative mode acts as a trackpad, preserving the cursor
 between gestures and moving it by finger displacement. Taps click at that cursor.
 Long press sends a secondary click and two-finger motion scrolls. Native viewers
-also expose a drag action for relative mode; Android and the embedded viewer support
+switch to relative mode and press the primary button immediately when drag lock
+is enabled. Unlocking, pausing, losing focus, or switching displays releases it.
+Android and the embedded viewer support
 double-tap-and-hold dragging. In the iOS and Android native viewers, an external
 mouse or trackpad moves the remote cursor at the indicated point on the video
 in either touch mode. A button press on the video starts a remote drag or

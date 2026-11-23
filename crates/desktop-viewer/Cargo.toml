@@ -16,6 +16,7 @@ name = "deskfleet-viewer"
 path = "src/main.rs"
 
 [dependencies]
+deskfleet-viewer-controls.workspace = true
 deskfleet-native.workspace = true
 deskfleet-input.workspace = true
 bytes.workspace = true
@@ -46,17 +47,19 @@ jni = "0.22.4"
 ndk = { version = "0.9.0", features = ["media", "nativewindow", "api-level-33"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
+dispatch2.workspace = true
+block2.workspace = true
 objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
     "std", "objc2-core-foundation", "objc2-quartz-core", "UIView", "UIResponder",
     "NSLayoutAnchor", "NSLayoutConstraint", "UIColor", "UIWindow", "UIScreen", "UILayoutGuide", "UIKeyboardLayoutGuide", "UITrackingLayoutGuide",
     "UIEvent", "UIGestureRecognizer", "UIGestureRecognizerSubclass", "UIHoverGestureRecognizer", "UIPanGestureRecognizer",
-    "UITouch", "UICommand", "UIKey", "UIKeyConstants", "UIPress", "UIPressesEvent",
+    "UITouch", "UICommand", "UIKey", "UIKeyConstants", "UIPress", "UIPressesEvent", "UIPasteboard", "UIApplication",
 ] }
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CAMetalLayer", "CALayer", "objc2-core-foundation", "objc2-metal"] }
 objc2-metal = { version = "0.3.2", default-features = false, features = ["MTLPixelFormat"] }
 nsh-platform-ios = { version = "=0.6.1", default-features = false, features = ["svg"] }
 objc2.workspace = true
-objc2-foundation = { workspace = true, features = ["NSArray", "NSEnumerator", "NSGeometry", "NSSet", "NSString"] }
+objc2-foundation = { workspace = true, features = ["NSArray", "NSEnumerator", "NSGeometry", "NSNotification", "NSOperation", "NSSet", "NSString", "block2"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2-core-foundation = { workspace = true, features = [

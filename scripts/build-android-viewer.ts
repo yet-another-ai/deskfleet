@@ -125,6 +125,12 @@ export function nshJniExports(nmOutput: string): string[] {
   return [...new Set([...nmOutput.matchAll(/\b(JNI_OnLoad|Java_com_longbridge_nsh_\w+)\s*$/gmu)].map(match => match[1]!))]
 }
 
+/** Companion @JvmStatic native methods are exported on the enclosing class. */
+export function viewerJniExports(className: string, source: string): string[] {
+  return [...source.matchAll(/\bexternal fun (\w+)\(/gu)]
+    .map(match => `Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_${className}_${match[1]}`)
+}
+
 export function verifyAndroidJniExports(dynamicSymbols: string, required: readonly string[]): void {
   const exported = new Set([...dynamicSymbols.matchAll(/\b(?:GLOBAL|WEAK)\s+DEFAULT\s+(?!UND\b)\S+\s+(\S+)\s*$/gmu)].map(match => match[1]!))
   const missing = required.filter(name => !exported.has(name))
@@ -176,9 +182,9 @@ if (import.meta.main) {
   if (!nshSymbols.includes("JNI_OnLoad") || !nshSymbols.includes("Java_com_longbridge_nsh_Native_create")) {
     throw new Error("NSH Android rlib is missing its JNI runtime entry points")
   }
-  const bridgeSource = readFileSync(join(repoRoot, "packages/capacitor-bridge/android/src/main/java/io/github/yet_another_ai/deskfleet/nativedesktop/DeskFleetBridge.kt"), "utf8")
-  const bridgeSymbols = [...bridgeSource.matchAll(/\bexternal fun (\w+)\(/gu)]
-    .map(match => `Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_${match[1]}`)
+  const bridgeDirectory = join(repoRoot, "packages/capacitor-bridge/android/src/main/java/io/github/yet_another_ai/deskfleet/nativedesktop")
+  const bridgeSymbols = ["DeskFleetBridge", "NativeClipboard"].flatMap(className =>
+    viewerJniExports(className, readFileSync(join(bridgeDirectory, `${className}.kt`), "utf8")))
   const dynamicSymbols = execFileSync(join(binDir, `llvm-readelf${exeExt}`), ["--dyn-syms", "--wide", builtSo], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })
   verifyAndroidJniExports(dynamicSymbols, [...nshSymbols, ...bridgeSymbols, "Java_com_longbridge_nsh_Native_runRust"])
 

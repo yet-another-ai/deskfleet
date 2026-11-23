@@ -13,14 +13,21 @@ use objc2_metal::MTLPixelFormat;
 use objc2_quartz_core::CAMetalLayer;
 use objc2_ui_kit::{UIColor, UIPress, UIPressesEvent, UIView, UIViewAutoresizing};
 
-use crate::android;
-use crate::ios_keyboard::HardwareKeyboard;
+use deskfleet_input::InputEvent;
 
-#[derive(Default)]
-struct VideoState {
+use crate::android;
+use crate::clipboard::ClipboardIntent;
+use crate::clipboard_ios::ViewClipboard;
+use crate::ios_keyboard::HardwareKeyboard;
+use crate::ios_pasteboard::{ClipboardObservers, SystemPasteboard};
+
+pub(crate) struct VideoState {
     drawable_size: Cell<Option<(u32, u32)>>,
     stopped: Cell<bool>,
     keyboard: HardwareKeyboard,
+    clipboard: ViewClipboard<SystemPasteboard>,
+    clipboard_target: Option<crate::ios_clipboard_delivery::Target>,
+    observers: Cell<Option<ClipboardObservers>>,
 }
 
 define_class!(
@@ -28,7 +35,7 @@ define_class!(
     #[thread_kind = MainThreadOnly]
     #[name = "DeskFleetMetalVideoView"]
     #[ivars = VideoState]
-    struct VideoView;
+    pub(crate) struct VideoView;
 
     impl VideoView {
         #[unsafe(method(layerClass))]
@@ -53,7 +60,7 @@ define_class!(
 
         #[unsafe(method(pressesBegan:withEvent:))]
         fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
-            let rest = self.ivars().keyboard.presses(self.mtm(), presses, true);
+            let rest = self.ivars().keyboard.presses(self, presses, true);
             if rest.count() != 0 {
                 // SAFETY: The unhandled presses and original event belong to this dispatch.
                 let _: () = unsafe { msg_send![super(self), pressesBegan: &*rest, withEvent: event] };
@@ -61,7 +68,7 @@ define_class!(
         }
         #[unsafe(method(pressesEnded:withEvent:))]
         fn presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
-            let rest = self.ivars().keyboard.presses(self.mtm(), presses, false);
+            let rest = self.ivars().keyboard.presses(self, presses, false);
             if rest.count() != 0 {
                 // SAFETY: Forwarding just the unhandled presses of this event.
                 let _: () = unsafe { msg_send![super(self), pressesEnded: &*rest, withEvent: event] };
@@ -69,7 +76,7 @@ define_class!(
         }
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
-            let rest = self.ivars().keyboard.presses(self.mtm(), presses, false);
+            let rest = self.ivars().keyboard.presses(self, presses, false);
             if rest.count() != 0 {
                 // SAFETY: Forwarding just the unhandled presses of this event.
                 let _: () = unsafe { msg_send![super(self), pressesCancelled: &*rest, withEvent: event] };
@@ -88,7 +95,14 @@ define_class!(
 
 impl VideoView {
     fn new(frame: NSRect, mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(VideoState::default());
+        let this = Self::alloc(mtm).set_ivars(VideoState {
+            drawable_size: Cell::default(),
+            stopped: Cell::default(),
+            keyboard: HardwareKeyboard::default(),
+            clipboard: ViewClipboard::new(SystemPasteboard::new(mtm)),
+            clipboard_target: android::clipboard_target(),
+            observers: Cell::default(),
+        });
         // SAFETY: UIView's designated initializer, with our ivars installed.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setOpaque(true);
@@ -97,7 +111,34 @@ impl VideoView {
         let layer = view.metal_layer();
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm_sRGB);
         layer.setFramebufferOnly(true);
+        if let Some(target) = &view.ivars().clipboard_target {
+            target.mount(&view);
+        }
+        view.ivars()
+            .observers
+            .set(Some(ClipboardObservers::new(&view)));
         view
+    }
+
+    pub(crate) fn stopped(&self) -> bool {
+        self.ivars().stopped.get()
+    }
+
+    pub(crate) fn send_keys(&self, mut events: Vec<InputEvent>) {
+        self.ivars().clipboard.before_keys(&mut events);
+        if !self.stopped() {
+            android::send_view_input(events);
+        }
+    }
+
+    pub(crate) fn sync_clipboard(&self, intent: ClipboardIntent) {
+        if let Some(clip) = self.ivars().clipboard.local(intent) {
+            android::send_view_input(vec![clip]);
+        }
+    }
+
+    pub(crate) fn receive_clipboard(&self, text: &str) {
+        self.ivars().clipboard.remote(text);
     }
 
     fn metal_layer(&self) -> Retained<CAMetalLayer> {
@@ -176,7 +217,14 @@ unsafe extern "C" fn deskfleet_ios_mount_window(
 /// Swift passes the live video view returned by `deskfleet_ios_mount_window` on the main thread.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn deskfleet_ios_video_stop(view: &VideoView) {
-    view.ivars().stopped.set(true);
+    if view.ivars().stopped.replace(true) {
+        return;
+    }
+    view.ivars().clipboard.configure(false, false);
+    if let Some(target) = &view.ivars().clipboard_target {
+        target.unmount(view);
+    }
+    view.ivars().observers.take();
     if view.ivars().drawable_size.take().is_some() {
         android::detach_video_layer();
     }
@@ -202,6 +250,60 @@ unsafe extern "C" fn deskfleet_ios_ime_presses(
     Retained::into_raw(
         view.ivars()
             .keyboard
-            .route(view.mtm(), presses, pressed, Some(composing)),
+            .route(view, presses, pressed, Some(composing)),
     )
+}
+
+/// # Safety
+/// Swift borrows its mounted view on the main thread for each state update.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn deskfleet_ios_video_configure_clipboard(
+    view: &VideoView,
+    enabled: bool,
+    sharing: bool,
+) {
+    if !view.stopped() {
+        view.ivars().clipboard.configure(enabled, sharing);
+    }
+}
+
+/// # Safety
+/// Swift supplies its mounted video view on the main thread at a peer boundary.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn deskfleet_ios_video_reset_session(view: &VideoView) {
+    if !view.stopped() {
+        if let Some(target) = &view.ivars().clipboard_target {
+            target.reset(view);
+        }
+        view.ivars().clipboard.reset_session();
+    }
+}
+
+/// # Safety
+/// Swift supplies its mounted video view on the main thread for a toolbar action.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn deskfleet_ios_video_sync_clipboard(view: &VideoView) {
+    view.sync_clipboard(ClipboardIntent::Explicit);
+}
+
+/// # Safety
+/// Swift supplies its mounted video view, if present, on the main thread.
+#[unsafe(no_mangle)]
+unsafe extern "C" fn deskfleet_ios_touch(
+    view: Option<&VideoView>,
+    kind: i32,
+    x: f64,
+    y: f64,
+    dx: f64,
+    dy: f64,
+) {
+    if let Some(view) = view {
+        if matches!(kind, 4 | 10) {
+            view.sync_clipboard(ClipboardIntent::Paste);
+        }
+        if view.stopped() {
+            return;
+        }
+    }
+    android::send_touch(kind, x, y, dx, dy);
 }

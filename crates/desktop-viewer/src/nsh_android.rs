@@ -235,3 +235,29 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
 ) -> jboolean {
     overlay(handle).is_none_or(|overlay| overlay.lock().expect("viewer layout lock").owns_focus())
 }
+
+/// Called synchronously on the Activity thread, after queued NSH callbacks and
+/// any intervening permission, focus or peer changes.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeControlEffects<
+    'local,
+>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    state: JString<'local>,
+    action: JString<'local>,
+) -> jni::sys::jstring {
+    env.with_env(|env| -> Result<_, jni::errors::Error> {
+        match deskfleet_viewer_controls::effects_json(&state.to_string(), &action.to_string()) {
+            Ok(json) => Ok(JString::from_str(env, json)?.into_raw()),
+            Err(error) => {
+                env.throw_new(
+                    jni_str!("java/lang/IllegalArgumentException"),
+                    JNIString::from(error.to_string()),
+                )?;
+                Ok(std::ptr::null_mut())
+            }
+        }
+    })
+    .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}

@@ -41,6 +41,9 @@ internal class RemoteDesktopPointer(private val controls: RemoteDesktopControls)
         val deferredPress = capture.deferredPress(action, buttons)
         val remote = capture.route(action, buttons, overVideo && controls.input.enabled)
         if (!remote || !controls.input.enabled) return false
+        if ((begin || deferredPress || action == MotionEvent.ACTION_BUTTON_PRESS) && buttons and 0x1e != 0) {
+            controls.input.beforePaste()
+        }
         val direction = if (controls.reverseScroll) -1.0 else 1.0
         val scale = direction / surface.resources.displayMetrics.density
         val px = x.toDouble()

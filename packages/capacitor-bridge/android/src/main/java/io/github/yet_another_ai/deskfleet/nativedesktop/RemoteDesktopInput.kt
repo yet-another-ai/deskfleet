@@ -8,13 +8,11 @@ internal class RemoteDesktopInput(
     private val send: (String) -> Unit,
     private val sendSequence: (List<JSONObject>) -> Unit,
 ) {
+    // The control reducer orders release before disabling; changing this flag sends no input.
     var enabled = false
-        set(value) {
-            if (field && !value) release()
-            field = value
-        }
     var pasteCode = "ControlLeft"
     var pasteShift = false
+    var beforePaste: () -> Unit = {}
     // Hacker modifiers apply to the next key; selecting one must not modify remote mouse clicks.
     val modifiers = linkedSetOf<String>()
     private val hardwareKeys = mutableSetOf<String>()
@@ -22,9 +20,11 @@ internal class RemoteDesktopInput(
     private val hardwareModifiers = linkedSetOf<String>()
     private val keyChords = mutableMapOf<String, List<String>>()
 
-    fun toggleModifier(code: String) {
-        if (!enabled) return
-        if (!modifiers.remove(code)) modifiers.add(code)
+    fun setModifiers(selected: List<Boolean>) {
+        modifiers.clear()
+        ANDROID_MODIFIERS.forEachIndexed { index, modifier ->
+            if (selected[index]) modifiers.add(modifier.left)
+        }
     }
 
     // A generic meta flag uses the left position until Android reports its side.
@@ -60,11 +60,11 @@ internal class RemoteDesktopInput(
                 appendKey(code, false)
             }
         }
-        if (events.isNotEmpty()) sendSequence(events)
+        if (events.isNotEmpty()) sequence(events)
     }
 
     fun key(code: String, pressed: Boolean, repeat: Boolean = false) {
-        if (enabled) sendSequence(buildList { appendKey(code, pressed, repeat) })
+        if (enabled) sequence(buildList { appendKey(code, pressed, repeat) })
     }
 
     private fun MutableList<JSONObject>.appendKey(code: String, pressed: Boolean, repeat: Boolean = false) {
@@ -90,7 +90,7 @@ internal class RemoteDesktopInput(
 
     fun stroke(code: String) {
         if (!enabled) return
-        sendSequence(buildList {
+        sequence(buildList {
             appendKey(code, true)
             appendKey(code, false)
         })
@@ -98,8 +98,8 @@ internal class RemoteDesktopInput(
 
     fun text(value: String) {
         if (!enabled) return
-        val text = value.replace("\u0000", "")
-        if (text.isEmpty() || text.toByteArray(Charsets.UTF_8).size > RemoteDesktopClipboard.MAX_CLIPBOARD_BYTES) return
+        val text = value
+        if (text.isEmpty()) return
         if (text == "\n" || text == "\r" || text == "\r\n") { stroke("Enter"); return }
         if (text == "\t") { stroke("Tab"); return }
         val shortcutCode = if (text.length == 1) physicalCode(text[0]) else null
@@ -113,15 +113,23 @@ internal class RemoteDesktopInput(
         }
     }
 
-    /** Sends one whole shortcut: earlier codes stay held while the last is tapped. */
+    /** Sends the reducer's complete chord, releasing first in the same ordered batch. */
     fun chord(codes: List<String>) {
         if (!enabled || codes.isEmpty()) return
         clearHolds(false)
-        sendSequence(buildList {
+        sequence(buildList {
             add(JSONObject().put("type", "releaseAll"))
             codes.forEach { add(keyEvent(it, true)) }
             codes.asReversed().forEach { add(keyEvent(it, false)) }
         })
+    }
+
+    private fun sequence(events: List<JSONObject>) {
+        if (events.any {
+            it.optString("type") == "key" && it.optBoolean("pressed") && !it.optBoolean("repeat") &&
+                it.optString("code") in listOf("KeyV", "Insert")
+        }) beforePaste()
+        sendSequence(events)
     }
 
     fun secureAttention() {

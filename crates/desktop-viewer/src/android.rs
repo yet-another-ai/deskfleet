@@ -81,6 +81,8 @@ struct ActiveSession {
     shutdown: watch::Sender<bool>,
     render_thread: Option<JoinHandle<()>>,
     runtime_thread: Option<JoinHandle<()>>,
+    #[cfg(target_os = "ios")]
+    clipboard: crate::ios_clipboard_delivery::Target,
 }
 
 static ACTIVE: OnceLock<Mutex<Option<ActiveSession>>> = OnceLock::new();
@@ -91,6 +93,8 @@ fn active_slot() -> &'static Mutex<Option<ActiveSession>> {
 
 impl ActiveSession {
     fn stop(&mut self) {
+        #[cfg(target_os = "ios")]
+        self.clipboard.close();
         self.shutdown.send_replace(true);
         let _ = self.commands_tx.try_send(Command::Close);
         let _ = self.render_tx.send(RenderCommand::Stop);
@@ -360,9 +364,8 @@ fn send_render(cmd: RenderCommand) {
 }
 
 fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
-    if let Ok(mut guard) = active_slot().lock()
-        && let Some(mut previous) = guard.take()
-    {
+    let previous = active_slot().lock().ok().and_then(|mut guard| guard.take());
+    if let Some(mut previous) = previous {
         previous.stop();
     }
     protocol::set_emitter(Some(emitter));
@@ -372,6 +375,8 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
     let (input, inputs) = input_queue::channel();
     let (shutdown, shutdown_rx) = watch::channel(false);
     let (render_tx, render_rx) = mpsc::unbounded_channel();
+    #[cfg(target_os = "ios")]
+    let clipboard = crate::ios_clipboard_delivery::Target::default();
     let notifier = AndroidNotifier {
         tx: render_tx.clone(),
     };
@@ -385,6 +390,8 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
 
     let runtime_shutdown = shutdown.clone();
     let runtime_render_tx = render_tx.clone();
+    #[cfg(target_os = "ios")]
+    let runtime_clipboard = clipboard.clone();
     let runtime_thread = std::thread::Builder::new()
         .name("android viewer session".into())
         .spawn(move || {
@@ -392,6 +399,8 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
                 .enable_all()
                 .build()
             else {
+                #[cfg(target_os = "ios")]
+                runtime_clipboard.close();
                 let _ = protocol::emit(
                     json!({"type":"error", "error":"failed to create Tokio runtime"}),
                 );
@@ -406,6 +415,8 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
             )) {
                 let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
             }
+            #[cfg(target_os = "ios")]
+            runtime_clipboard.close();
             runtime_shutdown.send_replace(true);
             let _ = runtime_render_tx.send(RenderCommand::Stop);
             runtime.shutdown_timeout(Duration::from_secs(2));
@@ -420,6 +431,8 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
             shutdown,
             render_thread,
             runtime_thread,
+            #[cfg(target_os = "ios")]
+            clipboard,
         });
     }
 }
@@ -444,6 +457,13 @@ fn send_command(raw: &str) {
             });
         }
         Ok(Command::Input { event }) => send_view_input(vec![event]),
+        // The mobile host submits its pasteboard read just before the key or
+        // button. Both must reach the same render FIFO in that order.
+        Ok(Command::Clipboard { text }) => {
+            if let Some(text) = crate::clipboard::sanitize(&text) {
+                send_view_input(vec![InputEvent::Clipboard { text }]);
+            }
+        }
         Ok(Command::Text {
             text,
             paste_code,
@@ -454,10 +474,22 @@ fn send_command(raw: &str) {
             }
         }
         Ok(command) => {
-            let tx = active_slot()
-                .lock()
-                .ok()
-                .and_then(|g| g.as_ref().map(|s| s.commands_tx.clone()));
+            #[cfg(target_os = "ios")]
+            let mut command = command;
+            let tx = active_slot().lock().ok().and_then(|g| {
+                g.as_ref().map(|s| {
+                    #[cfg(target_os = "ios")]
+                    match &mut command {
+                        Command::Start { clipboard, .. } => {
+                            *clipboard = Some(s.clipboard.start_peer());
+                        }
+                        Command::Stop => s.clipboard.stop_peer(),
+                        Command::Close => s.clipboard.close(),
+                        _ => {}
+                    }
+                    s.commands_tx.clone()
+                })
+            });
             if let Some(tx) = tx {
                 let _ = tx.blocking_send(command);
             }
@@ -469,7 +501,8 @@ fn send_command(raw: &str) {
 }
 
 fn stop_session() {
-    if let Some(mut session) = active_slot().lock().ok().and_then(|mut g| g.take()) {
+    let session = active_slot().lock().ok().and_then(|mut guard| guard.take());
+    if let Some(mut session) = session {
         session.stop();
     }
 }
@@ -772,9 +805,18 @@ pub(crate) fn detach_video_layer() {
 }
 
 #[cfg(target_os = "ios")]
-#[unsafe(no_mangle)]
-pub extern "C" fn deskfleet_ios_touch(kind: i32, x: f64, y: f64, dx: f64, dy: f64) {
+pub(crate) fn send_touch(kind: i32, x: f64, y: f64, dx: f64, dy: f64) {
     send_render(RenderCommand::Touch { kind, x, y, dx, dy });
+}
+
+/// Capture once when creating a VideoView; old views retain their original scope.
+#[cfg(target_os = "ios")]
+pub(crate) fn clipboard_target() -> Option<crate::ios_clipboard_delivery::Target> {
+    active_slot()
+        .lock()
+        .ok()?
+        .as_ref()
+        .map(|session| session.clipboard.clone())
 }
 
 #[cfg(target_os = "ios")]
