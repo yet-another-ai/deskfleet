@@ -83,9 +83,17 @@ jobs:
 
       - name: Free unused Android SDK space on Linux
         if: runner.os == 'Linux'
-        # The separate Android job owns that build. Leave room here for the
-        # release target, container layers, and the tested image archive.
-        run: sudo rm -rf /usr/local/lib/android
+        # The separate Android job owns that build. Reclaim its SDK only when
+        # the root volume has less than 45 GB free.
+        run: |
+          df -h /
+          avail_gb=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
+          if [[ -n "$avail_gb" && "$avail_gb" -lt 45 ]]; then
+            sudo rm -rf /usr/local/lib/android
+            df -h /
+          else
+            echo "Skipping Android SDK removal (${avail_gb}G free)."
+          fi
 
       - name: Disable MSVC PDB generation for release builds
         if: runner.os == 'Windows'
@@ -100,6 +108,7 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust bun cmake
           # Main's Linux x64 smoke build keeps a release target entry for later
           # smoke builds; full builds only restore it, so other platforms do not
           # take quota. Production releases build without a target cache.
@@ -184,11 +193,12 @@ jobs:
           DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS: ${{ inputs.production_release && vars.DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS || '' }}
           WINDOWS_SERVICE_SIGNING_KEY: ${{ inputs.production_release && secrets.WINDOWS_SERVICE_SIGNING_KEY || '' }}
           WINDOWS_SERVICE_SIGNING_KEY_ID: ${{ inputs.production_release && vars.WINDOWS_SERVICE_SIGNING_KEY_ID || '' }}
-        # Linux smoke builds produce only the tar.gz payload that Linux packages
-        # and Nix consume. Full builds keep every configured target.
+        # Linux smoke builds produce only the tar.gz payload with store
+        # compression to avoid single-threaded ultra-gzip overhead. Full builds
+        # keep every configured target and default release compression.
         run: >-
           mise exec -- pnpm --filter @deskfleet/desktop run package
-          ${{ inputs.smoke_build && runner.os == 'Linux' && '--linux tar.gz' || '' }}
+          ${{ inputs.smoke_build && runner.os == 'Linux' && '--linux tar.gz -c.compression=store' || '' }}
 
       - name: Prepare macOS notarization key
         id: macos_credentials
@@ -358,6 +368,8 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm java rust cmake
+          install-native-deps: "false"
 
       - name: Configure Gradle Maven Central mirror
         uses: ./.github/actions/setup-gradle-mirror
@@ -477,6 +489,7 @@ jobs:
     environment: ${{ (inputs.production_release || inputs.signed_ios) && 'production' || '' }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DESKFLEET_IOS_TARGETS: aarch64-apple-ios
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -490,6 +503,8 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.token }}
+          tools: node pnpm rust cmake
+          install-native-deps: "false"
 
       - name: Build iOS archive (smoke)
         if: ${{ !inputs.production_release && !inputs.signed_ios }}

@@ -7,10 +7,11 @@ RUST_BACKTRACE = "1"
 # CI builds start from a restored target directory and never reuse incremental
 # state, which would only grow the cache.
 CARGO_INCREMENTAL = "0"
-# Local builds keep full debug info. CI only needs line tables for
-# backtraces, and MSVC PDB generation is a large part of Windows build time.
-CARGO_PROFILE_DEV_DEBUG = "line-tables-only"
-CARGO_PROFILE_TEST_DEBUG = "line-tables-only"
+# Local builds keep full debug info. CI disables DWARF debug info on dev/test
+# builds to keep Cargo target caches below GitHub's 10 GB repository quota and
+# speed up MSVC linking while preserving Rust panic file/line locations.
+CARGO_PROFILE_DEV_DEBUG = "0"
+CARGO_PROFILE_TEST_DEBUG = "0"
 # Release packaging trades runtime optimization for build time.
 CARGO_PROFILE_RELEASE_LTO = "false"
 CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"

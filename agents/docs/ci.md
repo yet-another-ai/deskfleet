@@ -65,9 +65,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   before launching the clients.
   The Linux test matrix also runs native X11 capture/input tests serially under
   a disposable Xvfb server with `-noreset`, avoiding server resets when the last
-  client disconnects between test cases. Before restoring Cargo outputs, that
-  job removes the hosted image's unused Android SDK to leave disk space for
-  Rust compilation and logs free space before and after cleanup.
+  client disconnects between test cases. Before restoring Cargo outputs, Linux
+  test and build jobs check root free space and remove the hosted image's unused
+  Android SDK only when less than 45 GB is available.
 - `.github/workflows/build.yml` builds artifacts, then packages Electron
   installers and Linux desktop archives. Ordinary CI runs use
   `mise run ci:build`; tagged releases build Web and Electron separately to give
@@ -85,9 +85,10 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   packaging or distribution configurations change (`packaging/**`, `nix/**`,
   root flake files, packaging scripts, or packaging workflow files). Daily
   scheduled, manual, and tagged release runs use the full platform matrix.
-  Smoke builds package only the Linux `tar.gz` desktop payload; the full matrix
-  keeps every configured target, including AppImages and the macOS ZIP that Nix
-  consumes.
+  Smoke builds package only the Linux `tar.gz` desktop payload with store
+  compression (`-c.compression=store`) and fast gzip `.deb`/`.rpm` payloads
+  (`--compression fast`); the full matrix keeps every configured target, default
+  release compression, including AppImages and the macOS ZIP that Nix consumes.
   Desktop Nix packaging follows Build's Linux and macOS matrix during releases
   so it only downloads archives produced in the same run.
   `mise.ci.toml` gives CI release builds Cargo's parallel release codegen: 16
@@ -141,9 +142,11 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   and its locked tools. Jobs that need only Node pass `tools: node`. It selects
   the CI mise environment and retries the install once after a transient
   failure: hosted macOS runners have SIGKILL'd rustup during the first attempt.
-- `.github/actions/setup-build/action.yml` calls setup-mise, then installs the
-  workspace and configures shared caches for the Test and Build workflows. It
-  writes a cache restore summary for each job.
+- `.github/actions/setup-build/action.yml` calls setup-mise with each job's
+  required tool subset (`tools`), skips Linux desktop viewer dev packages and
+  Windows LLVM lookup when `install-native-deps` is `false`, installs the
+  workspace, and configures shared Cargo caches for the Test and Build workflows.
+  It writes a cache restore summary for each job.
 
 The build matrix covers Linux x64/arm64, macOS arm64/x64, and Windows x64. The
 Intel macOS job uses the native `macos-26-intel` runner and the same build and
@@ -851,10 +854,11 @@ I/O out of IPC and lifecycle timeout budgets.
 
 `.github/actions/setup-mise` sets `MISE_ENV=ci`, which loads `mise.ci.toml`
 on top of `mise.toml`. It holds the CI-only Cargo settings: no incremental
-state, line-table debug info for dev and test builds, and the faster release
-profile above. mise-action exports them to later steps, so plain `cargo`
-steps see the same environment as `mise run`. Reproduce a CI build locally
-with `mise -E ci run <task>`.
+state, no DWARF debug info on dev/test builds (preserving panic file/line
+locations while keeping Cargo target caches within the 10 GB quota), and the
+faster release profile above. mise-action exports them to later steps, so plain
+`cargo` steps see the same environment as `mise run`. Reproduce a CI build
+locally with `mise -E ci run <task>`.
 
 The repository's 10 GB Actions cache budget goes to compiled Cargo dependency
 artifacts. The Rust cache action bundles Cargo registry and Git dependency
@@ -866,13 +870,17 @@ profiles and features share one entry per platform and role.
 
 | Role | Jobs | Saves |
 | --- | --- | --- |
-| `static` | Static checks | Yes |
-| `test` | Tests on each platform; the PostgreSQL job restores Linux's entry | Tests only |
+| `test` | Tests on each platform; Static checks and PostgreSQL restore Linux's entry | Tests only |
 | `release` | Build | Main smoke build only |
 
 Preflight and tagged production builds use fresh Cargo directories. The Rust
 cache action saves compiled dependencies after a failed test as well. Per-crate
 sccache entries previously filled the quota and evicted Cargo target caches.
+
+iOS CI sets `DESKFLEET_IOS_TARGETS` so `scripts/build-ios-viewer.ts` compiles
+only the slice required by each job (`aarch64-apple-ios-sim` in `Tests (iOS)`,
+`aarch64-apple-ios` in `Build (ios-arm64)` and `mise run ios:build`), while
+default local `cap sync ios` continues staging both slices.
 
 Each job installs its locked mise tools and workspace packages directly. In
 CI, mise can download the pinned Cargo Shear release binary. Cargo downloads

@@ -23,10 +23,12 @@ const sourceArchitectures = {
 
 export type LinuxSourceArchitecture = keyof typeof sourceArchitectures
 export type LinuxPackageFormat = keyof (typeof sourceArchitectures)["x64"]
+export type LinuxPackageCompression = "fast" | "release"
 
 export interface LinuxPackageOptions {
   formats?: readonly LinuxPackageFormat[]
   version?: string
+  compression?: LinuxPackageCompression
 }
 
 export interface LinuxPackageResult {
@@ -190,7 +192,41 @@ function writeLicenses(root: string, payload: string, directory: string): void {
   symlinkSync("/usr/lib/deskfleet/LICENSES.chromium.html", join(docs, "LICENSES.chromium.html"))
 }
 
-function buildDeb(temporary: string, payload: string, output: string, version: string, architecture: LinuxSourceArchitecture): void {
+export function debBuildArgs(root: string, output: string, compression: LinuxPackageCompression = "release"): string[] {
+  return [
+    ...(compression === "fast" ? ["-Zgzip", "-z1"] : []),
+    "--root-owner-group",
+    "--build",
+    root,
+    output,
+  ]
+}
+
+export function rpmBuildArgs(
+  rpmArchitecture: string,
+  topdir: string,
+  payload: string,
+  spec: string,
+  compression: LinuxPackageCompression = "release",
+): string[] {
+  return [
+    "-bb",
+    "--target", rpmArchitecture,
+    "--define", `_topdir ${topdir}`,
+    "--define", `_sourcedir ${payload}`,
+    ...(compression === "fast" ? ["--define", "_binary_payload w1.gzdio"] : []),
+    spec,
+  ]
+}
+
+function buildDeb(
+  temporary: string,
+  payload: string,
+  output: string,
+  version: string,
+  architecture: LinuxSourceArchitecture,
+  compression: LinuxPackageCompression,
+): void {
   const root = join(temporary, `deb-${architecture}`)
   mkdirSync(join(root, "DEBIAN"), { recursive: true })
   mkdirSync(join(root, "usr/lib"), { recursive: true })
@@ -211,10 +247,17 @@ function buildDeb(temporary: string, payload: string, output: string, version: s
     installedSize,
     readFileSync(join(payload, "deb-control.in"), "utf8"),
   ))
-  execFileSync("dpkg-deb", ["--root-owner-group", "--build", root, output], { stdio: "inherit" })
+  execFileSync("dpkg-deb", debBuildArgs(root, output, compression), { stdio: "inherit" })
 }
 
-function buildRpm(temporary: string, payload: string, output: string, version: string, architecture: LinuxSourceArchitecture): void {
+function buildRpm(
+  temporary: string,
+  payload: string,
+  output: string,
+  version: string,
+  architecture: LinuxSourceArchitecture,
+  compression: LinuxPackageCompression,
+): void {
   const rpmArchitecture = sourceArchitectures[architecture].rpm
   const topdir = join(temporary, `rpmbuild-${architecture}`)
   for (const directory of ["BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS"]) {
@@ -222,13 +265,7 @@ function buildRpm(temporary: string, payload: string, output: string, version: s
   }
   const spec = join(topdir, "SPECS/deskfleet.spec")
   writeFileSync(spec, renderRpmSpec(version, architecture, readFileSync(join(payload, "deskfleet.spec.in"), "utf8")))
-  execFileSync("rpmbuild", [
-    "-bb",
-    "--target", rpmArchitecture,
-    "--define", `_topdir ${topdir}`,
-    "--define", `_sourcedir ${payload}`,
-    spec,
-  ], { stdio: "inherit" })
+  execFileSync("rpmbuild", rpmBuildArgs(rpmArchitecture, topdir, payload, spec, compression), { stdio: "inherit" })
   const builtDirectory = join(topdir, "RPMS", rpmArchitecture)
   const built = readdirSync(builtDirectory).filter(name => name.endsWith(".rpm"))
   if (built.length !== 1) throw new Error(`rpmbuild produced ${built.length} packages for ${rpmArchitecture}`)
@@ -296,6 +333,10 @@ export async function packageLinuxRelease(
   if (requested.length === 0 || requested.some(format => !formats.includes(format))) {
     throw new Error(`Linux package formats must be ${formats.join(" and ")}`)
   }
+  const compression = options.compression ?? "release"
+  if (compression !== "fast" && compression !== "release") {
+    throw new Error(`Linux package compression must be fast or release; received ${String(compression)}`)
+  }
 
   const sources = new Map<LinuxSourceArchitecture, string>()
   for (const archive of archives) {
@@ -321,8 +362,8 @@ export async function packageLinuxRelease(
           architecture,
         }
         const path = join(temporary, result.file)
-        if (format === "deb") buildDeb(temporary, payload, path, version, architecture)
-        else buildRpm(temporary, payload, path, version, architecture)
+        if (format === "deb") buildDeb(temporary, payload, path, version, architecture, compression)
+        else buildRpm(temporary, payload, path, version, architecture, compression)
         built.push({ result, path })
       }
     }
@@ -340,12 +381,12 @@ export async function packageLinuxRelease(
 
 if (import.meta.main) {
   const { values, positionals } = parseArgs({
-    options: { format: { type: "string" }, version: { type: "string" } },
+    options: { format: { type: "string" }, version: { type: "string" }, compression: { type: "string" } },
     allowPositionals: true,
   })
   const [destination, ...archives] = positionals
   if (!destination || archives.length === 0) {
-    throw new Error("Usage: node scripts/package-linux-release.ts [--format deb,rpm] [--version <version>] <output-dir> <desktop.tar.gz> [desktop.tar.gz ...]")
+    throw new Error("Usage: node scripts/package-linux-release.ts [--format deb,rpm] [--compression fast|release] [--version <version>] <output-dir> <desktop.tar.gz> [desktop.tar.gz ...]")
   }
   const requested = values.format === undefined
     ? formats
@@ -353,6 +394,7 @@ if (import.meta.main) {
   const results = await packageLinuxRelease(process.cwd(), destination, archives, {
     formats: requested as LinuxPackageFormat[],
     version: values.version,
+    compression: values.compression as LinuxPackageCompression | undefined,
   })
   console.log(`Packaged Linux distribution release: ${results.map(result => result.file).join(", ")}`)
 }

@@ -253,6 +253,7 @@ run = "xcodebuild -project App.xcodeproj -scheme App -destination 'generic/platf
 description = "Build and archive the release iOS application with Capacitor"
 depends = ["web:build"]
 env.DESKFLEET_IOS_RELEASE = "1"
+env.DESKFLEET_IOS_TARGETS = "aarch64-apple-ios"
 run = [
     "pnpm --filter @deskfleet/web exec cap sync ios",
     "node scripts/package-ios-release.ts",
