@@ -4,7 +4,7 @@ import type { RemoteMcpOperation } from "@deskfleet/protocol/generated/central-c
 import type { AgentActor } from "@deskfleet/protocol/agent"
 import { FilesService } from "../files/service.ts"
 import type { MachineOperations } from "../machine/operations.ts"
-import { createMcpSession, createMcpWorkspace, sendMcpSession } from "./dispatch.ts"
+import { createMcpSession, createMcpWorkspace, queryMcpProviderConfiguration, sendMcpSession } from "./dispatch.ts"
 import { readRemoteAgentSettings } from "../machine/host-settings.ts"
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
@@ -75,6 +75,8 @@ export class RemoteMcp {
         if (!current.allowOperate) throw new Error("This machine does not allow remote Agents to operate it")
       } else if (operation === "mcpServers" || operation === "mcpTools" || operation === "filesRead") {
         if (!current.allowRead && !current.allowOperate) throw new Error("This machine does not allow remote Agent access")
+      } else if (operation === "providerConfiguration") {
+        if (!current.allowRead && !current.allowSessions) throw new Error("This machine does not allow remote Agents to inspect Agent configurations")
       } else if (operation === "machine") {
         if (!current.allowRead && !current.allowSessions && !current.allowWorkspaces) throw new Error("This machine does not allow remote Agents to read it")
       } else if (!current.allowRead) throw new Error("This machine does not allow remote Agents to read it")
@@ -85,6 +87,8 @@ export class RemoteMcp {
       case "machine":
         z.strictObject({}).parse(params)
         return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access }
+      case "providerConfiguration":
+        return queryMcpProviderConfiguration(this.#operations.agents, params, actor)
       case "sessions": {
         const { workspaceId } = z.strictObject({ workspaceId: nonEmpty.optional() }).parse(params)
         return (await this.#operations.agents.journal.list()).filter(session => workspaceId === undefined || session.workspaceId === workspaceId)

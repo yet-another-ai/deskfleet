@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import type { AgentActor, AgentSnapshot } from "@deskfleet/protocol/agent"
+import { validateAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "@deskfleet/protocol/agent-configuration"
 import { validateCatalogParams } from "@deskfleet/protocol/catalog"
+import { validateProviderId } from "@deskfleet/protocol/provider"
 import type { MachineOperations } from "../machine/operations.ts"
 import { dispatchRemoteFiles, dispatchRemoteFileTransfer } from "./files.ts"
 import type { ScheduledTask } from "@deskfleet/protocol/schedule"
@@ -10,22 +12,57 @@ import type { RemoteMcpOperation, RemoteMcpRequest } from "@deskfleet/protocol/g
 export interface McpScope { sessionId: string; workspaceId?: string; superAgent?: boolean }
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
+const configValuesSchema = z.record(nonEmpty, z.union([nonEmpty, z.boolean()]))
+const configurationSchema = z.strictObject({
+  model: nonEmpty.optional(),
+  reasoningEffort: nonEmpty.optional(),
+  mode: nonEmpty.optional(),
+  configValues: configValuesSchema.optional(),
+})
+const providerConfigurationSchema = z.strictObject({
+  provider: nonEmpty,
+  workspaceId: nonEmpty.optional(),
+  configuration: configurationSchema.optional(),
+})
 const sessionCreateSchema = z.strictObject({
   workspaceId: nonEmpty.optional(), provider: nonEmpty, context: z.enum(["worktree", "directory"]).default("directory"),
   title: nonEmpty.optional(), prompt: nonEmpty.optional(), baseBranch: nonEmpty.optional(),
   yolo: z.boolean().optional(),
-  configuration: z.strictObject({ model: nonEmpty.optional(), reasoningEffort: nonEmpty.optional(), mode: nonEmpty.optional() }).optional(),
+  configuration: configurationSchema.optional(),
 })
 const sessionSendSchema = z.strictObject({
   sessionId: nonEmpty, prompt: nonEmpty, delivery: z.enum(["backlog", "steer"]).default("backlog"), turnId: nonEmpty.optional(),
+  provider: nonEmpty.optional(),
+  configuration: configurationSchema.optional(),
 })
 const workspaceCreateSchema = z.strictObject({
   name: nonEmpty,
   directories: z.array(z.strictObject({ path: nonEmpty })).min(1),
 })
 
+function hasConfigurationSelection(configuration: AgentConfigurationSelection | undefined): boolean {
+  if (!configuration) return false
+  return configuration.model !== undefined
+    || configuration.reasoningEffort !== undefined
+    || configuration.mode !== undefined
+    || (configuration.configValues !== undefined && Object.keys(configuration.configValues).length > 0)
+}
+
+function validateConfiguration(configuration: AgentConfigurationSelection | undefined): void {
+  if (configuration !== undefined) validateAgentConfigurationSelection(configuration as Record<string, unknown>)
+}
+
+function validateProviderConfiguration(params: Record<string, unknown>) {
+  const parsed = providerConfigurationSchema.parse(params)
+  validateProviderId(parsed.provider)
+  validateConfiguration(parsed.configuration)
+  return parsed
+}
+
 function validateSessionCreate(params: Record<string, unknown>) {
   const parsed = sessionCreateSchema.parse(params)
+  validateProviderId(parsed.provider)
+  validateConfiguration(parsed.configuration)
   if (!parsed.workspaceId && parsed.context !== "directory") throw new Error("Sessions without a workspace use the home directory")
   if (parsed.baseBranch !== undefined && parsed.context !== "worktree") throw new Error("Invalid base branch")
   return parsed
@@ -33,7 +70,12 @@ function validateSessionCreate(params: Record<string, unknown>) {
 
 function validateSessionSend(params: Record<string, unknown>) {
   const parsed = sessionSendSchema.parse(params)
+  if (parsed.provider !== undefined) validateProviderId(parsed.provider)
+  validateConfiguration(parsed.configuration)
   if (parsed.turnId !== undefined && parsed.delivery !== "steer") throw new Error("turnId requires steer delivery")
+  if (parsed.delivery === "steer" && (parsed.provider !== undefined || hasConfigurationSelection(parsed.configuration))) {
+    throw new Error("Changing Agent or configuration requires backlog delivery")
+  }
   return parsed
 }
 
@@ -41,6 +83,31 @@ function validateWorkspaceCreate(params: Record<string, unknown>) {
   const parsed = workspaceCreateSchema.parse(params)
   validateCatalogParams("workspaceCreate", parsed)
   return parsed
+}
+
+function formatMcpProviderConfiguration(configuration: AgentConfiguration | null) {
+  if (!configuration) return null
+  const primary = new Set([configuration.models?.id, configuration.reasoningEfforts?.id, configuration.modes?.id])
+  const extraOptions = (configuration.configOptions ?? []).filter(option => !primary.has(option.id))
+  return {
+    provider: configuration.provider,
+    models: configuration.models,
+    reasoningEfforts: configuration.reasoningEfforts,
+    modes: configuration.modes,
+    ...(extraOptions.length ? { configOptions: extraOptions } : {}),
+    ...(configuration.promptCapabilities ? { promptCapabilities: configuration.promptCapabilities } : {}),
+  }
+}
+
+export async function queryMcpProviderConfiguration(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
+  const { provider, workspaceId, configuration } = validateProviderConfiguration(params)
+  const result = await agents.handle("_deskfleet/agent/configuration", {
+    provider,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+    ...configuration,
+    cache: true,
+  }, actor) as AgentConfiguration | null
+  return formatMcpProviderConfiguration(result)
 }
 
 export async function createMcpWorkspace(catalog: MachineOperations["catalog"], params: Record<string, unknown>): Promise<unknown> {
@@ -61,13 +128,21 @@ export async function createMcpSession(agents: MachineOperations["agents"], para
     provider, context, ...(baseBranch ? { baseBranch } : {}), ...(yolo ? { yolo: true } : {}), ...configuration,
   }, actor) as AgentSnapshot
   if (snapshot.session?.lifecycle && snapshot.session.lifecycle !== "ready") throw new Error(snapshot.session.error ?? "Session provisioning failed")
+  if (snapshot.session?.error) throw new Error(snapshot.session.error)
   if (prompt === undefined) return snapshot
   await agents.handle("_deskfleet/input/submit", { sessionId: snapshot.session.id, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery: "backlog" }, actor)
   return agents.handle("_deskfleet/session/subscribe", { sessionId: snapshot.session.id }, actor)
 }
 
 export async function sendMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
-  const { sessionId, prompt, delivery, turnId } = validateSessionSend(params)
+  const { sessionId, prompt, delivery, turnId, provider, configuration } = validateSessionSend(params)
+  if (provider !== undefined) {
+    const switched = await agents.handle("_deskfleet/session/switch-agent", { sessionId, operationId: randomUUID(), provider }, actor) as AgentSnapshot | undefined
+    if (switched?.session?.error) throw new Error(switched.session.error)
+  }
+  if (hasConfigurationSelection(configuration)) {
+    await agents.handle("_deskfleet/session/configure", { sessionId, operationId: randomUUID(), ...configuration }, actor)
+  }
   return agents.handle("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery, ...(turnId ? { turnId } : {}) }, actor)
 }
 
@@ -97,12 +172,13 @@ export async function dispatchMcp(
   const crossWorkspace = machineOrSuperScope || Boolean(await allowLocalCrossWorkspace?.())
   if (method.startsWith("remoteMcp/")) {
     const operation = method.slice("remoteMcp/".length)
-    if (!["machines", "machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
+    if (!["machines", "machine", "providerConfiguration", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
     if (!remote || actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("Remote Agent delegation is unavailable")
     const { machineId, ...args } = params
     if (operation !== "machines" && (typeof machineId !== "string" || !machineId)) throw new Error("A target machine is required")
     if (operation === "machines" && machineId !== undefined) throw new Error("Machine discovery takes no target")
     let remoteArgs = args
+    if (operation === "providerConfiguration") validateProviderConfiguration(args)
     if (operation === "sessionCreate") {
       const parsed = validateSessionCreate(args)
       const effectiveYolo = resolveChildYolo(parsed.yolo, source.session.yolo)
@@ -167,6 +243,22 @@ export async function dispatchMcp(
     return createMcpSession(operations.agents, normalized, actor)
   }
   if (method === "providerList") return operations.providers.metadata()
+  if (method === "_deskfleet/agent/configuration") {
+    if (!crossWorkspace && params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) {
+      throw new Error("Workspace is outside this MCP delegation")
+    }
+    const candidate = !machineOrSuperScope && params.workspaceId === undefined
+      ? { ...params, workspaceId: scope.workspaceId }
+      : params
+    const parsed = validateProviderConfiguration(candidate)
+    if (crossWorkspace && parsed.workspaceId !== undefined) {
+      const catalog = await operations.catalog.native.snapshot()
+      if (!catalog.workspaces.some(workspace => workspace.id === parsed.workspaceId)) {
+        throw new Error(`Unknown Workspace: ${parsed.workspaceId}`)
+      }
+    }
+    return queryMcpProviderConfiguration(operations.agents, candidate, actor)
+  }
   if (method === "scheduleList") {
     const tasks = await operations.handle(method, {}, actor) as ScheduledTask[]
     return tasks.filter(task => task.workspaceId === scope.workspaceId)

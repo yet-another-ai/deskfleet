@@ -154,3 +154,26 @@ async fn call_tool(
     };
     Ok(HttpResponse::Ok().json(json!({"jsonrpc":"2.0","id":id,"result":result})))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_remote_tools_parse_and_include_provider_configuration() {
+        let provider_config = TOOLS
+            .iter()
+            .find(|tool| tool.name == "deskfleet_remote_provider_configuration")
+            .expect("deskfleet_remote_provider_configuration tool");
+        assert_eq!(
+            provider_config.operation,
+            RemoteMcpOperation::ProviderConfiguration
+        );
+        let send = TOOLS
+            .iter()
+            .find(|tool| tool.name == "deskfleet_remote_session_send")
+            .expect("deskfleet_remote_session_send tool");
+        assert!(send.input_schema["properties"]["provider"].is_object());
+        assert!(send.input_schema["properties"]["configuration"].is_object());
+    }
+}

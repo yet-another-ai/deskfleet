@@ -18,6 +18,8 @@ import { dispatchMcp } from "../mcp/dispatch.ts"
 import type { MachineOperations } from "../machine/operations.ts"
 import { writeRemoteAgentSettings } from "../machine/host-settings.ts"
 import { RemoteMcp } from "../mcp/remote.ts"
+import { AgentProviders } from "../providers/providers.ts"
+import type { AgentConfiguration } from "@deskfleet/protocol/agent-configuration"
 
 const actor: AgentActor = { kind: "user", userId: "u1", deviceId: "login1" }
 function credentials(lease: AgentMcpLease) {
@@ -255,4 +257,180 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   assert.equal(optedDownRemote.session.yolo, undefined)
   await assert.rejects(call("deskfleet_session_create", { provider: "codex", yolo: true }), /Only a YOLO Session/)
   await assert.rejects(call("deskfleet_remote_session_create", { machineId: "2", provider: "codex", yolo: true }), /Only a YOLO Session/)
+
+  // Dynamically enabling YOLO on a parent Session also propagates to subsequent MCP children.
+  await localSessions.handle("_deskfleet/session/yolo", { sessionId: parent.session.id, operationId: randomUUID(), enabled: true }, actor)
+  const dynamicYoloChild = await call("deskfleet_session_create", { provider: "codex", title: "Dynamic YOLO child" }) as AgentSnapshot
+  assert.equal(dynamicYoloChild.session.yolo, true)
+})
+
+test("local and remote MCP discover provider parameters and apply provider/model configuration on create and send", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-config-"))
+  const workspaceDir = join(directory, "workspace"), remoteSettingsDir = join(directory, "remote-settings")
+  await Promise.all([mkdir(workspaceDir), mkdir(remoteSettingsDir)])
+  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: false, allowOperate: false, allowSessions: true, allowWorkspaces: false })
+
+  const localCatalog = new DaemonCatalog(join(directory, "local-daemon"))
+  const remoteCatalog = new DaemonCatalog(join(directory, "remote-daemon"))
+  await Promise.all([localCatalog.init((_, name) => openInMemoryCatalog(name)), remoteCatalog.init((_, name) => openInMemoryCatalog(name))])
+  const localWorkspace = await localCatalog.native.createWorkspace("Local Workspace", [{ path: workspaceDir }])
+  const remoteWorkspace = await remoteCatalog.native.createWorkspace("Remote Workspace", [{ path: workspaceDir }])
+
+  const createConfigurableProvider = () => {
+    const servers: acp.McpServer[][] = []
+    const prompts: Array<{ providerName: string; model: string; effort: string; mode: string; fastMode: boolean; text: string }> = []
+    const provider: AgentProvider = {
+      id: "codex",
+      async connect(config) {
+        let model = "m-standard"
+        let effort = "medium"
+        let mode = "agent"
+        let fastMode = false
+        const options = (): acp.SessionConfigOption[] => [
+          { id: "model", category: "model", name: "Model", type: "select", currentValue: model, options: [{ value: "m-standard", name: "Standard" }, { value: "m-pro", name: "Pro" }] },
+          {
+            id: "reasoning_effort", category: "thought_level", name: "Effort", type: "select", currentValue: effort,
+            options: model === "m-pro" ? [{ value: "medium", name: "Medium" }, { value: "high", name: "High" }] : [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }],
+          },
+          { id: "mode", category: "mode", name: "Mode", type: "select", currentValue: mode, options: [{ value: "agent", name: "Agent" }, { value: "plan", name: "Plan" }] },
+          { id: "fast_mode", name: "Fast Mode", type: "boolean", currentValue: fastMode },
+        ]
+        return {
+          initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } },
+          async newSession(params) {
+            if (params.mcpServers.length) servers.push(params.mcpServers)
+            return { sessionId: `ps-${randomUUID()}`, configOptions: options() }
+          },
+          async resume() { return { configOptions: options() } },
+          async setConfigOption(params) {
+            if (params.configId === "model") {
+              model = String(params.value)
+              if (model === "m-pro" && effort === "low") effort = "medium"
+              if (model === "m-standard" && effort === "high") effort = "medium"
+            } else if (params.configId === "reasoning_effort") effort = String(params.value)
+            else if (params.configId === "mode") mode = String(params.value)
+            else if (params.configId === "fast_mode") fastMode = Boolean(params.value)
+            return { configOptions: options() }
+          },
+          async prompt(params) {
+            const text = params.prompt.find(block => block.type === "text")?.text ?? ""
+            prompts.push({ providerName: config.name, model, effort, mode, fastMode, text })
+            return { stopReason: "end_turn" }
+          },
+          async steer() { return { outcome: "inactive" } },
+          async cancel() {},
+          async close() {},
+        }
+      },
+    }
+    return { provider, servers, prompts }
+  }
+
+  const localMock = createConfigurableProvider()
+  const remoteMock = createConfigurableProvider()
+  const localProviders = new AgentProviders(join(directory, "local-providers"), localMock.provider)
+  const remoteProviders = new AgentProviders(join(directory, "remote-providers"), remoteMock.provider)
+  await Promise.all([localProviders.init(), remoteProviders.init()])
+  const localPrimary = await localProviders.create({ template: "codex", name: "Local Primary", inheritShellEnvironment: false, env: {} })
+  const localSecondary = await localProviders.create({ template: "codex", name: "Local Secondary", inheritShellEnvironment: false, env: {} })
+  const remotePrimary = await remoteProviders.create({ template: "codex", name: "Remote Primary", inheritShellEnvironment: false, env: {} })
+  const remoteSecondary = await remoteProviders.create({ template: "codex", name: "Remote Secondary", inheritShellEnvironment: false, env: {} })
+
+  let localOperations!: MachineOperations, remoteService!: RemoteMcp
+  const gateway = new AgentMcp({
+    async authorize() {},
+    dispatch: (method, params, requestActor, scope) => dispatchMcp(localOperations, method, params, requestActor, scope, request => remoteService.handle(
+      "remoteMcp",
+      { source: { teamId: "team-1", machineId: "1", sessionId: request.sessionId }, operation: request.operation, arguments: request.arguments },
+      { ...requestActor, sourceMachine: { id: "1", originId: "source-origin" } },
+      { teamId: "team-1", machineId: "2" },
+    )),
+  })
+  await gateway.init()
+  const localSessions = new AgentSessions(localCatalog, localCatalog.native, localMock.provider, localProviders, gateway, undefined, new TestAgentQuotas())
+  const remoteSessions = new AgentSessions(remoteCatalog, remoteCatalog.native, remoteMock.provider, remoteProviders, undefined, undefined, new TestAgentQuotas())
+  await Promise.all([localSessions.init(), remoteSessions.init()])
+  localOperations = { agents: localSessions, catalog: localCatalog, providers: localProviders } as unknown as MachineOperations
+  remoteService = new RemoteMcp(remoteSettingsDir, { agents: remoteSessions, catalog: remoteCatalog, providers: remoteProviders } as unknown as MachineOperations)
+
+  t.after(async () => {
+    remoteService.close()
+    await Promise.all([localSessions.close(), remoteSessions.close(), gateway.close()])
+    await Promise.all([localCatalog.close(), remoteCatalog.close()])
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  await localSessions.handle("_deskfleet/session/create", { workspaceId: localWorkspace.id, operationId: randomUUID(), provider: localPrimary.id, context: "directory" }, actor)
+  const call = invoke({ servers: localMock.servers[0]!, close() {} })
+
+  const localProConfig = await call("deskfleet_provider_configuration", { provider: localPrimary.id, configuration: { model: "m-pro" } }) as AgentConfiguration
+  assert.equal(localProConfig.provider.id, localPrimary.id)
+  assert.equal(localProConfig.models?.currentValue, "m-pro")
+  assert.deepEqual(localProConfig.reasoningEfforts?.options.map(option => option.id), ["medium", "high"])
+  assert.deepEqual(localProConfig.configOptions?.map(option => option.id), ["fast_mode"])
+  assert.equal("matrix" in localProConfig, false)
+
+  const remoteProConfig = await call("deskfleet_remote_provider_configuration", {
+    machineId: "2", provider: remotePrimary.id, workspaceId: remoteWorkspace.id, configuration: { model: "m-pro" },
+  }) as AgentConfiguration
+  assert.equal(remoteProConfig.provider.id, remotePrimary.id)
+  assert.equal(remoteProConfig.models?.currentValue, "m-pro")
+  assert.deepEqual(remoteProConfig.reasoningEfforts?.options.map(option => option.id), ["medium", "high"])
+
+  // Creating a Session with an unsupported model surfaces the failure clearly.
+  await assert.rejects(
+    call("deskfleet_session_create", { provider: localPrimary.id, configuration: { model: "unknown-model" } }),
+    /Unsupported agent model: unknown-model/,
+  )
+
+  const localChild = await call("deskfleet_session_create", {
+    provider: localPrimary.id,
+    configuration: { model: "m-pro", reasoningEffort: "high", mode: "plan", configValues: { fast_mode: true } },
+    prompt: "Plan local work",
+  }) as AgentSnapshot
+  assert.equal(localChild.session.provider, localPrimary.id)
+  for (let attempt = 0; attempt < 100 && localMock.prompts.length < 1; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(localMock.prompts[0], { providerName: "Local Primary", model: "m-pro", effort: "high", mode: "plan", fastMode: true, text: "Plan local work" })
+
+  // Wait for the initial turn to finish before switching Agent and changing model on send.
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const snap = await localSessions.handle("_deskfleet/session/subscribe", { sessionId: localChild.session.id }, actor) as AgentSnapshot
+    if (snap.turns.length >= 1 && snap.turns[0]?.state === "completed") break
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  await call("deskfleet_session_send", {
+    sessionId: localChild.session.id,
+    provider: localSecondary.id,
+    configuration: { model: "m-standard", reasoningEffort: "low", mode: "agent", configValues: { fast_mode: false } },
+    prompt: "Execute with secondary",
+  })
+  for (let attempt = 0; attempt < 100 && localMock.prompts.length < 2; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(localMock.prompts[1], { providerName: "Local Secondary", model: "m-standard", effort: "low", mode: "agent", fastMode: false, text: "Execute with secondary" })
+  const updatedLocal = await localSessions.handle("_deskfleet/session/subscribe", { sessionId: localChild.session.id }, actor) as AgentSnapshot
+  assert.equal(updatedLocal.session.provider, localSecondary.id)
+
+  const remoteChild = await call("deskfleet_remote_session_create", {
+    machineId: "2",
+    workspaceId: remoteWorkspace.id,
+    provider: remotePrimary.id,
+    configuration: { model: "m-pro", reasoningEffort: "high", mode: "plan", configValues: { fast_mode: true } },
+    prompt: "Plan remote work",
+  }) as AgentSnapshot
+  for (let attempt = 0; attempt < 100 && remoteMock.prompts.length < 1; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(remoteMock.prompts[0], { providerName: "Remote Primary", model: "m-pro", effort: "high", mode: "plan", fastMode: true, text: "Plan remote work" })
+
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const snap = await remoteSessions.handle("_deskfleet/session/subscribe", { sessionId: remoteChild.session.id }, actor) as AgentSnapshot
+    if (snap.turns.length >= 1 && snap.turns[0]?.state === "completed") break
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  await call("deskfleet_remote_session_send", {
+    machineId: "2",
+    sessionId: remoteChild.session.id,
+    provider: remoteSecondary.id,
+    configuration: { model: "m-standard", reasoningEffort: "low", mode: "agent", configValues: { fast_mode: false } },
+    prompt: "Execute remote with secondary",
+  })
+  for (let attempt = 0; attempt < 100 && remoteMock.prompts.length < 2; attempt++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(remoteMock.prompts[1], { providerName: "Remote Secondary", model: "m-standard", effort: "low", mode: "agent", fastMode: false, text: "Execute remote with secondary" })
 })

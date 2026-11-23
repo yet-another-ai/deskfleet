@@ -13,7 +13,7 @@
   {
     "name": "deskfleet_remote_machine",
     "operation": "machine",
-    "description": "Read a remote machine's Workspaces, directories and public Agent provider information. Requires the target's read, session or workspace permission.",
+    "description": "Read a remote machine's Workspaces, directories and public Agent provider information. Use deskfleet_remote_provider_configuration to inspect a provider's available models, reasoning efforts, modes, and configuration options. Requires the target's read, session or workspace permission.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -24,6 +24,67 @@
       },
       "required": [
         "machineId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_provider_configuration",
+    "operation": "providerConfiguration",
+    "description": "Inspect an Agent provider's available models, reasoning efforts, modes, and configuration options on another machine before creating or messaging a Session. Optionally pass workspaceId or partial configuration (such as model) to inspect model-dependent options. Requires the target's read or session permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoningEffort": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "configValues": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "Additional provider-specific configuration options keyed by configOption id."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "machineId",
+        "provider"
       ],
       "additionalProperties": false
     }
@@ -109,7 +170,7 @@
   {
     "name": "deskfleet_remote_session_create",
     "operation": "sessionCreate",
-    "description": "Create an Agent Session on another machine and optionally submit its first prompt. Omit workspaceId to start a machine-scoped Session in the remote home directory. Requires the target's session permission.",
+    "description": "Create an Agent Session on another machine for task orchestration (not lightweight in-task subagent work) and optionally submit its first prompt. Select an Agent provider from deskfleet_remote_machine and optional model/reasoningEffort/mode/configValues from deskfleet_remote_provider_configuration. Omit workspaceId to start a machine-scoped Session in the remote home directory. Requires the target's session permission.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -161,6 +222,21 @@
             "mode": {
               "type": "string",
               "minLength": 1
+            },
+            "configValues": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "Additional provider-specific configuration options keyed by configOption id."
             }
           },
           "required": [],
@@ -177,7 +253,7 @@
   {
     "name": "deskfleet_remote_session_send",
     "operation": "sessionSend",
-    "description": "Submit a prompt to an Agent Session on another machine. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn. Requires the target's session permission.",
+    "description": "Submit a prompt to an Agent Session on another machine. Optionally switch the Agent provider or update configuration (model, reasoningEffort, mode, configValues) before submitting; changing provider or configuration requires backlog delivery and an idle Session. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn. Requires the target's session permission.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -202,6 +278,44 @@
         "turnId": {
           "type": "string",
           "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoningEffort": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "configValues": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "Additional provider-specific configuration options keyed by configOption id."
+            }
+          },
+          "required": [],
+          "additionalProperties": false
         }
       },
       "required": [

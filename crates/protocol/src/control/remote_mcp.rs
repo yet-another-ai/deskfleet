@@ -8,6 +8,7 @@ use ts_rs::TS;
 pub enum RemoteMcpOperation {
     Machines,
     Machine,
+    ProviderConfiguration,
     Sessions,
     Session,
     History,
@@ -48,6 +49,14 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<RemoteMcpOperation>(json!("workspaceCreate")).unwrap(),
             RemoteMcpOperation::WorkspaceCreate
+        );
+        assert_eq!(
+            serde_json::to_value(RemoteMcpOperation::ProviderConfiguration).unwrap(),
+            json!("providerConfiguration")
+        );
+        assert_eq!(
+            serde_json::from_value::<RemoteMcpOperation>(json!("providerConfiguration")).unwrap(),
+            RemoteMcpOperation::ProviderConfiguration
         );
     }
 }

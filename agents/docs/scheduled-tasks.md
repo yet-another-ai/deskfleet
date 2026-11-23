@@ -108,8 +108,11 @@ Each built-in grant binds the initiating user, machine, Workspace, and Session.
 Calls recheck current Team membership and the issuing Session's active state.
 Provider shutdown, failed startup, archive, and daemon shutdown retire the
 grant. Tools expose the scoped catalog, Workspace creation (for machine-scoped
-Sessions), public provider identities, Session state/history/creation/prompting,
-and schedule list/create/update/delete/run operations. Workspace Sessions remain
+Sessions), public provider identities, provider model/configuration discovery
+(`deskfleet_provider_configuration`), Session state/history/creation/prompting
+(with configurable Agent provider and model/reasoning/mode/config options on
+both creation and backlog prompt delivery), and schedule
+list/create/update/delete/run operations. Workspace Sessions remain
 isolated to their own Workspace by default; enabling **Allow Workspace sessions
 to delegate across local Workspaces** (`allowLocalCrossWorkspace` in
 `<host directory>/remote-agent-settings.json`, read live on every call) allows
@@ -120,9 +123,10 @@ Workspaces, register new Workspaces, and inspect, create, or prompt Workspace
 Sessions without seeing other machine-scoped Sessions. When the built-in
 `deskfleet` server is attached and the provider supports system-prompt append
 (including Antigravity's `_meta.antigravity.systemPrompt.append`), the daemon
-appends concise instructions guiding the Agent to prefer DeskFleet MCP
-delegation over provider-native subagents. Generated arguments
-cannot replace the actor or retrieve provider launch secrets. Child Sessions
+appends concise instructions scoping DeskFleet MCP Session tools to task
+orchestration rather than subagent scenarios, and directing the Agent to
+inspect available providers and model parameters before selecting them.
+Generated arguments cannot replace the actor or retrieve provider launch secrets. Child Sessions
 created through `deskfleet_session_create` or `deskfleet_remote_session_create`
 inherit YOLO permission auto-approval by default when the issuing Session has
 YOLO enabled (passing `yolo: false` opts down to manual approval), and reject
@@ -166,11 +170,12 @@ or credential.
 | --- | --- | --- |
 | `deskfleet_remote_machines` | Read, operate, session, or workspace | Other online machines in the same Team and their current permissions |
 | `deskfleet_remote_machine` | Read, session, or workspace | Catalog, Workspaces, directories, and public provider identities |
+| `deskfleet_remote_provider_configuration` | Read or session | Available models, reasoning efforts, modes, and provider configuration options (optionally scoped to a Workspace or partial configuration) |
 | `deskfleet_remote_sessions` | Read | Sessions, optionally filtered by Workspace |
 | `deskfleet_remote_session` | Read | Session state and conversation snapshot |
 | `deskfleet_remote_session_history` | Read | Recorded event pages, using `afterSeq` and a limit of 1–200 |
-| `deskfleet_remote_session_create` | Session | Create a Session (in a Workspace or the remote home directory) and optionally submit its initial prompt |
-| `deskfleet_remote_session_send` | Session | Submit a backlog or steer prompt to a remote Session |
+| `deskfleet_remote_session_create` | Session | Create a Session (in a Workspace or the remote home directory) with chosen provider/model configuration and optionally submit its initial prompt |
+| `deskfleet_remote_session_send` | Session | Submit a backlog or steer prompt to a remote Session, optionally switching provider or updating model/configuration before backlog delivery |
 | `deskfleet_remote_workspace_create` | Workspace | Register existing remote directories as a new Workspace |
 | `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |

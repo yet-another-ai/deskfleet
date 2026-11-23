@@ -122,13 +122,16 @@ test("ordinary Sessions with built-in DeskFleet MCP receive delegation guidance,
   }, localActor)
   assert.equal(standard.opened[0]?.systemPrompt, undefined)
 
-  // Authenticated user session receives DeskFleet MCP delegation guidance on newSession, resume, and forkSession.
+  // Authenticated user session receives DeskFleet MCP task-orchestration guidance on newSession, resume, and forkSession.
   const delegated = await stdService.handle("_deskfleet/session/create", {
     operationId: randomUUID(), provider: "codex", context: "directory", cwd: stdDir,
   }, userActor) as AgentSnapshot
   const promptText = standard.opened[1]?.systemPrompt?.content[0]?.type === "text" ? standard.opened[1].systemPrompt.content[0].text : ""
   assert.equal(standard.opened[1]?.systemPrompt?.mode, "append")
   assert.match(promptText, /deskfleet_session_create/)
+  assert.match(promptText, /deskfleet_provider_configuration/)
+  assert.match(promptText, /task orchestration/i)
+  assert.match(promptText, /not for subagent/i)
 
   const antigravity = new SystemPromptProvider(true)
   const { service: agyService, workDir: agyDir } = await setup(t, antigravity, true)
@@ -138,6 +141,9 @@ test("ordinary Sessions with built-in DeskFleet MCP receive delegation guidance,
   assert.equal(antigravity.opened[0]?.systemPrompt, undefined)
   const openedAppend = (antigravity.opened[0]?._meta as { antigravity?: { systemPrompt?: { append?: string } } } | undefined)?.antigravity?.systemPrompt?.append ?? ""
   assert.match(openedAppend, /deskfleet_session_create/)
+  assert.match(openedAppend, /deskfleet_provider_configuration/)
+  assert.match(openedAppend, /task orchestration/i)
+  assert.match(openedAppend, /not for subagent/i)
 
   await agyService.handle("_deskfleet/session/stop", { sessionId: agySession.session.id, operationId: randomUUID() }, userActor)
   await agyService.handle("_deskfleet/session/resume", { sessionId: agySession.session.id, operationId: randomUUID() }, userActor)
