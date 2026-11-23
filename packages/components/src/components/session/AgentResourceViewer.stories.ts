@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { ref } from "vue"
-import type { FilesApi } from "../../../../client/src/files.ts"
+import type { FilesApi } from "@deskfleet/client/files"
 import { createStorybookDesktopApi } from "../../../.storybook/storybook-fixtures.ts"
 import UiButton from "../common/UiButton.vue"
 import AgentResourceViewer from "./AgentResourceViewer.vue"

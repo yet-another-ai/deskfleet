@@ -18,8 +18,8 @@ import { useFleetStore } from "../stores/fleet.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useLayoutStore } from "../stores/layout.ts"
 import { useProvidersStore } from "../stores/providers.ts"
-import type { AgentActor } from "../../../../apps/daemon/src/agent-protocol.ts"
-import type { GitPreparationSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
+import type { GitPreparationSnapshot } from "@deskfleet/protocol/git"
 
 const client = usePlatformClient()
 const account = useAccountSession()

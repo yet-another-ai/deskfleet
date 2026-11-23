@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import type { ComposerFileReference, ComposerSessionReference } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+import type { ComposerFileReference, ComposerSessionReference } from "@deskfleet/protocol/composer-reference"
 import { buildComposerPrompt } from "./composer-prompt.ts"
 import type { ComposerMention } from "./composer-mentions.ts"
 

@@ -1,6 +1,6 @@
 import type { ComputedRef, InjectionKey } from "vue"
-import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
-import type { FileTarget } from "../../../client/src/files.ts"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { FileTarget } from "@deskfleet/client/files"
 
 export interface AgentResourceContext { target: FileTarget; sessionId: string }
 export const agentResourceContextKey: InjectionKey<ComputedRef<AgentResourceContext | undefined>> = Symbol("Agent resource context")

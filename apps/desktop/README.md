@@ -102,6 +102,7 @@ collection.
 | `src/shared` | Code imported by more than one process | Inlined into each bundle |
 | `packages/components` | Shared Vue UI and locale catalogs for desktop and web | Inlined into renderer |
 | `packages/client` | Platform contracts and remote transport | Inlined into host bundles |
+| `packages/protocol` | Wire contracts shared with the daemon | Inlined into every bundle that imports it |
 | `build` | Packaging input and runtime window and tray images | Selected files in `app.asar` |
 
 Each process has its own Vite configuration (`vite.main.config.ts`,

@@ -5,7 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTem
 import { useI18n } from "vue-i18n"
 import type { Machine } from "@deskfleet/client/central"
 import type { SuperAgentByoaTarget, SuperAgentSession } from "@deskfleet/client/super-agent"
-import type { AgentActor } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"

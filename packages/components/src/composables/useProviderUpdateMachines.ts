@@ -1,7 +1,7 @@
 import type { ProviderTemplateUpdates } from "@deskfleet/client/providers"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from "vue"
-import type { AgentProviderTemplateId } from "../../../../apps/daemon/src/provider-protocol.ts"
+import type { AgentProviderTemplateId } from "@deskfleet/protocol/provider"
 import type { AccountSession } from "./useAccountSession.ts"
 import { useAccountSession } from "./useAccountSession.ts"
 

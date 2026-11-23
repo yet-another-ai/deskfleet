@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest"
-import { MAX_GENERATED_TITLE_LENGTH } from "../../../../apps/daemon/src/titles.ts"
-import type { FilesApi, FileTarget } from "../../../client/src/files.ts"
+import { MAX_GENERATED_TITLE_LENGTH } from "@deskfleet/protocol/titles"
+import type { FilesApi, FileTarget } from "@deskfleet/client/files"
 import { cancelAttachmentUpload, getAttachmentUploadState, hasIncompleteAttachmentUploads, retryAttachmentUpload, sessionTitleFromDraft, syncAttachmentUploads, type ComposerAttachment } from "./composer-attachments.ts"
 
 const pasted = (text: string): ComposerAttachment => ({

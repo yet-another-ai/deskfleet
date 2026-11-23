@@ -2,8 +2,8 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
-import { FilesService } from "../../../apps/daemon/src/files-service.ts"
-import type { FileEndpoint } from "../../../apps/daemon/src/files-protocol.ts"
+import { FilesService } from "../../../apps/daemon/src/files/service.ts"
+import type { FileEndpoint } from "@deskfleet/protocol/files"
 import type { FileTarget, FileTransfer } from "./files.ts"
 import { FileTransferManager } from "./file-transfers.ts"
 

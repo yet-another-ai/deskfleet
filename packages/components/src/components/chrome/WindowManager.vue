@@ -22,7 +22,7 @@ import {
   DropdownMenuRoot,
   DropdownMenuTrigger,
 } from "reka-ui"
-import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
+import { truncateGeneratedTitle } from "@deskfleet/protocol/titles"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"

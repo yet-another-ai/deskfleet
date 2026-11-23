@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterEach, expect, test, vi } from "vitest"
 import { app } from "electron"
-import { daemonControlDirectory } from "../../../daemon/src/control-discovery.ts"
+import { daemonControlDirectory } from "@deskfleet/daemon/control-discovery"
 import { DaemonClient } from "./daemon-client.ts"
 
 vi.mock("electron", () => ({ app: { getPath: vi.fn() } }))

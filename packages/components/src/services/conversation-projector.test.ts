@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import type { AgentEvent, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentTurn } from "@deskfleet/protocol/agent"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
 import { groupTranscript, projectConversation } from "./agent-conversation.ts"
 import { createConversationProjector } from "./conversation-projector.ts"

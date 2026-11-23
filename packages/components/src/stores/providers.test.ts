@@ -2,7 +2,7 @@ import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { ProviderSnapshot } from "../../../../apps/daemon/src/provider-protocol.ts"
+import type { ProviderSnapshot } from "@deskfleet/protocol/provider"
 import { deferred } from "../test/desktop-media.ts"
 import { useProvidersStore } from "./providers.ts"
 

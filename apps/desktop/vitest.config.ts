@@ -2,7 +2,7 @@ import { resolve } from "node:path"
 import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import { defineConfig } from "vitest/config"
-import { tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
+import { tresTemplateCompilerOptions } from "@deskfleet/components/chunking.ts"
 
 export default defineConfig({
   plugins: [

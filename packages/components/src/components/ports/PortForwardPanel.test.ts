@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { reactive } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
-import type { PortForward, PortForwardRequest, PortsApi } from "../../../../client/src/ports.ts"
+import type { PortForward, PortForwardRequest, PortsApi } from "@deskfleet/client/ports"
 import { i18n } from "../../i18n/index.ts"
 import { deferred } from "../../test/desktop-media.ts"
 import { selectOption } from "../../test/controls.ts"

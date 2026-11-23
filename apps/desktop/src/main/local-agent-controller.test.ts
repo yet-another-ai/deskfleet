@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { LocalAgentController, type LocalAgentConnection, type LocalAgentRuntime } from "./local-agent-controller.ts"
-import type { DesktopPermission, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import type { DesktopPermission, DesktopPermissionsState } from "@deskfleet/client/local-agent"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })

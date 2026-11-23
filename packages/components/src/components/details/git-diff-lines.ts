@@ -1,5 +1,5 @@
 import { countLines, type ComposerAttachment } from "../../services/composer-attachments.ts"
-import type { GitFileDiff } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileDiff } from "@deskfleet/protocol/git"
 
 export interface GitDiffLine {
   text: string

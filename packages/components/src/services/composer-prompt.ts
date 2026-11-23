@@ -1,5 +1,5 @@
-import type { AgentInput } from "../../../../apps/daemon/src/agent-protocol.ts"
-import type { ComposerReference } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+import type { AgentInput } from "@deskfleet/protocol/agent"
+import type { ComposerReference } from "@deskfleet/protocol/composer-reference"
 import { buildPromptContent } from "./composer-attachments.ts"
 import { validComposerMentions, type ComposerMention } from "./composer-mentions.ts"
 

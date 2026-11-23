@@ -1,6 +1,6 @@
 import { ipcRenderer } from "electron"
-import { APPEARANCE_CHANNEL, APPEARANCE_CHANGED_EVENT, type AppearanceApi, type AppearanceSettings } from "../../../../packages/client/src/appearance.ts"
-import type { SettingsResult } from "../../../../packages/client/src/settings.ts"
+import { APPEARANCE_CHANNEL, APPEARANCE_CHANGED_EVENT, type AppearanceApi, type AppearanceSettings } from "@deskfleet/client/appearance"
+import type { SettingsResult } from "@deskfleet/client/settings"
 
 export function appearanceApi(): AppearanceApi {
   async function invoke(method: "get" | "set", value?: AppearanceSettings): Promise<AppearanceSettings> {

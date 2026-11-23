@@ -4,7 +4,7 @@ import { DialogTitle, RadioGroupRoot, RadioGroupItem, RadioGroupIndicator } from
 import { computed, nextTick, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { Team } from "@deskfleet/client/central"
-import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { captureAnalyticsContext } from "../../services/analytics.ts"
 import CopyField from "../common/CopyField.vue"

@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { AgentElicitation as Elicitation } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentElicitation as Elicitation } from "@deskfleet/protocol/agent"
 import { i18n } from "../../i18n/index.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { actor, agentElicitation, agentSnapshot } from "../../test/agent.ts"

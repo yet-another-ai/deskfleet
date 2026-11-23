@@ -1,0 +1,182 @@
+import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal.ts"
+import type { CatalogEvent, CatalogMethods } from "./catalog.ts"
+import type { FilesystemMethods } from "./filesystem.ts"
+import type { ProviderEvent, ProviderMethods } from "./provider.ts"
+import type { CentralStatus, EnrollmentTarget, HostCentralStatus, MachineEnrollment, PreparedEnrollment } from "./central.ts"
+import type { SystemMethods } from "./system.ts"
+
+/** Provisional local IPC contract. Media remains on WebRTC. */
+export type VideoCodec = "h264" | "h265" | "av1"
+
+export interface IceCandidate {
+  candidate: string
+  sdpMid?: string
+  sdpMlineIndex?: number
+  usernameFragment?: string
+}
+
+export interface DesktopDisplay {
+  /** Opaque capture/input identifier; never a user-facing monitor number. */
+  id: number
+  name?: string
+  displayNumber?: number
+  width: number
+  height: number
+  refreshRateHz: number
+  codecs: VideoCodec[]
+}
+
+export interface DesktopCapabilities {
+  displays: DesktopDisplay[]
+  audio: boolean
+  /** The installed Windows service and current policy permit Ctrl+Alt+Del. */
+  secureAttention?: boolean
+}
+
+export interface DesktopOffer {
+  /** Chosen by the client before subscribing to trickle ICE events. */
+  sessionId: string
+  sdp: string
+  codec: VideoCodec
+  audio: boolean
+}
+
+export interface TerminalOffer {
+  sessionId: string
+  sdp: string
+}
+
+export interface DesktopStart {
+  sessionId: string
+  displayId: number
+  control?: boolean
+  /** Initial delivery on the negotiated audio track, applied before capture starts. */
+  audio?: boolean
+  fps?: number
+  /** Adaptive bitrate ceiling in bits/sec (default 8_000_000). */
+  bitrateBps?: number
+  /** Bound encoded video dimensions while preserving the display aspect ratio. */
+  maxWidth?: number
+  maxHeight?: number
+}
+
+/** Omitted by older daemons. Only `"encoder"` may open another peer. */
+export type DesktopErrorReason = "encoder" | "accessibility"
+
+const ACCESSIBILITY_PERMISSION_FAILURE = "desktop control needs Accessibility permission on the remote Mac"
+
+export function isDesktopErrorReason(reason: unknown): reason is DesktopErrorReason {
+  return reason === "encoder" || reason === "accessibility"
+}
+
+/** Classify desktop failures at the native boundary and preserve a reason already carried by transport errors. */
+export function desktopErrorReason(error: unknown): DesktopErrorReason | undefined {
+  if (typeof error === "object" && error !== null) {
+    const reason = (error as { reason?: unknown }).reason
+    if (isDesktopErrorReason(reason)) return reason
+    if (error instanceof AggregateError && error.cause !== undefined) return desktopErrorReason(error.cause)
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return message === ACCESSIBILITY_PERMISSION_FAILURE ? "accessibility" : undefined
+}
+
+export type DesktopEvent =
+  | { sessionId: string; kind: "iceCandidate"; candidate: IceCandidate }
+  | { sessionId: string; kind: "stateChanged"; state: string }
+  | { sessionId: string; kind: "error"; error: string; reason?: DesktopErrorReason }
+
+export function desktopErrorEvent(sessionId: string, error: string, reason?: string | null): Extract<DesktopEvent, { kind: "error" }> {
+  return { sessionId, kind: "error", error, ...(isDesktopErrorReason(reason) ? { reason } : {}) }
+}
+
+export function encoderFailure(message: string): Error & { reason: DesktopErrorReason } {
+  return Object.assign(new Error(message), { reason: "encoder" as const })
+}
+
+export function isEncoderFailure(error: unknown): error is Error & { reason: DesktopErrorReason } {
+  return typeof error === "object" && error !== null && (error as { reason?: unknown }).reason === "encoder"
+}
+
+function failureMessage(error: unknown): string {
+  if (error instanceof AggregateError) return `${error.message}: ${error.errors.map(failureMessage).join("; ")}`
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function desktopStartupCleanupFailure(startupError: unknown, cleanup: unknown): AggregateError {
+  const failure = new AggregateError([startupError, cleanup], `Desktop startup failed: ${failureMessage(startupError)}; peer cleanup failed: ${failureMessage(cleanup)}`, { cause: startupError })
+  // Cleanup can report a terminated encoder after joining it. Retry policy still
+  // belongs to the startup failure, never to a secondary cleanup diagnostic.
+  const reason = desktopErrorReason(startupError)
+  return Object.assign(failure, reason ? { reason } : {})
+}
+
+export interface DesktopPermission {
+  status: "checking" | "requesting" | "granted" | "denied" | "not-required" | "error"
+  error?: string
+}
+
+export type LinuxDesktopBackend = "wayland" | "x11" | null
+
+export interface DesktopPermissionsState {
+  /** Selected by the daemon; undefined on other operating systems. */
+  linuxDesktopBackend?: LinuxDesktopBackend
+  screenCapturePermission: DesktopPermission
+  accessibilityPermission: DesktopPermission
+  fullDiskAccessPermission: DesktopPermission
+}
+
+export const DESKTOP_PERMISSION_KINDS = ["fullDiskAccess", "screenCapture", "accessibility"] as const
+export type DesktopPermissionKind = typeof DESKTOP_PERMISSION_KINDS[number]
+
+export interface LocalDaemonInfo extends DesktopPermissionsState {
+  name: string
+  desktop: boolean
+}
+
+export type DaemonEvent = DesktopEvent | TerminalSessionEvent | CatalogEvent | ProviderEvent
+  | { kind: "desktopPermissionsChanged"; permissions: DesktopPermissionsState }
+  | { kind: "localChannelMessage"; peerId: string; sequence: number; data: string; isString: boolean }
+  | { kind: "localChannelClosed"; peerId: string; error?: string }
+
+export interface ControlMethods extends CatalogMethods, FilesystemMethods, ProviderMethods, SystemMethods {
+  permissionsRefresh: { params: Record<string, never>; result: DesktopPermissionsState }
+  permissionRequest: { params: { permission: DesktopPermissionKind }; result: DesktopPermissionsState }
+  centralStatus: { params: Record<string, never>; result: HostCentralStatus }
+  centralPrepareEnrollment: { params: EnrollmentTarget; result: PreparedEnrollment }
+  centralEnroll: { params: MachineEnrollment; result: CentralStatus }
+  localOpen: { params: { peerId: string; token: string; teamId: string; machineId: string }; result: null }
+  localSend: { params: { peerId: string; data: string; isString: boolean }; result: null }
+  localAck: { params: { peerId: string; sequence: number }; result: null }
+  localClose: { params: { peerId: string }; result: null }
+  hello: { params: { token: string }; result: LocalDaemonInfo }
+  shutdown: { params: Record<string, never>; result: null }
+  capabilities: { params: Record<string, never>; result: DesktopCapabilities }
+  offer: { params: DesktopOffer; result: { sdp: string } }
+  terminalOffer: { params: TerminalOffer; result: { sdp: string } }
+  agentOffer: { params: TerminalOffer; result: { sdp: string } }
+  terminalList: { params: Record<string, never>; result: TerminalSummary[] }
+  terminalDial: { params: TerminalDial; result: TerminalSummary }
+  terminalHangup: { params: { terminalId: string }; result: null }
+  candidate: { params: { sessionId: string; candidate: IceCandidate }; result: null }
+  start: { params: DesktopStart; result: null }
+  close: { params: { sessionId: string }; result: null }
+}
+
+export type ControlMethod = keyof ControlMethods
+export type ControlRequest = {
+  [M in ControlMethod]: { id: number; method: M; params: ControlMethods[M]["params"] }
+}[ControlMethod]
+export type ControlMessage =
+  | { id: number; result: unknown; error?: never }
+  | { id: number; error: string; reason?: DesktopErrorReason; result?: never }
+  | { event: DaemonEvent }
+
+export interface DaemonDiscovery {
+  endpoint: string
+  token: string
+}
+
+/** Limit client requests; accumulated catalog responses may be larger. */
+export const MAX_CONTROL_MESSAGE_BYTES = 256 * 1024
+/** DataChannel messages are chunked before crossing the discovery IPC socket. */
+export const MAX_LOCAL_MESSAGE_BYTES = 64 * 1024

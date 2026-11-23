@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { FILE_CHUNK_BYTES, type FileListing } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, type FileListing } from "@deskfleet/protocol/files"
 import { CapacitorFilesEndpoint, type FilesBridgePlugin } from "./files.ts"
 
 const documents: FileListing = {

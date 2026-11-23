@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "vitest"
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
-import type { GitFileDiff } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileDiff } from "@deskfleet/protocol/git"
 import { i18n } from "../../i18n"
 import { buildPromptContent } from "../../services/composer-attachments.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions"

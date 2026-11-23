@@ -1,6 +1,6 @@
 import { client } from "@deskfleet/client/platform"
 import type { McpServerConfig, McpServerInput } from "@deskfleet/client/mcp-servers"
-import type { AgentProviderConfig, ProviderMcpServerDiscovery } from "../../../../../apps/daemon/src/provider-protocol.ts"
+import type { AgentProviderConfig, ProviderMcpServerDiscovery } from "@deskfleet/protocol/provider"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"

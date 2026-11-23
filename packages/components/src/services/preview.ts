@@ -1,5 +1,5 @@
 import { type Component, type InjectionKey } from "vue"
-import type { FileResourceRequest } from "../../../client/src/files.ts"
+import type { FileResourceRequest } from "@deskfleet/client/files"
 
 export type OfficePreviewKind = "docx" | "xlsx" | "pptx"
 export type PreviewKind = "mermaid" | "image" | "audio" | "video" | "model" | "csv" | OfficePreviewKind

@@ -1,7 +1,7 @@
 import type { CentralApi } from "./central.ts"
-import type { McpServerConfig, McpServerInput, McpServerSnapshot } from "../../../apps/daemon/src/mcp-server-protocol.ts"
+import type { McpServerConfig, McpServerInput, McpServerSnapshot } from "@deskfleet/protocol/mcp-servers"
 
-export type { McpServerConfig, McpServerInput, McpServerSnapshot } from "../../../apps/daemon/src/mcp-server-protocol.ts"
+export type { McpServerConfig, McpServerInput, McpServerSnapshot } from "@deskfleet/protocol/mcp-servers"
 
 /** Private machine settings are read through authenticated management, never the catalog. */
 export function mcpServersClient(central: Pick<CentralApi, "rpc">, teamId: string, machineId: string) {

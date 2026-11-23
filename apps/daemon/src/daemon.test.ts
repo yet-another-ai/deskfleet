@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { nativeInfo, openCatalog, openInMemoryCatalog } from "@deskfleet/native"
 import { DaemonClient, readDaemonDiscovery, startDaemon as startNativeDaemon } from "./index.ts"
-import type { DesktopPermission } from "./control-protocol.ts"
+import type { DesktopPermission } from "@deskfleet/protocol/control"
 
 function startDaemon(port = 0, options: Parameters<typeof startNativeDaemon>[1] = {}) {
   return startNativeDaemon(port, { permissionPlatform: "darwin", ...options })

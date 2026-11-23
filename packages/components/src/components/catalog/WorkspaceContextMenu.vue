@@ -6,7 +6,7 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot
 import { computed, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
-import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
+import type { CatalogDirectory } from "@deskfleet/client/catalog"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import UiButton from "../common/UiButton.vue"

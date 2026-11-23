@@ -3,7 +3,7 @@ import { FolderOpen, GitBranch, LoaderCircle } from "@lucide/vue"
 import { DialogDescription, DialogTitle, RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from "reka-ui"
 import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSessionContext } from "@deskfleet/protocol/agent"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 

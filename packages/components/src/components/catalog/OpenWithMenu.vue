@@ -5,7 +5,7 @@ import { useAsyncState, useLocalStorage } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from "reka-ui"
 import { computed, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { LocalApplicationsApi } from "../../../../client/src/applications.ts"
+import type { LocalApplicationsApi } from "@deskfleet/client/applications"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ApplicationIcon from "./ApplicationIcon.vue"
 

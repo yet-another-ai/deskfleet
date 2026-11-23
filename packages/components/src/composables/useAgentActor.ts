@@ -1,6 +1,6 @@
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentActor } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "./useAccountSession.ts"
 
 /** Resolve journal actor IDs using the current account and selected Team's directory. */

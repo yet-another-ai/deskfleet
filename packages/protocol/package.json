@@ -1,0 +1,14 @@
+{
+  "name": "@deskfleet/protocol",
+  "version": "0.22.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.8.0",
+    "zod": "4.6.7"
+  }
+}

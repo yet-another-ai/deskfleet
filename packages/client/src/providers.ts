@@ -1,4 +1,4 @@
-export { supportsProviderUsage } from "../../../apps/daemon/src/provider-protocol.ts"
+export { supportsProviderUsage } from "@deskfleet/protocol/provider"
 import type {
   AgentProviderConfig,
   AgentProviderInput,
@@ -10,11 +10,11 @@ import type {
   ProviderUpdate,
   ProviderWorkspaceDiscovery,
   ProviderMcpServerDiscovery,
-} from "../../../apps/daemon/src/provider-protocol.ts"
-import type { TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
+} from "@deskfleet/protocol/provider"
+import type { TerminalSummary } from "@deskfleet/protocol/terminal"
 
 export type { ProviderTemplateUpdates, ProviderUpdate, ProviderMcpServerDiscovery }
-export type { ProviderMcpServerCandidate } from "../../../apps/daemon/src/provider-protocol.ts"
+export type { ProviderMcpServerCandidate } from "@deskfleet/protocol/provider"
 export type ProviderDisplay = Pick<AgentProviderConfig, "id" | "name" | "icon" | "template">
 export interface ProviderDisplaySnapshot {
   revision?: string

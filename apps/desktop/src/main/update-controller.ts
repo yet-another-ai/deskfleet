@@ -1,4 +1,4 @@
-import type { UpdateState } from "../../../../packages/client/src/updates.ts"
+import type { UpdateState } from "@deskfleet/client/updates"
 
 export const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000
 export const UPDATE_NETWORK_CHECK_INTERVAL = 10 * 1000

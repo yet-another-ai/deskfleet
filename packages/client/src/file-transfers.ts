@@ -1,4 +1,4 @@
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry } from "../../../apps/daemon/src/files-protocol.ts"
+import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry } from "@deskfleet/protocol/files"
 import { filePathToUri, type FileAttachmentUploadOptions, type FileAttachmentUploadRequest, type FileAttachmentUploadResult, type FileConflict, type FileListing, type FileReadResourceOptions, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer, type FileTransferRequest } from "./files.ts"
 import { copyFileChunks, writeBufferChunks } from "./file-pipeline.ts"
 

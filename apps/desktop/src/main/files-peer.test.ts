@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi } from "@deskfleet/client/central"
 import type { PeerEvent } from "@deskfleet/native"
-import { encodeFileFrame, FileFrameDecoder } from "../../../daemon/src/files-wire.ts"
+import { encodeFileFrame, FileFrameDecoder } from "@deskfleet/protocol/files-wire"
 
 const native = vi.hoisted(() => ({ createPeer: vi.fn() }))
 vi.mock("@deskfleet/native", () => native)

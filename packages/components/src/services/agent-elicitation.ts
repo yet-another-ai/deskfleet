@@ -1,5 +1,5 @@
-import type { AgentElicitation } from "../../../../apps/daemon/src/agent-protocol.ts"
-import { isSecretElicitationField } from "../../../../apps/daemon/src/agent-elicitation-protocol.ts"
+import type { AgentElicitation } from "@deskfleet/protocol/agent"
+import { isSecretElicitationField } from "@deskfleet/protocol/agent-elicitation"
 
 export type ElicitationValue = string | number | boolean | string[]
 export type ElicitationDraft = Record<string, ElicitationValue>

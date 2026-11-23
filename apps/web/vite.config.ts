@@ -3,7 +3,7 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
-import { clientCodeSplitting, tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
+import { clientCodeSplitting, tresTemplateCompilerOptions } from "@deskfleet/components/chunking.ts"
 
 export default defineConfig({
   plugins: [

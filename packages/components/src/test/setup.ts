@@ -1,7 +1,7 @@
 import { configureClient } from "@deskfleet/client/platform"
 import { afterEach, vi } from "vitest"
-import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
-import { AGENT_PROVIDER_TEMPLATES } from "../../../../apps/daemon/src/provider-protocol.ts"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import { AGENT_PROVIDER_TEMPLATES } from "@deskfleet/protocol/provider"
 import { loadProviderIcons } from "../services/provider-icons.ts"
 
 if (document.compatMode !== "CSS1Compat") {

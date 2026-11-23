@@ -1,5 +1,5 @@
-import { FILES_CHANNEL } from "../../../apps/daemon/src/files-protocol.ts"
-import { FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
+import { FILES_CHANNEL } from "@deskfleet/protocol/files"
+import { FILE_WIRE_CHUNK_BYTES } from "@deskfleet/protocol/files-wire"
 import type { CentralApi } from "./central.ts"
 import { FilesRpcClient } from "./files-rpc.ts"
 import { connectFilePeer, type FilePeerFactory, type MachineFileTarget } from "./files-signaling.ts"

@@ -9,10 +9,12 @@
   },
   "exports": {
     ".": "./src/mount.ts",
+    "./locales/*": "./locales/*",
     "./*": "./src/*"
   },
   "dependencies": {
     "@deskfleet/client": "workspace:*",
+    "@deskfleet/protocol": "workspace:*",
     "@internationalized/date": "3.12.4",
     "@lobehub/icons-static-svg": "1.104.0",
     "@lucide/vue": "1.76.0",

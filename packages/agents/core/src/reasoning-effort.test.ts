@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { findReasoningEffortOption } from "./protocol.ts"
+import { findReasoningEffortOption } from "@deskfleet/protocol/agents/core"
 import { AcpModelReasoning, projectModelReasoning } from "./reasoning-effort.ts"
 
 const SESSION_CONFIG = ["x.ai/sessionConfig"] as const

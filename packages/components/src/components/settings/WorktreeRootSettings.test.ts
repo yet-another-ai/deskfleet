@@ -1,7 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { WorktreeRootState } from "../../../../client/src/settings.ts"
+import type { WorktreeRootState } from "@deskfleet/client/settings"
 import { i18n } from "../../i18n/index.ts"
 import WorktreeRootSettings from "./WorktreeRootSettings.vue"
 

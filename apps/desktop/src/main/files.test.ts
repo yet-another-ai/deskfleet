@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, type FileListing, type FilesApi, type FileTarget } from "@deskfleet/client/files"
-import { FilesService } from "../../../daemon/src/files-service.ts"
+import { FilesService } from "@deskfleet/daemon/files-service"
 
 vi.mock("electron", () => ({ app: { getPath: vi.fn() }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn() }, shell: { openPath: vi.fn(), showItemInFolder: vi.fn() } }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))

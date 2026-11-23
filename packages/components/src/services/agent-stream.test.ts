@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { AGENT_MESSAGE_BYTES } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { AGENT_MESSAGE_BYTES } from "@deskfleet/protocol/agent"
 import { AgentMessageDecoder } from "./agent-stream.ts"
 test("reassembles split UTF-8 and multiple NDJSON messages independently of channel frames", () => {
   const receive = vi.fn()

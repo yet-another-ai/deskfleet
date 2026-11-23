@@ -1,10 +1,10 @@
 import type { SessionNotification, SessionUpdate } from "@agentclientprotocol/sdk/unstable"
 import { expect, test } from "vitest"
-import type { AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent } from "@deskfleet/protocol/agent"
 import { agentElicitation, agentEvent, agentPermission, agentSnapshot } from "../test/agent.ts"
 import { projectConversation } from "./agent-conversation.ts"
 import { createConversationProjector } from "./conversation-projector.ts"
-import { subagentNotification } from "@deskfleet/client/agent-session-scope"
+import { subagentNotification } from "@deskfleet/protocol/agent-session-scope"
 
 const update = (seq: number, update: SessionUpdate, sessionId = "parent", runGeneration = 1): AgentEvent => ({
   ...agentEvent(seq, "acp", { sessionId, update }), runGeneration,

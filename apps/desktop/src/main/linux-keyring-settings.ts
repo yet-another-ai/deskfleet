@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { LinuxKeyringState } from "../../../../packages/client/src/settings.ts"
+import type { LinuxKeyringState } from "@deskfleet/client/settings"
 
 export const VALID_LINUX_PASSWORD_STORES = [
   "basic",

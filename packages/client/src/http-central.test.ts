@@ -4,7 +4,7 @@ import { HttpCentralClient, HttpError } from "./http-central.ts"
 import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { remoteMachineClient } from "./remote.ts"
-import { MUX_PROFILE } from "./mux/protocol.ts"
+import { MUX_PROFILE } from "@deskfleet/protocol/mux"
 
 const clients: HttpCentralClient[] = []
 const requestBodies = new WeakMap<Request, Promise<string>>()

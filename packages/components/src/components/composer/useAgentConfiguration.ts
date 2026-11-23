@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, toRef, watch, type Ref } from "vue"
-import { agentConfigurationSelection, type AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import { agentConfigurationSelection, type AgentConfiguration } from "@deskfleet/client/agent-configuration"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { useAgentConfigurationCacheStore } from "../../stores/agent-configuration-cache.ts"

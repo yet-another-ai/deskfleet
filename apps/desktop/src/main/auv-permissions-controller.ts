@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import type { AuvPermissionsState } from "../../../../packages/client/src/onboarding.ts"
+import type { AuvPermissionsState } from "@deskfleet/client/onboarding"
 
 function failure(error: string): AuvPermissionsState { return { status: "error", error } }
 

@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest"
 import { FilesRpcClient } from "./files-rpc.ts"
-import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
-import { FILE_CHUNK_BYTES, FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_CHUNKS } from "../../../apps/daemon/src/files-protocol.ts"
+import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "@deskfleet/protocol/files-wire"
+import { FILE_CHUNK_BYTES, FILE_MAX_PENDING_REQUESTS, FILE_PIPELINE_CHUNKS } from "@deskfleet/protocol/files"
 
 test("file RPC multiplexes binary replies and preserves actionable conflict errors", async () => {
   const client = new FilesRpcClient(async receive => {

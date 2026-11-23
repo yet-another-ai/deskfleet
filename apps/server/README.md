@@ -495,7 +495,7 @@ The backend also supports optional
 through Redis; the deployment guide covers setup and collection limits.
 
 The Rust wire source is `crates/protocol/src/control.rs`; its generated type-only
-bindings are `crates/protocol/control.ts`:
+bindings are `packages/protocol/src/generated/central-control.ts`:
 
 ```sh
 mise exec -- cargo run -p deskfleet-protocol --example export_types -- --check

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentInput } from "@deskfleet/protocol/agent"
 import AgentBacklog from "./AgentBacklog.vue"
 
 const pendingInputs: AgentInput[] = [

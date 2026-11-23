@@ -5,7 +5,7 @@ import cursor from "@lobehub/icons-static-svg/icons/cursor.svg?url"
 import vscode from "../../assets/editors/vscode.svg?url"
 import vscodium from "../../assets/editors/vscodium.svg?url"
 import zed from "../../assets/editors/zed.svg?url"
-import type { LocalApplication } from "../../../../client/src/applications.ts"
+import type { LocalApplication } from "@deskfleet/client/applications"
 
 const props = defineProps<{ application: LocalApplication }>()
 const editorIcons: Record<string, string> = { vscode, vscodium }

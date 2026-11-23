@@ -1,5 +1,5 @@
 import { ref } from "vue"
-import type { AgentAuthStatus, AgentLiveNotice, AgentLiveUpdate } from "../../../client/src/agent-live.ts"
+import type { AgentAuthStatus, AgentLiveNotice, AgentLiveUpdate } from "@deskfleet/protocol/agent-live"
 
 /** Viewer-local, dismissible notices and the connected provider's latest identity. */
 export function useAgentLiveState() {

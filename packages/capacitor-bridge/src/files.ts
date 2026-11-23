@@ -5,7 +5,7 @@ import {
   type FileMethod,
   type FileMethods,
   type FileReply,
-} from "../../../apps/daemon/src/files-protocol.ts"
+} from "@deskfleet/protocol/files"
 
 /** Each endpoint owns its native directory grants, read handles and private staging. */
 export interface FilesBridgePlugin {

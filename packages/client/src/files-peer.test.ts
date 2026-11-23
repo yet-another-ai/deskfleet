@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi } from "./central.ts"
 import { createBrowserFileEndpoint } from "./files-peer.ts"
-import { FILE_CHUNK_BYTES } from "../../../apps/daemon/src/files-protocol.ts"
-import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
+import { FILE_CHUNK_BYTES } from "@deskfleet/protocol/files"
+import { encodeFileFrame, FileFrameDecoder, FILE_WIRE_CHUNK_BYTES } from "@deskfleet/protocol/files-wire"
 
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n"
 afterEach(() => vi.unstubAllGlobals())

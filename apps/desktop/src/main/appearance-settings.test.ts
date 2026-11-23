@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmdirSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "vitest"
-import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "../../../../packages/client/src/appearance.ts"
+import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "@deskfleet/client/appearance"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 
 const directories: string[] = []

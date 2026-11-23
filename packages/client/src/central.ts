@@ -8,10 +8,10 @@ import type { RegisterSuperAgentMachineSessionInput, SuperAgentConfig, SuperAgen
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
-import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentSnapshot } from "@deskfleet/protocol/agent"
 import type { DesktopEvent, DesktopStart, IceCandidate, VideoCodec } from "./desktop-media.ts"
 import type { NotificationSettings } from "./settings.ts"
-import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
+import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "@deskfleet/protocol/generated/central-control"
 
 export type PushChannel = "apns" | "fcm"
 export interface PushSubscriptionInput {
@@ -43,7 +43,7 @@ export interface GithubRepositoryItemsQuery {
 }
 export interface GithubRepositoryItemsPage { items: GithubRepositoryItem[]; nextCursor: string | null }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
-export type { SiteSettings, MarketingAttribution, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnAvailability, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
+export type { SiteSettings, MarketingAttribution, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnAvailability, TeamTurnSettings, TeamTurnSettingsUpdate } from "@deskfleet/protocol/generated/central-control"
 export type TeamRole = "owner" | "admin" | "member"
 export type Team = Omit<WireTeam, "role"> & { role: TeamRole }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: TeamRole }

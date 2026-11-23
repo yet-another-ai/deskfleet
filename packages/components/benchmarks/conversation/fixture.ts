@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentInput, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentInput, AgentSnapshot, AgentTurn } from "@deskfleet/protocol/agent"
 
 export interface BenchmarkOptions {
   turns: number

@@ -5,7 +5,7 @@ import {
 } from "@deskfleet/agent-core"
 import {
   GROK_ASK_USER_QUESTION_ALIAS, GROK_ASK_USER_QUESTION_METHOD, grokPlanInterview, grokPlanOutcome,
-} from "./protocol.ts"
+} from "@deskfleet/protocol/agents/grok"
 
 export { GROK_ASK_USER_QUESTION_ALIAS, GROK_ASK_USER_QUESTION_METHOD, grokPlanInterview, grokPlanOutcome }
 

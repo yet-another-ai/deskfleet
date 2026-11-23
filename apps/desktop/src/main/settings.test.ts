@@ -6,7 +6,7 @@ import type { KeepAwakeController } from "./keep-awake.ts"
 import type { NotificationSettingsController } from "./notification-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
-import { defaultWorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
+import { defaultWorktreePreferences } from "@deskfleet/protocol/worktree-preferences"
 
 const { handle, showOpenDialog, fromWebContents, isSupported, checkNotificationAccess, requestNotificationAccess } = vi.hoisted(() => ({
   handle: vi.fn(),

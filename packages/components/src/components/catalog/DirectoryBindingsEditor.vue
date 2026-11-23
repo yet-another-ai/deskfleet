@@ -4,8 +4,8 @@ import { ArrowDown, ArrowUp, Folder, Plus, X } from "@lucide/vue"
 import { whenever } from "@vueuse/core"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
-import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
-import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
+import type { CatalogDirectory } from "@deskfleet/client/catalog"
+import type { DirectoryListing } from "@deskfleet/client/filesystem"
 import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 
 const bindings = defineModel<CatalogDirectory[]>({ required: true })

@@ -30,8 +30,8 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
   rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
-  patch/Renovate contract check, the Quint simulator (`spec:test`), and the Web
-  and website type checks. Platform
+  patch/Renovate contract check, the workspace package boundary check, the Quint
+  simulator (`spec:test`), and the Web and website type checks. Platform
   tests and backend integration jobs wait for it (`needs: preflight`), providing
   fast-fail feedback before running on expensive runners. `Static checks` runs
   beside them with `mise run ci:check:static`: Clippy, the type checks that need

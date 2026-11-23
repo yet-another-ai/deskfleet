@@ -1,7 +1,7 @@
 import type { CentralApi, Machine } from "./central.ts"
 import { browserMuxPeer, type MuxPeerFactory } from "./mux-peer.ts"
 import { connectMachineMux, type ConnectedMux, type MuxTarget } from "./mux-signaling.ts"
-import { MUX_PROFILE, type MuxPurpose } from "./mux/protocol.ts"
+import { MUX_PROFILE, type MuxPurpose } from "@deskfleet/protocol/mux"
 import type { MuxStream } from "./mux/connection.ts"
 import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 

@@ -1,5 +1,5 @@
 import { ipcMain } from "electron"
-import { ONBOARDING_CHANNEL, ONBOARDING_PERMISSIONS, type OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
+import { ONBOARDING_CHANNEL, ONBOARDING_PERMISSIONS, type OnboardingPermission } from "@deskfleet/client/onboarding"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import type { OnboardingController } from "./onboarding-controller.ts"
 

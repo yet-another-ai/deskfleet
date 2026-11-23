@@ -1,0 +1,604 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { setTimeout as delay } from "node:timers/promises"
+import type { NativePeer, PeerEvent } from "@deskfleet/native"
+import { AuthorizedPeers, normalizeCandidate } from "./authorized-peers.ts"
+import type { AgentChannelSessions } from "../agent/channel.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
+import type { MachineCredentials, PeerAuthorization } from "@deskfleet/protocol/central"
+import type { TerminalSessions } from "../terminals/terminals.ts"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { encodeFileFrame, FileFrameDecoder } from "@deskfleet/protocol/files-wire"
+import { encoderFailure, isEncoderFailure } from "@deskfleet/protocol/control"
+
+const sdp = "v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\na=ice-ufrag:test\r\n"
+const identity = { originId: "origin", machineId: "1" }
+const credentials: MachineCredentials = { serverUrl: "https://backend.example", serverId: "server", teamId: "team", machineId: "machine", token: "secret" }
+const epoch = Date.parse("2026-10-25T00:00:00Z")
+function grant(): PeerAuthorization {
+  return {
+    peerId: "peer", serverId: "server", teamId: "team", actor: { kind: "user", userId: "alice", deviceId: "login" },
+    targetMachine: { id: "machine", originId: "origin", localMachineId: "1" }, purpose: "agent", transport: "webrtc",
+    actions: ["agent:read", "agent:execute", "git:read"], issuedAt: new Date(epoch).toISOString(), expiresAt: new Date(epoch + 86_400_000).toISOString(),
+  }
+}
+
+function fixture(closeGate?: Promise<void>, closeError?: Error) {
+  let now = epoch, closed = false, closeCalls = 0
+  let closing!: () => void
+  const closeStarted = new Promise<void>(resolve => { closing = resolve })
+  const sent: string[] = [], events: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
+  const packets: Buffer[] = []
+  const input: string[] = [], starts: unknown[] = [], signals: unknown[] = []
+  const negotiation: string[] = [], forwardingDeadlines: number[] = []
+  const gitListeners = new Set<(error?: string) => void>()
+  let waiting: ((event: PeerEvent | null) => void) | undefined
+  const push = (event: PeerEvent) => { if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) } else events.push(event) }
+  const native = {
+    answerOffer: async () => { negotiation.push("answer"); return sdp }, addIceCandidate: async () => {}, startDesktop: async (options: unknown) => { starts.push(options) },
+    enablePortForwarding: async (expiresAt: number) => { negotiation.push("ports"); forwardingDeadlines.push(expiresAt) },
+    sendDesktopInput: async (text: string) => { input.push(text) },
+    sendText: async (_label: string, text: string) => { sent.push(text) },
+    sendData: async (_label: string, data: Buffer) => { sent.push(data.toString()); packets.push(data) },
+    nextEvent: async () => events.shift() ?? (closed ? null : new Promise<PeerEvent | null>(resolve => { waiting = resolve })),
+  } as unknown as NativePeer
+  const agents: AgentChannelSessions = {
+    journal: { identity }, onEvent: () => () => {},
+    handle: async (method, _params, actor) => { calls.push({ method, actor }); return null },
+    watchGit: async (_sessionId, actor, listener) => {
+      calls.push({ method: "_deskfleet/git/subscribe", actor })
+      gitListeners.add(listener)
+      return () => { gitListeners.delete(listener) }
+    },
+  }
+  const peers = new AuthorizedPeers({
+    peers: {
+      create: async () => { negotiation.push("create"); return native },
+      close: async () => {
+        closeCalls++; closing(); await closeGate; closed = true; waiting?.(null)
+        if (closeError) throw closeError
+      },
+    },
+    agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
+  })
+  peers.bind(credentials)
+  const rpc = async (id: number, method: string, params: unknown) => {
+    push({ kind: "data", label: "deskfleet-acp", data: Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n") })
+    for (let tries = 0; tries < 100 && !sent.some(value => value.includes(`"id":${id},`)); tries++) await delay(1)
+  }
+  return { peers, native, calls, sent, packets, rpc, push, input, starts, signals, negotiation, forwardingDeadlines, gitListeners, closeStarted, closeCalls: () => closeCalls, advance: (ms: number) => { now += ms }, expired: () => { now += 86_400_001 }, closed: () => closed }
+}
+
+test("unclaimed local peers are capped and a closed claim retains replay protection", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const prepare = (id: string) => f.peers.prepareLocal({
+    peerId: id, authorization: { ...grant(), peerId: id, transport: "local" }, token: "x".repeat(32),
+  })
+  for (let i = 0; i < 16; i++) prepare(`local-${i}`)
+  assert.throws(() => prepare("overflow"), /claim capacity/)
+  await f.peers.close("local-0")
+  assert.throws(() => prepare("local-0"), /new peer/)
+  prepare("replacement")
+  assert.deepEqual(f.negotiation, [])
+})
+
+for (const source of ["native", "reader"] as const) {
+  test(`oversized ${source} errors fit the signaling byte budget and preserve UTF-8`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const diagnostic = "native failure: " + "🙂".repeat(2048)
+    if (source === "reader") f.native.nextEvent = async () => { throw new Error(diagnostic) }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+    if (source === "native") f.push({ kind: "error", error: diagnostic, reason: "encoder" })
+    await f.closeStarted
+    const event = f.signals[0] as { kind: string; error: string; reason?: string }
+    assert.equal(event.kind, "error")
+    assert.ok(Buffer.byteLength(event.error) <= 2048)
+    assert.ok(diagnostic.startsWith(event.error))
+    assert.ok(!event.error.includes("\uFFFD"))
+    if (source === "native") assert.equal(event.reason, "encoder")
+  })
+}
+
+test("ports require their own action and enable native forwarding before negotiation", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const authorization: PeerAuthorization = { ...grant(), purpose: "ports", actions: ["ports:forward"] }
+  await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: { ...authorization, actions: ["agent:execute"] }, iceServers: [] }), /does not allow port forwarding/)
+  assert.deepEqual(f.negotiation, [])
+  await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+  assert.deepEqual(f.negotiation, ["create", "ports", "answer"])
+  assert.deepEqual(f.forwardingDeadlines, [Date.parse(authorization.expiresAt)])
+})
+
+test("another peer purpose cannot enable forwarding through a channel label or action", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: [...grant().actions, "ports:forward"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-ports" })
+  f.push({ kind: "data", label: "deskfleet-ports", data: Buffer.from("open") })
+  await delay(0)
+  assert.deepEqual(f.negotiation, ["create", "answer"])
+  assert.deepEqual(f.forwardingDeadlines, [])
+})
+
+for (const failure of ["native startup", "expired during startup"] as const) {
+  test(`port negotiation closes native resources after ${failure}`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    f.native.enablePortForwarding = async () => {
+      if (failure === "native startup") throw new Error("Port forwarding could not start")
+      f.expired()
+    }
+    await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "ports", actions: ["ports:forward"] }, iceServers: [] }), failure === "native startup" ? /could not start/ : /authorization has expired/)
+    assert.deepEqual(f.negotiation, ["create"])
+    assert.equal(f.closeCalls(), 1)
+    assert.equal(f.closed(), true)
+  })
+}
+
+for (const ending of ["expiry", "revocation", "channel close"] as const) {
+  test(`port ${ending} closes its native peer and waits for resource cleanup`, { timeout: 5_000 }, async context => {
+    let release!: () => void
+    const f = fixture(new Promise<void>(resolve => { release = resolve }))
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const authorization: PeerAuthorization = {
+      ...grant(), purpose: "ports", actions: ["ports:forward"],
+      ...(ending === "expiry" ? { expiresAt: new Date(epoch + 10).toISOString() } : {}),
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+    const revocation = ending === "revocation" ? f.peers.reconcile([]) : undefined
+    if (ending === "channel close") f.push({ kind: "dataChannelClosed", label: "deskfleet-ports" })
+    await f.closeStarted
+    let settled = false
+    const closing = f.peers.close("peer").then(() => { settled = true })
+    await delay(0)
+    assert.equal(settled, false)
+    assert.equal(f.closed(), false)
+    release()
+    await Promise.all([closing, revocation])
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+    await assert.rejects(f.peers.candidate("peer", { candidate: "candidate:1" }), /Unknown authorized peer/)
+  })
+}
+
+test("repeated close and shutdown await the same native input cleanup", async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const f = fixture(gate)
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  const closed: string[] = []
+  const first = f.peers.close("peer").then(() => { closed.push("first") })
+  const second = f.peers.close("peer").then(() => { closed.push("second") })
+  const shutdown = f.peers.closeAll().then(() => { closed.push("shutdown") })
+  await delay(0)
+  assert.deepEqual(closed, [])
+  release()
+  await Promise.all([first, second, shutdown])
+  assert.equal(closed.length, 3)
+  assert.equal(f.closed(), true)
+})
+
+test("desktop streaming grant alone cannot enable or send control", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [] })
+  await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /does not allow/)
+  assert.equal(f.starts.length, 0)
+  await f.peers.start("peer", { displayId: 7 })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"releaseAll"}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.deepEqual(f.input, [])
+})
+
+for (const audio of [false, true]) {
+  test(`desktop startup sets initial audio delivery to ${audio} before capture`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const operations: unknown[] = []
+    f.native.setDesktopAudio = enabled => { operations.push({ audio: enabled }) }
+    f.native.startDesktop = async options => { operations.push({ capture: options }) }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [], options: { audio: true } })
+    await f.peers.start("peer", { displayId: 7, audio })
+    assert.deepEqual(operations, [{ audio }, { capture: { displayId: 7 } }])
+    assert.equal(f.closeCalls(), 0)
+  })
+}
+
+test("a streaming-only grant can change audio but denied control keeps the same desktop peer", { timeout: 5_000 }, async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const audio: boolean[] = [], control: boolean[] = []
+  f.native.setDesktopAudio = async enabled => { audio.push(enabled) }
+  f.native.setDesktopControl = async enabled => { control.push(enabled) }
+  let reply!: (text: string) => void
+  const sendText = f.native.sendText.bind(f.native)
+  f.native.sendText = async (label, text) => { await sendText(label, text); reply(text) }
+  const configure = async (requestId: number, audio: boolean, control: boolean) => {
+    const response = new Promise<string>(resolve => { reply = resolve })
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from(JSON.stringify({ type: "configure", requestId, audio, control })) })
+    return JSON.parse(await response)
+  }
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+  await f.peers.start("peer", { displayId: 7, control: false })
+  assert.deepEqual(await configure(1, true, false), { type: "configured", requestId: 1, control: false })
+  const denied = await configure(2, false, true)
+  assert.equal(denied.type, "configurationError")
+  assert.equal(denied.requestId, 2)
+  assert.equal(denied.control, false)
+  assert.match(denied.error, /does not allow/)
+  assert.deepEqual(audio, [true])
+  assert.deepEqual(control, [false])
+  assert.deepEqual(await configure(3, false, false), { type: "configured", requestId: 3, control: false })
+  assert.deepEqual(audio, [true, false])
+  assert.deepEqual(f.negotiation, ["create", "answer"])
+  assert.equal(f.starts.length, 1)
+  assert.equal(f.closeCalls(), 0)
+  assert.deepEqual(f.input, [])
+})
+
+test("desktop control binds the capture display and expires before further input", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+  await f.peers.start("peer", { displayId: 7, control: true })
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+  assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+  assert.equal(f.input.length, 1)
+  assert.deepEqual(f.sent, ['{"type":"ready"}'])
+  f.expired()
+  f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyB","pressed":true}') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.input.length, 1)
+})
+
+for (const phase of ["before native startup", "during input readiness"] as const) {
+  test(`desktop starts reject duplicates ${phase} and after startup without closing the peer`, { timeout: 5_000 }, async context => {
+    const f = fixture()
+    let release!: () => void, ready!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const enabling = new Promise<void>(resolve => { ready = resolve })
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (phase === "before native startup") await gate
+    }
+    const sendText = f.native.sendText.bind(f.native)
+    f.native.sendText = async (label, text) => {
+      ready()
+      if (phase === "during input readiness") await gate
+      await sendText(label, text)
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    const first = f.peers.start("peer", { displayId: 7, control: true })
+    if (phase === "during input readiness") await enabling
+    await assert.rejects(f.peers.start("peer", { displayId: 8, control: true }), /already starting/)
+    assert.equal(f.closeCalls(), 0)
+    release()
+    await first
+    await assert.rejects(f.peers.start("peer", { displayId: 8 }), /already started/)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.sent, ['{"type":"ready"}'])
+    assert.equal(f.closeCalls(), 0)
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    for (let tries = 0; tries < 100 && !f.input.length; tries++) await delay(1)
+    assert.equal(f.input.length, 1)
+    assert.equal(f.closed(), false)
+  })
+}
+
+for (const primaryEncoder of [true, false]) {
+  test(`desktop startup keeps ${primaryEncoder ? "encoder" : "generic"} classification when cleanup also fails`, async context => {
+    const cleanup = encoderFailure("encoder worker terminated during cleanup")
+    const f = fixture(undefined, cleanup)
+    context.mock.method(console, "error", () => {})
+    context.after(() => f.peers.closeAll())
+    const startup = new Error(primaryEncoder ? "video encoder failed during startup" : "screen capture permission denied")
+    f.native.startDesktop = async () => { throw startup }
+    f.native.takeMediaFailure = () => primaryEncoder ? { message: startup.message, reason: "encoder" } : null
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), error => {
+      assert.ok(error instanceof AggregateError)
+      assert.equal(isEncoderFailure(error), primaryEncoder)
+      assert.ok(error.cause instanceof Error)
+      assert.equal(error.cause.message, startup.message)
+      assert.equal(error.errors[0], error.cause)
+      assert.ok(error.errors[1] instanceof AggregateError)
+      assert.deepEqual(error.errors[1].errors, [cleanup])
+      assert.ok(error.message.includes(startup.message))
+      assert.ok(error.message.includes(cleanup.message))
+      return true
+    })
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+  })
+}
+
+for (const failure of ["ready send", "expiry after capture", "expiry during ready send"] as const) {
+  test(`desktop startup rolls back ${failure} and waits for native cleanup`, { timeout: 5_000 }, async context => {
+    let release!: () => void
+    const f = fixture(new Promise<void>(resolve => { release = resolve }))
+    context.after(async () => { release(); await f.peers.closeAll() })
+    const sendError = new Error("Input ready send failed")
+    const startDesktop = f.native.startDesktop.bind(f.native)
+    f.native.startDesktop = async options => {
+      await startDesktop(options)
+      if (failure === "expiry after capture") f.expired()
+    }
+    f.native.sendText = async () => {
+      if (failure === "ready send") throw sendError
+      if (failure === "expiry during ready send") f.expired()
+    }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })
+    f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+    await delay(0)
+    let settled = false
+    const start = f.peers.start("peer", { displayId: 7, control: true }).finally(() => { settled = true })
+    const rejected = assert.rejects(start, error => failure === "ready send" ? error === sendError : error instanceof Error && /authorization has expired/.test(error.message))
+    await f.closeStarted
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from('{"type":"key","code":"KeyA","pressed":true}') })
+    await delay(0)
+    assert.equal(settled, false, "startup must wait for capture and input cleanup")
+    assert.equal(f.closed(), false)
+    assert.deepEqual(f.starts, [{ displayId: 7, control: true }])
+    assert.deepEqual(f.input, [])
+    release()
+    await rejected
+    assert.equal(f.closed(), true)
+    assert.equal(f.closeCalls(), 1)
+    await assert.rejects(f.peers.start("peer", { displayId: 7, control: true }), /Unknown authorized peer/)
+  })
+}
+
+test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", async () => {
+  const f = fixture()
+  for (const authorization of [
+    { ...grant(), teamId: "another" }, { ...grant(), expiresAt: new Date(epoch + 86_400_001).toISOString() },
+    { ...grant(), targetMachine: { ...grant().targetMachine, originId: "other-origin" } },
+  ]) await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] }))
+  const laggedServerNow = epoch + 5 * 60_000
+  await f.peers.offer({
+    peerId: "peer", sdp, iceServers: [],
+    authorization: { ...grant(), issuedAt: new Date(laggedServerNow).toISOString(), expiresAt: new Date(laggedServerNow + 86_400_000).toISOString() },
+  })
+  await f.peers.close("peer")
+  await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] }), /new peer/)
+})
+
+test("Agent RPC uses the server actor and cannot perform management over WebRTC", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const authorization = grant()
+  await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+  authorization.actor.userId = "mutated"
+  await f.rpc(1, "initialize", { protocolVersion: 1 })
+  await f.rpc(2, "_deskfleet/input/submit", { actor: { userId: "spoof" }, sessionId: "1" })
+  assert.equal(f.calls[0]?.actor.userId, "alice")
+  await f.rpc(3, "_deskfleet/session/create", {})
+  assert.match(f.sent.join(""), /Manage Sessions through the backend API/)
+  assert.equal(f.calls.length, 1)
+  await f.rpc(4, "_deskfleet/elicitation/respond", { sessionId: "1", elicitationId: "2", response: { action: "cancel" }, actor: { userId: "spoof" } })
+  assert.equal(f.calls[1]?.method, "_deskfleet/elicitation/respond")
+  assert.equal(f.calls[1]?.actor.userId, "alice")
+})
+
+test("shared Session read acknowledgements require read authority and use the verified peer actor", async context => {
+  const f = fixture()
+  context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await f.rpc(1, "initialize", { protocolVersion: 1 })
+  await f.rpc(2, "_deskfleet/session/read", { sessionId: "1", operationId: "read", throughSeq: "3", actor: { userId: "spoof" } })
+  await f.rpc(3, "_deskfleet/session/unread", { sessionId: "1", operationId: "unread", actor: { userId: "spoof" } })
+  assert.deepEqual(f.calls, [
+    { method: "_deskfleet/session/read", actor: grant().actor },
+    { method: "_deskfleet/session/unread", actor: grant().actor },
+  ])
+})
+
+test("composer search and resolution require execution authority and use the verified peer actor", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  const requests = [
+    { method: "_deskfleet/composer/references", params: { workspaceId: "1", kind: "file", query: "source" } },
+    { method: "_deskfleet/composer/resolve", params: { sessionId: "1", references: [] } },
+  ]
+  for (const [index, request] of requests.entries()) {
+    await denied.rpc(index + 2, request.method, request.params)
+    const response = denied.sent.join("").trim().split("\n").map(line => JSON.parse(line)).find(value => value.id === index + 2)
+    assert.match(response.error.message, /does not allow this operation/)
+  }
+  assert.deepEqual(denied.calls, [])
+
+  const authorization = { ...grant(), actions: ["agent:read", "agent:execute"] }
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+  authorization.actor.userId = "changed-after-verification"
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  for (const [index, request] of requests.entries()) {
+    await allowed.rpc(index + 2, request.method, { ...request.params, actor: { kind: "system", userId: "spoof" } })
+    const response = allowed.sent.join("").trim().split("\n").map(line => JSON.parse(line)).find(value => value.id === index + 2)
+    assert.equal(response.error, undefined)
+    assert.equal(response.result, null)
+  }
+  assert.deepEqual(allowed.calls, requests.map(({ method }) => ({ method, actor: grant().actor })))
+})
+
+test("expiry closes access without a signaling connection and ignores queued input", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await f.rpc(1, "initialize", { protocolVersion: 1 })
+  f.expired()
+  f.push({ kind: "data", label: "deskfleet-acp", data: Buffer.from('{"jsonrpc":"2.0","id":2,"method":"_deskfleet/input/submit","params":{}}\n') })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.calls.length, 0)
+  assert.equal(f.sent.length, 1)
+})
+
+test("Git preparation requires execution access, not a read-only Git grant", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read", "git:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  await denied.rpc(2, "_deskfleet/git/prepare", { workspaceId: "1", context: "directory" })
+  assert.match(denied.sent.join(""), /does not allow this operation/)
+  assert.equal(denied.calls.length, 0)
+
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  await allowed.rpc(2, "_deskfleet/git/prepare", { workspaceId: "1", context: "worktree", actor: { userId: "spoof" } })
+  assert.equal(allowed.calls[0]?.method, "_deskfleet/git/prepare")
+  assert.equal(allowed.calls[0]?.actor.userId, "alice")
+})
+
+test("Git observation requires git:read and rechecks authorization before notifications", async context => {
+  const denied = fixture(), allowed = fixture()
+  context.after(async () => { await denied.peers.closeAll(); await allowed.peers.closeAll() })
+  await denied.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
+  await denied.rpc(1, "initialize", { protocolVersion: 1 })
+  await denied.rpc(2, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "denied" })
+  assert.match(denied.sent.join(""), /does not allow this operation/)
+  assert.equal(denied.gitListeners.size, 0)
+
+  await allowed.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await allowed.rpc(1, "initialize", { protocolVersion: 1 })
+  await allowed.rpc(2, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "allowed", actor: { userId: "spoof" } })
+  assert.equal(allowed.calls[0]?.actor.userId, "alice")
+  assert.equal(allowed.gitListeners.size, 1)
+  for (const listener of allowed.gitListeners) listener()
+  await delay(0)
+  assert.match(allowed.sent.join(""), /_deskfleet\/git\/changed/)
+  const count = allowed.sent.length
+  allowed.expired()
+  for (const listener of allowed.gitListeners) listener()
+  await delay(0)
+  assert.equal(allowed.sent.length, count)
+  await allowed.peers.closeAll()
+  assert.equal(allowed.gitListeners.size, 0)
+})
+
+test("reconciliation never extends an existing peer grant", async () => {
+  const f = fixture()
+  await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  await f.peers.reconcile([{ ...grant(), expiresAt: new Date(epoch + 90_000_000).toISOString() }])
+  assert.equal(f.closed(), true)
+})
+
+test("periodic reconciliation preserves active peers and closes missing grants once", async context => {
+  const active = fixture(), revoked = fixture()
+  context.after(async () => { await active.peers.closeAll(); await revoked.peers.closeAll() })
+  const activeGrant = grant(), revokedGrant = { ...grant(), peerId: "revoked" }
+  await active.peers.offer({ peerId: activeGrant.peerId, sdp, authorization: activeGrant, iceServers: [] })
+  await revoked.peers.offer({ peerId: revokedGrant.peerId, sdp, authorization: revokedGrant, iceServers: [] })
+  for (const peers of [active.peers, revoked.peers]) await peers.reconcile([activeGrant, revokedGrant])
+  for (let heartbeat = 0; heartbeat < 2; heartbeat++) {
+    for (const peers of [active.peers, revoked.peers]) await peers.reconcile([activeGrant])
+    assert.equal(active.closed(), false)
+    assert.equal(active.closeCalls(), 0)
+    assert.equal(revoked.closed(), true)
+    assert.equal(revoked.closeCalls(), 1)
+  }
+})
+
+test("native ICE without ufrag or mid binds through its SDP media index", () => {
+  assert.deepEqual(normalizeCandidate({ candidate: "candidate:1", sdpMid: "", sdpMlineIndex: 0 }, sdp), { candidate: "candidate:1", sdpMid: "0", sdpMlineIndex: 0 })
+  assert.throws(() => normalizeCandidate({ candidate: "candidate:1", sdpMid: "wrong", sdpMlineIndex: 0 }, sdp), /media binding/)
+  assert.throws(() => normalizeCandidate({ candidate: "candidate:1", sdpMlineIndex: 0, usernameFragment: "old" }, sdp), /another negotiation/)
+})
+
+test("files peers route binary reads and enforce a separate write action", async context => {
+  const f = fixture()
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-file-peer-"))
+  context.after(async () => { await f.peers.closeAll(); await rm(directory, { recursive: true, force: true }) })
+  const path = join(directory, "source.txt")
+  await writeFile(path, "hello")
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "files", actions: ["files:read"] }, iceServers: [] })
+  f.push({ kind: "data", label: "deskfleet-files", data: Buffer.from(encodeFileFrame({ id: 1, method: "read", params: { path, offset: 0, length: 5 } })) })
+  for (let tries = 0; tries < 100 && !f.packets.length; tries++) await delay(1)
+  const decoder = new FileFrameDecoder()
+  const replies = f.packets.flatMap(packet => decoder.push(packet))
+  assert.equal(Buffer.from(replies[0]!.data).toString(), "hello")
+  f.push({ kind: "data", label: "deskfleet-files", data: Buffer.from(encodeFileFrame({ id: 2, method: "begin", params: { directory, name: "blocked", kind: "file", conflict: "ask" } })) })
+  for (let tries = 0; tries < 100 && !f.closed(); tries++) await delay(1)
+  assert.equal(f.closed(), true)
+  assert.equal(f.calls.length, 0)
+})
+
+const localToken = "local-claim-token-with-at-least-32-characters"
+function localGrant(): PeerAuthorization { return { ...grant(), transport: "local" } }
+
+test("local claims require the bound server, Team, machine, user, purpose, transport, and one-use secret", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const prepare = (authorization: PeerAuthorization) => f.peers.prepareLocal({ peerId: "peer", authorization, token: localToken })
+  for (const changes of [
+    { serverId: "other" }, { teamId: "other" }, { targetMachine: { ...grant().targetMachine, id: "other" } },
+    { actor: { kind: "user" as const, userId: "", deviceId: "login" } },
+    { purpose: "files" as const }, { transport: "webrtc" as const },
+  ]) assert.throws(() => prepare({ ...localGrant(), ...changes }))
+  await assert.rejects(f.peers.offer({ peerId: "peer", authorization: localGrant(), sdp, iceServers: [] }), /WebRTC authorization/)
+  prepare(localGrant())
+  const owner = {}, sink = { send: async () => {}, close: () => {} }
+  assert.throws(() => f.peers.openLocal("peer", "incorrect", owner, sink), /claim token/)
+  f.peers.openLocal("peer", localToken, owner, sink)
+  assert.throws(() => f.peers.openLocal("peer", localToken, owner, sink), /unavailable/)
+  assert.throws(() => f.peers.sendLocal("peer", {}, Buffer.from(""), false), /this connection/)
+  await assert.rejects(f.peers.closeLocal("peer", {}), /this connection/)
+  await f.peers.closeLocal("peer", owner)
+  assert.throws(() => prepare(localGrant()), /new peer/)
+  assert.deepEqual(f.negotiation, [], "local peers never create, negotiate, or close native WebRTC resources")
+  assert.equal(f.closeCalls(), 0)
+})
+
+test("an unclaimed local secret expires after 30 seconds without extending its grant", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  f.peers.prepareLocal({ peerId: "peer", authorization: localGrant(), token: localToken })
+  f.advance(30_001)
+  assert.throws(() => f.peers.openLocal("peer", localToken, {}, { send: async () => {}, close: () => {} }), /claim has expired/)
+  assert.throws(() => f.peers.prepareLocal({ peerId: "peer", authorization: localGrant(), token: localToken }), /new peer/)
+})
+
+test("local Agent and Git requests share verified actors, action checks, and management restrictions", async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const owner = {}, sent: string[] = []
+  f.peers.prepareLocal({ peerId: "peer", authorization: { ...localGrant(), actions: ["agent:read", "git:read"] }, token: localToken })
+  f.peers.openLocal("peer", localToken, owner, { send: async (data, isString) => { assert.equal(isString, false); sent.push(data.toString()) }, close: () => {} })
+  const rpc = async (id: number, method: string, params = {}) => {
+    f.peers.sendLocal("peer", owner, Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"), false)
+    for (let attempt = 0; attempt < 100 && !sent.some(value => value.includes(`"id":${id},`)); attempt++) await delay(1)
+    return JSON.parse(sent.find(value => value.includes(`"id":${id},`))!) as { error?: { message: string } }
+  }
+  await rpc(1, "initialize", { protocolVersion: 1 })
+  await rpc(2, "_deskfleet/session/list")
+  await rpc(3, "_deskfleet/git/status", { sessionId: "session" })
+  assert.deepEqual(f.calls.map(call => call.actor), [grant().actor, grant().actor])
+  assert.match((await rpc(4, "_deskfleet/input/submit")).error!.message, /does not allow/)
+  assert.match((await rpc(5, "_deskfleet/session/create")).error!.message, /backend API/)
+  await rpc(6, "_deskfleet/git/subscribe", { sessionId: "session", subscriptionId: "watch" })
+  assert.equal(f.gitListeners.size, 1)
+  f.expired()
+  for (const listener of f.gitListeners) listener()
+  await delay(0)
+  assert.equal(f.gitListeners.size, 0)
+  assert.ok(!sent.some(value => value.includes("_deskfleet/git/changed")), "expired grants cannot stream Git events")
+  assert.deepEqual(f.negotiation, [])
+})
+
+for (const ending of ["expiry", "revoke", "reconcile", "shutdown"] as const) {
+  test(`local ${ending} closes only its viewers and denies subsequent messages`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const owner = {}, closed: (string | undefined)[] = []
+    const authorization = { ...localGrant(), ...(ending === "expiry" ? { expiresAt: new Date(epoch + 10).toISOString() } : {}) }
+    f.peers.prepareLocal({ peerId: "peer", authorization, token: localToken })
+    f.peers.openLocal("peer", localToken, owner, { send: async () => {}, close: error => { closed.push(error) } })
+    if (ending === "expiry") await delay(20)
+    if (ending === "revoke") await f.peers.close("peer")
+    if (ending === "reconcile") await f.peers.reconcile([{ ...authorization, expiresAt: new Date(epoch + 12_000).toISOString() }])
+    if (ending === "shutdown") await f.peers.closeAll()
+    assert.equal(closed.length, 1)
+    assert.throws(() => f.peers.sendLocal("peer", owner, Buffer.from(""), false), /Unknown authorized peer/)
+    assert.equal(f.closeCalls(), 0)
+  })
+}

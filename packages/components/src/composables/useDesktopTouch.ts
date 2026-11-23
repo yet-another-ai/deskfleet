@@ -1,6 +1,6 @@
 import { useEventListener } from "@vueuse/core"
 import { watch, type Ref } from "vue"
-import type { DesktopInputMessage } from "../../../client/src/desktop-input.ts"
+import type { DesktopInputMessage } from "@deskfleet/client/desktop-input"
 import { desktopPoint } from "./useDesktopInput.ts"
 
 export type DesktopPointerMode = "absolute" | "relative"

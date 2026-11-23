@@ -3,7 +3,7 @@ import { snapshotIsWorking, type SessionActivity } from "../services/agent-conve
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { computed, hasInjectionContext, onScopeDispose, ref, watch } from "vue"
-import type { AgentSessionRecord } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSessionRecord } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { useFleetStore } from "./fleet.ts"

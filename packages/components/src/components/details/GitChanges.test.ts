@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { computed, ref, shallowRef } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { GitFileChange, GitFileDiff, GitStatusSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { gitDiffCardKey, type GitDiffCard } from "./git-diff-card.ts"
 import { i18n } from "../../i18n/index.ts"
 import GitChanges from "./GitChanges.vue"

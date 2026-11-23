@@ -613,7 +613,7 @@ is explicitly configured to use the same directory. A live daemon prevents a
 second process from replacing its record.
 The health endpoint remains read-only and does not expose signaling or capture.
 
-The local contract in `apps/daemon/src/control-protocol.ts` carries authentication,
+The local contract in `packages/protocol/src/control.ts` carries authentication,
 capability discovery, SDP offers/answers, trickle ICE, capture start, close, and
 session events. The daemon assigns native peer IDs internally; each socket can
 operate only on its own sessions. Disconnect releases those peers and capture

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CircleAlert, Info, X } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
-import type { AgentLiveNotice } from "@deskfleet/client/agent-live"
+import type { AgentLiveNotice } from "@deskfleet/protocol/agent-live"
 
 defineProps<{ notices: AgentLiveNotice[] }>()
 const emit = defineEmits<{ dismiss: [id: string] }>()

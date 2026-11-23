@@ -1,5 +1,5 @@
-import type { AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
-import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
+import type { AgentEvent } from "@deskfleet/protocol/agent"
+import { isSubagentNotification } from "@deskfleet/protocol/agent-session-scope"
 
 type SessionNotification = Extract<AgentEvent["payload"], { update: unknown }>
 export type AgentUsage = Extract<SessionNotification["update"], { sessionUpdate: "usage_update" }>

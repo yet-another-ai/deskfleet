@@ -1,6 +1,6 @@
 import katex from "katex"
 import type { InjectionKey } from "vue"
-import type { FileResourceRequest } from "../../../../../client/src/files.ts"
+import type { FileResourceRequest } from "@deskfleet/client/files"
 
 export interface LoadedImage {
   url?: string

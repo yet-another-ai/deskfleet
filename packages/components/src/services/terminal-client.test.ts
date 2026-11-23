@@ -1,7 +1,7 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { DesktopEvent } from "../../../client/src/desktop-media.ts"
-import type { TerminalSignalingApi } from "../../../client/src/terminal.ts"
+import type { DesktopEvent } from "@deskfleet/client/desktop-media"
+import type { TerminalSignalingApi } from "@deskfleet/client/terminal"
 import { deferred } from "../test/desktop-media.ts"
 import { decodeTerminalBytes, TerminalClient } from "./terminal-client.ts"
 

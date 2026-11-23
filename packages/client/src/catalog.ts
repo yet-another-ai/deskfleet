@@ -1,6 +1,6 @@
-import type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace } from "../../../apps/daemon/src/catalog-protocol.ts"
+import type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace } from "@deskfleet/protocol/catalog"
 
-export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorktree } from "../../../apps/daemon/src/catalog-protocol.ts"
+export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorktree } from "@deskfleet/protocol/catalog"
 
 export const CATALOG_CHANGED_EVENT = "deskfleet:catalog-changed"
 

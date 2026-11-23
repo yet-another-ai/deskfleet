@@ -11,7 +11,7 @@ import {
   type ProviderMcpDiscoveryContext, type ProviderMcpServerCandidate, type ProviderMcpServerDiscovery,
   type ProviderWorkspaceDiscovery, type ProviderWorkspaceDiscoveryContext,
 } from "@deskfleet/agent-core"
-import { parseCodexComposerSkill } from "./protocol.ts"
+import { parseCodexComposerSkill } from "@deskfleet/protocol/agents/codex"
 
 export { parseCodexComposerSkill }
 

@@ -1,7 +1,7 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import type { AgentConfiguration } from "@deskfleet/client/agent-configuration"
 import { client as platformClient } from "@deskfleet/client/platform"
 import { i18n } from "../../i18n/index.ts"
 import { AgentClient } from "../../services/agent-client.ts"

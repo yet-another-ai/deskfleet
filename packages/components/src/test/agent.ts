@@ -1,4 +1,4 @@
-import type { AgentActor, AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentActor, AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot } from "@deskfleet/protocol/agent"
 export const actor: AgentActor = { kind: "user", userId: "Ada", sourceMachine: { originId: "origin", id: "10" } }
 export function agentSnapshot(): AgentSnapshot {
   return { session: { id: "30", workspaceId: "20", provider: "codex", title: "Fix tests", context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "now", updatedAt: "now", capabilities: { steering: true, resume: true } }, runs: [], inputs: [], turns: [], permissions: [], elicitations: [] }

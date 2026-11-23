@@ -6,7 +6,7 @@ import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, File, Folder, FolderOpen, Home, RefreshCw } from "@lucide/vue"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
+import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "@deskfleet/client/files"
 import { fileSize } from "../../services/file-format.ts"
 const props = withDefaults(defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; resetKey: number; selection: FileEntry[]; initialPath?: string; selectable?: boolean }>(), { selectable: true })
 const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [location: FileLocation | undefined] }>()

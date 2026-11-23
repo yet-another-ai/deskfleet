@@ -2,8 +2,8 @@
 import UiButton from "../common/UiButton.vue"
 import { ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
-import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
+import type { CatalogDirectory } from "@deskfleet/client/catalog"
+import type { DirectoryListing } from "@deskfleet/client/filesystem"
 import DirectoryBindingsEditor from "./DirectoryBindingsEditor.vue"
 
 const props = defineProps<{

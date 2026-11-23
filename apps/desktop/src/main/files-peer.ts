@@ -2,7 +2,7 @@ import { createPeer } from "@deskfleet/native"
 import type { CentralApi } from "@deskfleet/client/central"
 import { FilesRpcClient } from "@deskfleet/client/files-rpc"
 import { connectFilePeer, type FilePeerFactory, type MachineFileTarget } from "@deskfleet/client/files-signaling"
-import { FILES_CHANNEL } from "../../../../apps/daemon/src/files-protocol.ts"
+import { FILES_CHANNEL } from "@deskfleet/protocol/files"
 import { getMachineMux } from "@deskfleet/client/mux-client"
 import { nativeMuxPeer } from "./mux-peer.ts"
 

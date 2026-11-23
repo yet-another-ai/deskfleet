@@ -1891,7 +1891,7 @@ The Rust workspace contains:
 | `deskfleet-model` | Resource IDs, directory bindings, and session associations |
 | `deskfleet-store` | SeaORM entities and transactional catalog persistence |
 | `deskfleet-migration` | Catalog schema migrations and optional migration CLI |
-| `deskfleet-protocol` | Shared wire contracts and protocol version |
+| `deskfleet-protocol` | Central wire contracts, protocol version, and generated TypeScript control types |
 | `deskfleet-control-store` | PostgreSQL central identity, authorization, catalog, and history persistence |
 | `deskfleet-native` | Native capabilities independent of Node.js |
 | `deskfleet-capture` | Native display capture and retained GPU surfaces |
@@ -1911,18 +1911,35 @@ The Rust workspace contains:
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,
-`node -> native -> capture/encoder/input`, and
-`@deskfleet/daemon -> @deskfleet/native`. Linux capture/input delegate to
+`node -> native -> capture/encoder/input`,
+`@deskfleet/daemon -> @deskfleet/native`, and every TypeScript package that
+speaks a wire contract `-> @deskfleet/protocol`. Linux capture/input delegate to
 `linux-desktop`, `wayland`, and `x11`. Linux capture and video pipelines use
 `gstreamer-media`; Windows and macOS encoding also use its optional x264 pipeline
 after native H.264 hardware startup fails. Capture ownership stays with the
 native worker, which reads back surfaces only for software encoding.
 The pnpm workspace contains the daemon,
-Electron and Web applications, the native package, `packages/client` for shared
-contracts/transports, `packages/components` for Vue UI, stores, and routes, and
-`packages/mcp` for the independent Agent tool server.
-TypeScript control wire types derive from the Rust protocol crate; napi
-declarations describe the native API separately.
+Electron and Web applications, the native package, `packages/protocol` for wire
+contracts, `packages/client` for client stores and transports,
+`packages/components` for Vue UI, stores, and routes, `packages/agents/*` for
+provider adapters, and `packages/mcp` for the independent Agent tool server.
+
+`@deskfleet/protocol` is the only home for TypeScript wire contracts: daemon IPC
+and WebRTC channel messages, Agent adapter contracts, and the pure validators
+both ends share. It is a platform-neutral leaf. It depends only on the ACP SDK
+and zod, imports no `node:` module or workspace package, and is type-checked
+without Node globals. Validation that needs the local host, such as absolute
+executable paths or local IPC framing, stays with the daemon. TypeScript central
+control types are generated from the Rust protocol crate into
+`packages/protocol/src/generated/`. Catalog and system records restate the napi
+declarations, and the daemon's `native-contracts.ts` fails type checking when
+the two drift apart.
+
+Workspace packages import each other by package name through declared
+`exports`; relative paths stay inside one package. `mise run
+check:package-boundaries` enforces this for shipped source and keeps the
+protocol package a leaf. Tests, fixtures, and tool configuration may reach
+into other packages but must still declare the dependency.
 
 `PROTOCOL_VERSION` stays at `1` until the first freeze is explicitly declared.
 Contracts evolve in place, including incompatible changes. Do not add version

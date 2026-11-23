@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import type { FilesApi, FileTransfer } from "../../../../client/src/files.ts"
+import type { FilesApi, FileTransfer } from "@deskfleet/client/files"
 import { createStorybookDesktopApi, storybookFileTransfers } from "../../../.storybook/storybook-fixtures.ts"
 import FileTransferPanel from "./FileTransferPanel.vue"
 

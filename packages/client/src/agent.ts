@@ -1,5 +1,5 @@
-import type { AgentEvent, AgentMethod, AgentMethods, AgentSessionRecord, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
-import type { DesktopEvent, IceCandidate, TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
+import type { AgentEvent, AgentMethod, AgentMethods, AgentSessionRecord, AgentSnapshot } from "@deskfleet/protocol/agent"
+import type { DesktopEvent, IceCandidate, TerminalOffer } from "@deskfleet/protocol/control"
 import type { DataChannel } from "./data-channel.ts"
 import type { RelayDeniedReason } from "./relay.ts"
 

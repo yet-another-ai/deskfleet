@@ -1,7 +1,7 @@
 import type { CentralApi } from "./central.ts"
-import type { ScheduleInput, ScheduleRun, ScheduledTask } from "../../../apps/daemon/src/schedule-protocol.ts"
+import type { ScheduleInput, ScheduleRun, ScheduledTask } from "@deskfleet/protocol/schedule"
 
-export type { ScheduleInput, ScheduleRun, ScheduledTask } from "../../../apps/daemon/src/schedule-protocol.ts"
+export type { ScheduleInput, ScheduleRun, ScheduledTask } from "@deskfleet/protocol/schedule"
 
 /** Schedule management uses the same authenticated Machine scope as the other clients. */
 export function schedulesClient(central: Pick<CentralApi, "rpc">, teamId: string, machineId: string) {

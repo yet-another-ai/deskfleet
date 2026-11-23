@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n"
-import type { AgentActor } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentActor } from "@deskfleet/protocol/agent"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 const props = defineProps<{ actor: AgentActor }>()
 const { t } = useI18n()

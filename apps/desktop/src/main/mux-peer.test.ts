@@ -2,9 +2,9 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi } from "@deskfleet/client/central"
 import { getMachineMux, type MuxPeerEvents } from "@deskfleet/client/mux-client"
 import { MuxConnection } from "@deskfleet/client/mux/connection"
-import { MUX_LABELS, MUX_PROFILE, muxLane } from "@deskfleet/client/mux/protocol"
+import { MUX_LABELS, MUX_PROFILE, muxLane } from "@deskfleet/protocol/mux"
 import type { PeerEvent } from "@deskfleet/native"
-import { encodeFileFrame, FileFrameDecoder } from "../../../daemon/src/files-wire.ts"
+import { encodeFileFrame, FileFrameDecoder } from "@deskfleet/protocol/files-wire"
 import { WindowMuxChannels } from "./mux-channels-controller.ts"
 
 const native = vi.hoisted(() => ({ createPeer: vi.fn() }))

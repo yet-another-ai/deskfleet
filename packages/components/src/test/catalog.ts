@@ -1,4 +1,4 @@
-import type { CatalogSnapshot } from "../../../client/src/catalog.ts"
+import type { CatalogSnapshot } from "@deskfleet/client/catalog"
 
 /** Deliberately beyond JavaScript's exact integer range. IDs stay strings end-to-end. */
 export const workspaceId = "9007199254740993"

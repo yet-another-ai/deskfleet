@@ -1,4 +1,5 @@
-import { readRemoteAgentSettings, writeRemoteAgentSettings, type RemoteAgentSettings } from "../../../daemon/src/remote-agent-settings.ts"
+import type { RemoteAgentSettings } from "@deskfleet/protocol/remote-agent-settings"
+import { readRemoteAgentSettings, writeRemoteAgentSettings } from "@deskfleet/daemon/host-settings"
 
 export class RemoteAgentSettingsController {
   readonly #directory: string

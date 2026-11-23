@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import { HttpError } from "@deskfleet/client/http-central"
-import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
+import type { DirectoryListing } from "@deskfleet/client/filesystem"
 import { i18n } from "../../i18n/index.ts"
 import FolderPickerDialog from "./FolderPickerDialog.vue"
 

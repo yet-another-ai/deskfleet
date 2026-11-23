@@ -1,7 +1,7 @@
 import { createPinia } from "pinia"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import { AGENT_PROVIDER_TEMPLATES, type AgentProviderConfig, type AgentProviderTemplateId } from "../../../../../apps/daemon/src/provider-protocol.ts"
+import { AGENT_PROVIDER_TEMPLATES, type AgentProviderConfig, type AgentProviderTemplateId } from "@deskfleet/protocol/provider"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import { i18n } from "../../i18n/index.ts"
 import ProviderDialog from "./ProviderDialog.vue"

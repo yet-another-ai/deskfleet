@@ -1,6 +1,6 @@
 import type { CentralApi, LocalPeerGrant } from "@deskfleet/client/central"
 import { LOCAL_CHANNEL_BUFFER_BYTES, LOCAL_CHANNEL_BUFFER_MESSAGES, LOCAL_CHANNEL_MESSAGE_BYTES, type LocalChannelEvent, type LocalChannelOpen } from "@deskfleet/client/local-channels"
-import type { ControlMethods, DaemonEvent } from "../../../daemon/src/control-protocol.ts"
+import type { ControlMethods, DaemonEvent } from "@deskfleet/protocol/control"
 
 export type LocalChannelAuthority = Pick<CentralApi, "status" | "closePeer"> & {
   createLocalPeer(teamId: string, machineId: string, purpose: "agent" | "terminal"): Promise<LocalPeerGrant>

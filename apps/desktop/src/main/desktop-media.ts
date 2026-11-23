@@ -1,11 +1,11 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from "electron"
-import { desktopErrorReason } from "../../../daemon/src/control-protocol.ts"
-import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT } from "../../../../packages/client/src/desktop-media.ts"
+import { desktopErrorReason } from "@deskfleet/protocol/control"
+import { DESKTOP_MEDIA_CHANNEL, DESKTOP_MEDIA_EVENT } from "@deskfleet/client/desktop-media"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { DesktopMediaController } from "./desktop-media-controller.ts"
-import { TERMINAL_SESSION_EVENT } from "../../../../packages/client/src/terminal.ts"
-import { CATALOG_CHANGED_EVENT } from "../../../../packages/client/src/catalog.ts"
-import { PROVIDERS_CHANGED_EVENT } from "../../../../packages/client/src/providers.ts"
+import { TERMINAL_SESSION_EVENT } from "@deskfleet/client/terminal"
+import { CATALOG_CHANGED_EVENT } from "@deskfleet/client/catalog"
+import { PROVIDERS_CHANGED_EVENT } from "@deskfleet/client/providers"
 
 const owners = new Map<WebContents, DesktopMediaController>()
 

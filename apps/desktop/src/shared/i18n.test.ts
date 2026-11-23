@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { APP_LOCALES, intlLocale, resolveAppLocale, translate } from "../../../../packages/client/src/i18n.ts"
+import { APP_LOCALES, intlLocale, resolveAppLocale, translate } from "@deskfleet/client/i18n"
 
 test.each([
   [["zh-Hans-CN", "en-US"], "zh-cmn-Hans-CN"],

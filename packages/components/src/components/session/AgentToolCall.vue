@@ -4,7 +4,7 @@ import { ArrowRightLeft, Bot, Brain, ChevronRight, CircleX, FilePen, FileText, G
 import { computed, type Component } from "vue"
 import { CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentPermission } from "@deskfleet/protocol/agent"
 import type { ConversationTool } from "../../services/agent-conversation.ts"
 import { remoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import { toolCallSummary } from "../../services/tool-call-summary.ts"

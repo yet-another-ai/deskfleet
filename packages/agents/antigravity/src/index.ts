@@ -5,7 +5,7 @@ import {
   UNSUPPORTED_INSTALL_PLATFORM_MESSAGE,
   type AgentConnection, type AgentProvider, type AgentProviderPlugin, type AgentQuotaItem,
 } from "@deskfleet/agent-core"
-import { LEGACY_ANTIGRAVITY_BINARY, normalizeAntigravityBinaryPath } from "./protocol.ts"
+import { LEGACY_ANTIGRAVITY_BINARY, normalizeAntigravityBinaryPath } from "@deskfleet/protocol/agents/antigravity"
 
 export { LEGACY_ANTIGRAVITY_BINARY, normalizeAntigravityBinaryPath }
 

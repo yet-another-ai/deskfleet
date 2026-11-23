@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { app } from "electron"
-import { createTerminal } from "../../../../crates/node/index.ts"
+import { createTerminal } from "@deskfleet/native"
 
 // Chromium's FD ownership checks are enabled in its browser main process.
 // A Node-hosted daemon or ELECTRON_RUN_AS_NODE cannot reproduce this failure.

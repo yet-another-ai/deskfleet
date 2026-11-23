@@ -1,7 +1,7 @@
 import { client, configureClient, getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { NotificationSettings } from "../../../../client/src/settings.ts"
+import type { NotificationSettings } from "@deskfleet/client/settings"
 import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
 import { i18n } from "../../i18n/index.ts"
 import NotificationsSettings from "./NotificationsSettings.vue"

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, type BrowserWindowConstructorOptions, type WebPreferences } from "electron"
 import { join } from "node:path"
-import { LOCALE_ARGUMENT_PREFIX, resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
+import { LOCALE_ARGUMENT_PREFIX, resolveAppLocale } from "@deskfleet/client/i18n"
 import { sessionWindowKey } from "@deskfleet/client/session-window"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"

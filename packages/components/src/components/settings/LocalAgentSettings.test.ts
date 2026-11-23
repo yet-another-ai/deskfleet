@@ -1,7 +1,7 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { LocalAgentState } from "../../../../client/src/local-agent.ts"
+import type { LocalAgentState } from "@deskfleet/client/local-agent"
 import { i18n } from "../../i18n/index.ts"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AccountState, AgentSessionSummary, CentralEvent, Machine, Team } from "./central.ts"
-import type { AgentElicitation, AgentPermission, AgentSnapshot, AgentTurn } from "../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentElicitation, AgentPermission, AgentSnapshot, AgentTurn } from "@deskfleet/protocol/agent"
 import { TaskNotificationMonitor } from "./task-notification-monitor.ts"
 
 const timestamp = "2026-10-25T10:00:00Z"

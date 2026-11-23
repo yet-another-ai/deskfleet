@@ -1,6 +1,6 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import type { LocalApplication } from "../../../../client/src/applications.ts"
+import type { LocalApplication } from "@deskfleet/client/applications"
 import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
 import { fakeCentral } from "../../test/central.ts"
 import { i18n } from "../../i18n/index.ts"

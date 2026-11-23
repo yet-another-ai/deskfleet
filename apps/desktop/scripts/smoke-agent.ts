@@ -10,7 +10,7 @@ import { promisify } from "node:util"
 import { build } from "esbuild"
 import { startDaemon } from "../../daemon/src/daemon.ts"
 import { TestAgentQuotas } from "../../daemon/src/fixtures/agent-quotas.ts"
-import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../daemon/src/agents/acp.ts"
+import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../daemon/src/acp/connection.ts"
 import type { AgentSmokeContext, AgentSmokeResult } from "./fixtures/agent-main.ts"
 
 type PromptResponse = Awaited<ReturnType<AgentConnection["prompt"]>>

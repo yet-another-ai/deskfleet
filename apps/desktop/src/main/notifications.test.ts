@@ -1,6 +1,6 @@
 import type { Notification } from "electron"
 import { beforeEach, expect, test, vi } from "vitest"
-import type { NotificationSettings } from "../../../../packages/client/src/settings.ts"
+import type { NotificationSettings } from "@deskfleet/client/settings"
 
 const { isSupported, construct, show, close } = vi.hoisted(() => ({
   isSupported: vi.fn(), construct: vi.fn(), show: vi.fn(), close: vi.fn(),

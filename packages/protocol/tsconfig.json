@@ -1,0 +1,22 @@
+{
+  // Contracts run in the daemon, Electron, and browsers. Checking them without
+  // Node types keeps runtime-specific globals out of the shared package.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2024", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

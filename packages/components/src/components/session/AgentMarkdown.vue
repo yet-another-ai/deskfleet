@@ -33,7 +33,7 @@ import { previewKindFromMime } from "../../services/preview.ts"
 import { usePreviewActions } from "../../stores/previews.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
-import type { FileResourceRequest } from "../../../../client/src/files.ts"
+import type { FileResourceRequest } from "@deskfleet/client/files"
 
 const client = usePlatformClient()
 

@@ -2,7 +2,7 @@
 import { DialogTitle } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
+import type { CatalogDirectory } from "@deskfleet/client/catalog"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import UiDialog from "../common/UiDialog.vue"

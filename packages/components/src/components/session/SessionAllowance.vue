@@ -7,7 +7,7 @@ const accountImpressions = new WeakMap<object, Set<string>>()
 import { useAsyncState, useEventListener } from "@vueuse/core"
 import { computed, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSnapshot } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { trackEvent } from "../../services/analytics.ts"

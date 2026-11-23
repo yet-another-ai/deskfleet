@@ -1,4 +1,4 @@
-import type { AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent } from "@deskfleet/protocol/agent"
 
 // Committed journal events are immutable; a later snapshot never edits them.
 let serializedEvents = new WeakMap<AgentEvent, string>()

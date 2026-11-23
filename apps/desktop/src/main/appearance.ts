@@ -1,6 +1,6 @@
 import { app, ipcMain, nativeTheme, type BrowserWindow, type WebContents } from "electron"
-import { APPEARANCE_CHANNEL, APPEARANCE_CHANGED_EVENT, DEFAULT_APPEARANCE_SETTINGS, validateAppearanceSettings, type AppearanceSettings } from "../../../../packages/client/src/appearance.ts"
-import { resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
+import { APPEARANCE_CHANNEL, APPEARANCE_CHANGED_EVENT, DEFAULT_APPEARANCE_SETTINGS, validateAppearanceSettings, type AppearanceSettings } from "@deskfleet/client/appearance"
+import { resolveAppLocale } from "@deskfleet/client/i18n"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import type { AppearanceSettingsController } from "./appearance-settings.ts"
 import { setMainLocale } from "./i18n.ts"

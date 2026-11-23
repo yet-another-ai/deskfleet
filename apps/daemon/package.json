@@ -6,11 +6,14 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
-    "./adapters": "./src/agents/adapters.ts",
-    "./terminal-images": "./src/terminal-images.ts",
-    "./control-client": "./src/control-client.ts",
-    "./control-discovery": "./src/control-discovery.ts",
-    "./agent-protocol": "./src/agent-protocol.ts"
+    "./adapters": "./src/acp/adapters.ts",
+    "./terminal-images": "./src/terminals/images.ts",
+    "./control-client": "./src/control/client.ts",
+    "./control-discovery": "./src/control/discovery.ts",
+    "./control-request": "./src/control/request.ts",
+    "./host-settings": "./src/machine/host-settings.ts",
+    "./files-service": "./src/files/service.ts",
+    "./files-paths": "./src/files/paths.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "2.8.0",
@@ -28,6 +31,7 @@
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
+    "@deskfleet/protocol": "workspace:*",
     "zod": "4.6.7"
   }
 }

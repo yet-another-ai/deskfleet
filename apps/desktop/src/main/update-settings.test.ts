@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
-import type { AutoDownloadUpdatesState } from "../../../../packages/client/src/settings.ts"
+import type { AutoDownloadUpdatesState } from "@deskfleet/client/settings"
 import { UpdateSettingsController } from "./update-settings.ts"
 
 const directories: string[] = []

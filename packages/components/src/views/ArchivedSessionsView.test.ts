@@ -11,7 +11,7 @@ import { agentSnapshot } from "../test/agent.ts"
 import { catalogFixture, sessionId, workspaceId } from "../test/catalog.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { deferred } from "../test/desktop-media.ts"
-import { relayFailureMessage, type RelayDeniedReason } from "../../../client/src/relay.ts"
+import { relayFailureMessage, type RelayDeniedReason } from "@deskfleet/client/relay"
 import ArchivedSessionsView from "./ArchivedSessionsView.vue"
 
 let wrapper: VueWrapper | undefined

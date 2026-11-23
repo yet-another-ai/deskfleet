@@ -4,7 +4,7 @@ import { Monitor, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { computed, nextTick, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { Machine } from "@deskfleet/client/central"
-import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 

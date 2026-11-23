@@ -1,0 +1,761 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { setImmediate as nextTurn, setTimeout as delay } from "node:timers/promises"
+import { gunzipSync } from "node:zlib"
+import { AgentChannel, type AgentChannelSessions } from "./channel.ts"
+import { AgentLiveState } from "./live.ts"
+import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot } from "@deskfleet/protocol/agent"
+
+type Message = { id?: string | number | null; method?: string; params?: any; result?: any; error?: { code: number; message: string } }
+const actor: AgentActor = { kind: "local_token", sourceMachine: { originId: "origin", id: "machine" }, deviceId: "first" }
+const now = "2026-10-23T00:00:00Z"
+const snapshot: AgentSnapshot = {
+  session: { id: "1", workspaceId: "2", title: "Test", provider: "codex", context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: now, updatedAt: now },
+  runs: [], inputs: [], turns: [], permissions: [], elicitations: [],
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+function permission(id = "permission"): AgentPermission {
+  return { id, sessionId: "1", runGeneration: 1, state: "pending", createdAt: now, request: {
+    sessionId: "provider-session", toolCall: { toolCallId: "tool", title: "Read file" },
+    options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "deny", name: "Deny", kind: "reject_once" }],
+  } }
+}
+function event(seq: string, value: AgentPermission = permission()): AgentEvent {
+  return { sessionId: "1", seq, kind: "permission", payload: value, createdAt: now }
+}
+function wire(message: Message & { jsonrpc?: string }): Buffer { return Buffer.from(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n") }
+
+class Sessions implements AgentChannelSessions {
+  readonly journal = { identity: { originId: "origin", machineId: "machine" } }
+  readonly listeners = new Set<(event: AgentEvent) => void>()
+  readonly previewListeners = new Set<(preview: AgentPreview) => void>()
+  pendingPreview?: AgentPreview
+  readonly calls: { method: AgentMethod; params: unknown; actor: AgentActor }[] = []
+  handler: (method: AgentMethod, params: any, actor: AgentActor) => Promise<unknown> = async method => method === "_deskfleet/session/subscribe" ? snapshot : null
+  async handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown> {
+    this.calls.push({ method, params, actor })
+    return this.handler(method, params, actor)
+  }
+  attend?: AgentChannelSessions["attend"]
+  leave?: AgentChannelSessions["leave"]
+  leaveAll?: AgentChannelSessions["leaveAll"]
+  onPresence?: AgentChannelSessions["onPresence"]
+  presence?: AgentChannelSessions["presence"]
+  onEvent(listener: (event: AgentEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  onPreview(listener: (preview: AgentPreview) => void): () => void { this.previewListeners.add(listener); return () => this.previewListeners.delete(listener) }
+  preview(): AgentPreview | undefined { return this.pendingPreview }
+  emit(value: AgentEvent): void { for (const listener of this.listeners) listener(value) }
+}
+
+test("previews replay after an authorized snapshot, stream only to subscribers, and detach independently", async t => {
+  const sessions = new Sessions()
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  const tail: AgentPreview = {
+    sessionId: "1", streamId: "stream", baseSeq: "0", offset: 0,
+    events: ["first", "second"].map(text => ({ sessionId: "1", kind: "acp", createdAt: now,
+      payload: { sessionId: "provider", update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } } },
+    })),
+  }
+  sessions.pendingPreview = tail
+  for (const listener of sessions.previewListeners) listener(tail)
+  await h.initialize()
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/preview"))
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("subscribe-preview", "_deskfleet/session/subscribe", { sessionId: "1" })
+  for (const listener of sessions.previewListeners) listener(tail)
+  reading.resolve(snapshot)
+  await h.waitFor(message => message.method === "_deskfleet/session/preview" && message.params.offset === 1)
+  const responseIndex = h.messages.findIndex(message => message.id === "subscribe-preview")
+  const previews = h.messages.filter(message => message.method === "_deskfleet/session/preview")
+  assert.ok(h.messages.findIndex(message => message === previews[0]) > responseIndex)
+  assert.deepEqual(previews.map(message => [message.params.offset, message.params.events.length]), [[0, 1], [1, 1]])
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/event"))
+  const delta = { ...tail, offset: 2, events: [tail.events[0]!] }
+  for (const listener of sessions.previewListeners) listener(delta)
+  await h.waitFor(message => message.method === "_deskfleet/session/preview" && message.params.offset === 2)
+  h.channel.close()
+  assert.equal(sessions.previewListeners.size, 0)
+})
+function attach(sessions = new Sessions(), identity = actor, send?: (chunk: Uint8Array) => Promise<void>) {
+  const messages: Message[] = []
+  const chunks: Buffer[] = []
+  const failures: unknown[] = []
+  let buffer = Buffer.alloc(0)
+  const channel = new AgentChannel(sessions, identity, async chunk => {
+    if (send) await send(chunk)
+    chunks.push(Buffer.from(chunk))
+    buffer = Buffer.concat([buffer, chunk])
+    let newline = buffer.indexOf(10)
+    while (newline >= 0) {
+      messages.push(JSON.parse(buffer.subarray(0, newline).toString("utf8")))
+      buffer = buffer.subarray(newline + 1)
+      newline = buffer.indexOf(10)
+    }
+  }, error => failures.push(error))
+  async function waitFor(predicate: (message: Message) => boolean): Promise<Message> {
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      const message = messages.find(predicate)
+      if (message) return message
+      assert.ok(Date.now() < deadline, "Timed out waiting for channel message")
+      await delay(1)
+    }
+  }
+  return {
+    channel, sessions, messages, chunks, failures, waitFor,
+    request: (id: string | number | null, method: string, params: unknown = {}) => channel.receive(wire({ id, method, params })),
+    async initialize() {
+      channel.receive(wire({ id: "initialize", method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } }))
+      return waitFor(message => message.id === "initialize")
+    },
+    async subscribe(id = "subscribe") {
+      channel.receive(wire({ id, method: "_deskfleet/session/subscribe", params: { sessionId: "1" } }))
+      return waitFor(message => message.id === id)
+    },
+  }
+}
+
+test("history compression is negotiated and preserves the original events", async t => {
+  const sessions = new Sessions()
+  const events = [{ text: "A long thought about the implementation. ".repeat(500) }]
+  sessions.handler = async () => events
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  h.request("plain", "_deskfleet/session/history", { sessionId: "1", afterSeq: "0" })
+  assert.deepEqual((await h.waitFor(message => message.id === "plain")).result, events)
+  h.request("compressed", "_deskfleet/session/history", { sessionId: "1", afterSeq: "0", responseEncoding: "gzip" })
+  const result = (await h.waitFor(message => message.id === "compressed")).result
+  assert.equal(result.encoding, "gzip")
+  assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(result.data, "base64")).toString()), events)
+  assert.ok(result.data.length < JSON.stringify(events).length / 2)
+})
+
+test("history pages fit the UTF-8 byte limit and continue from the last returned event", async t => {
+  const sessions = new Sessions()
+  const message = (seq: string, text: string): AgentEvent => ({ sessionId: "1", seq, kind: "acp", createdAt: now,
+    payload: { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+  })
+  const halfPage = "界".repeat(Math.floor(AGENT_MESSAGE_BYTES / 6))
+  const events = [message("1", halfPage), message("2", halfPage), message("3", "end")]
+  sessions.handler = async (_method, params) => events.filter(event => Number(event.seq) > Number(params.afterSeq))
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const read = async (id: string, afterSeq: string): Promise<AgentEvent[]> => {
+    h.request(id, "_deskfleet/session/history", { sessionId: "1", afterSeq, responseEncoding: "gzip" })
+    const { result } = await h.waitFor(message => message.id === id)
+    assert.equal(result.encoding, "gzip")
+    return JSON.parse(gunzipSync(Buffer.from(result.data, "base64")).toString("utf8"))
+  }
+  const first = await read("first", "0")
+  assert.deepEqual(first, events.slice(0, 1))
+  assert.deepEqual(await read("next", first[0]!.seq), events.slice(1))
+
+  events.push(message("4", halfPage.repeat(2)))
+  h.request("oversized", "_deskfleet/session/history", { sessionId: "1", afterSeq: "3" })
+  const response = await h.waitFor(message => message.id === "oversized")
+  assert.match(response.error!.message, /event 4 exceeds the Agent message size limit/u)
+  assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel offers rename, archive, restore, and Session deletion", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  h.request("rename", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename", title: "New title" })
+  await h.waitFor(message => message.id === "rename")
+  h.request("archive", "_deskfleet/session/archive", { sessionId: "1", operationId: "archive" })
+  await h.waitFor(message => message.id === "archive")
+  h.request("restore", "_deskfleet/session/restore", { sessionId: "1", operationId: "restore" })
+  await h.waitFor(message => message.id === "restore")
+  h.request("delete", "_deskfleet/session/delete", { sessionId: "1", operationId: "delete" })
+  const deleted = await h.waitFor(message => message.id === "delete")
+  assert.equal(deleted.result, null)
+  assert.deepEqual(h.sessions.calls.map(call => call.method), ["_deskfleet/session/rename", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/delete"])
+})
+
+test("AgentChannel reconstructs fragmented Unicode and sends ordered binary chunks", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  const initialized = await h.initialize()
+  assert.equal(initialized.result.protocolVersion, 1)
+  assert.deepEqual(initialized.result._meta.deskfleet.identity, h.sessions.journal.identity)
+  const text = "你好🌍".repeat(4_000)
+  h.sessions.handler = async (_method, params) => ({ text: params.text })
+  const input = wire({ id: 1, method: "_deskfleet/session/create", params: { text, actor: { kind: "system" } } })
+  // The first non-ASCII character is deliberately split after one UTF-8 byte.
+  const split = input.indexOf(Buffer.from("你")) + 1
+  h.channel.receive(input.subarray(0, split))
+  h.channel.receive(input.subarray(split, split + 2))
+  for (let offset = split + 2; offset < input.length; offset += 997) h.channel.receive(input.subarray(offset, offset + 997))
+  h.request(2, "_deskfleet/session/list", { text: "next" })
+  assert.equal((await h.waitFor(message => message.id === 1)).result.text, text)
+  assert.equal((await h.waitFor(message => message.id === 2)).result.text, "next")
+  assert.deepEqual(h.sessions.calls.map(call => call.actor), [actor, actor])
+  assert.ok(h.chunks.length > 3)
+  assert.ok(h.chunks.every(chunk => chunk.length <= AGENT_CHUNK_BYTES))
+  assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel coalesces a stream burst and its following RPC without changing journal bytes", async t => {
+  const h = attach(undefined, actor, () => delay(1))
+  t.after(() => h.channel.close())
+  await h.initialize()
+  await h.subscribe()
+  h.chunks.length = 0
+  h.messages.length = 0
+  const expected: Buffer[] = []
+  for (let seq = 1; seq <= 1_000; seq++) {
+    const value: AgentEvent = {
+      sessionId: "1", seq: String(seq), kind: "acp", createdAt: now,
+      payload: { sessionId: "provider", update: {
+        sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "思考🌍".repeat(seq === 25 ? 4_000 : 1) },
+      } },
+    }
+    expected.push(wire({ method: "_deskfleet/session/event", params: value }))
+    h.sessions.emit(value)
+  }
+  expected.push(wire({ id: "after-stream", result: null }))
+  h.request("after-stream", "_deskfleet/session/list")
+  await h.waitFor(message => message.id === "after-stream")
+  const bytes = Buffer.concat(expected)
+  assert.deepEqual(Buffer.concat(h.chunks), bytes)
+  assert.equal(h.messages.length, 1_001)
+  assert.equal(h.chunks.length, Math.ceil(bytes.length / AGENT_CHUNK_BYTES))
+  assert.ok(h.chunks.every(chunk => chunk.length <= AGENT_CHUNK_BYTES))
+  assert.deepEqual(h.failures, [])
+  t.diagnostic(`1,000 streamed events and a following RPC used ${h.chunks.length} acknowledged frames (${bytes.length} bytes)`)
+})
+
+test("AgentChannel closing before a scheduled flush discards its queued output", async () => {
+  const h = attach()
+  h.request("initialize", "initialize", { protocolVersion: 1 })
+  h.channel.close()
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.deepEqual(h.chunks, [])
+  assert.deepEqual(h.failures, [])
+  assert.equal(h.sessions.listeners.size, 0)
+})
+
+test("AgentChannel forwards Git reads through the authenticated viewer without requiring a history subscription", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const status = { sessionId: "1", repositories: [], directories: [] }
+  const request = { sessionId: "1", repositoryId: "checkout", path: "中文 file.txt", kind: "unstaged" }
+  const diff = { ...request, patch: "@@ -1 +1 @@\n-old\n+new\n", binary: false, truncated: false }
+  h.sessions.handler = async method => method === "_deskfleet/git/status" ? status : diff
+  h.request("status", "_deskfleet/git/status", { sessionId: "1" })
+  h.request("diff", "_deskfleet/git/diff", request)
+  assert.deepEqual((await h.waitFor(message => message.id === "status")).result, status)
+  assert.deepEqual((await h.waitFor(message => message.id === "diff")).result, diff)
+  assert.deepEqual(h.sessions.calls, [
+    { method: "_deskfleet/git/status", params: { sessionId: "1" }, actor },
+    { method: "_deskfleet/git/diff", params: request, actor },
+  ])
+  assert.deepEqual(h.failures, [])
+})
+
+test("Git subscriptions are transient, viewer-owned, and released independently", async t => {
+  const listeners = new Set<(error?: string) => void>()
+  const identities: AgentActor[] = []
+  const sessions = Object.assign(new Sessions(), {
+    async watchGit(sessionId: string, identity: AgentActor, listener: (error?: string) => void) {
+      assert.equal(sessionId, "1")
+      identities.push(identity)
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  })
+  const first = attach(sessions), second = attach(sessions, { ...actor, deviceId: "second" })
+  t.after(() => { first.channel.close(); second.channel.close() })
+  await first.initialize(); await second.initialize()
+  first.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "first" })
+  second.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "second" })
+  await first.waitFor(message => message.id === "watch"); await second.waitFor(message => message.id === "watch")
+  assert.equal(listeners.size, 2)
+  assert.deepEqual(identities.map(value => value.deviceId), ["first", "second"])
+  for (const listener of listeners) listener()
+  assert.deepEqual((await first.waitFor(message => message.method === "_deskfleet/git/changed")).params, { sessionId: "1", subscriptionId: "first" })
+  assert.deepEqual((await second.waitFor(message => message.method === "_deskfleet/git/changed")).params, { sessionId: "1", subscriptionId: "second" })
+  assert.deepEqual(sessions.calls, [], "Git observation must not enter durable Session commands")
+  first.request("unwatch", "_deskfleet/git/unsubscribe", { subscriptionId: "first" })
+  await first.waitFor(message => message.id === "unwatch")
+  assert.equal(listeners.size, 1)
+  second.channel.close()
+  assert.equal(listeners.size, 0)
+})
+
+for (const cancellation of ["unsubscribe", "disconnect"] as const) {
+  test(`Git watcher attachment cleans up after a pending ${cancellation}`, async t => {
+    const pending = deferred<() => void>()
+    let stopped = 0
+    let changed!: (error?: string) => void
+    const sessions = Object.assign(new Sessions(), {
+      watchGit: (_sessionId: string, _actor: AgentActor, listener: (error?: string) => void) => { changed = listener; return pending.promise },
+    })
+    const h = attach(sessions)
+    t.after(() => h.channel.close())
+    await h.initialize()
+    h.request("watch", "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "pending" })
+    if (cancellation === "disconnect") h.channel.close()
+    else {
+      h.request("unwatch", "_deskfleet/git/unsubscribe", { subscriptionId: "pending" })
+      await h.waitFor(message => message.id === "unwatch")
+    }
+    pending.resolve(() => { stopped++ })
+    await delay(0)
+    changed("late change")
+    assert.equal(stopped, 1)
+    assert.equal(h.messages.filter(message => message.method === "_deskfleet/git/changed").length, 0)
+  })
+}
+
+test("failed Git watcher setup can be retried without retaining its token", async t => {
+  const sessions = Object.assign(new Sessions(), {
+    watchGit: async () => { throw new Error("Session unavailable") },
+  })
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  for (const requestId of ["first", "retry"]) {
+    h.request(requestId, "_deskfleet/git/subscribe", { sessionId: "1", subscriptionId: "same" })
+    assert.equal((await h.waitFor(message => message.id === requestId)).error?.message, "Session unavailable")
+  }
+})
+
+test("AgentChannel shares user questions through snapshots and events and authenticates answers", async t => {
+  const sessions = new Sessions()
+  const first = attach(sessions)
+  const second = attach(sessions, { ...actor, deviceId: "second" })
+  t.after(() => { first.channel.close(); second.channel.close() })
+  let question: AgentElicitation = {
+    id: "3", sessionId: "1", runGeneration: 1, state: "pending", createdAt: now,
+    request: { sessionId: "provider-session", mode: "form", message: "Choose a branch", requestedSchema: {
+      type: "object", properties: { branch: { type: "string" } }, required: ["branch"],
+    } },
+  }
+  sessions.handler = async (method, params, identity) => {
+    if (method === "_deskfleet/session/subscribe") return { ...snapshot, elicitations: [question] }
+    assert.equal(method, "_deskfleet/elicitation/respond")
+    assert.equal(params.elicitationId, question.id)
+    question = { ...question, state: "resolved", response: params.response, actor: identity }
+    sessions.emit({ sessionId: "1", seq: "1", kind: "elicitation", payload: question, createdAt: now })
+    return question
+  }
+  await Promise.all([first.initialize(), second.initialize()])
+  const attached = await Promise.all([first.subscribe(), second.subscribe()])
+  assert.ok(attached.every(message => message.result.elicitations[0].state === "pending"))
+  first.request("answer", "_deskfleet/elicitation/respond", {
+    sessionId: "1", elicitationId: "3", operationId: "answer-operation", response: { action: "accept", content: { branch: "main" } },
+  })
+  const result = await first.waitFor(message => message.id === "answer")
+  assert.deepEqual(result.result.actor, actor)
+  const mirrored = await second.waitFor(message => message.method === "_deskfleet/session/event")
+  assert.equal(mirrored.params.payload.state, "resolved")
+  assert.deepEqual(mirrored.params.payload.response, { action: "accept", content: { branch: "main" } })
+  const reattached = await second.subscribe("reattach")
+  assert.equal(reattached.result.elicitations[0].state, "resolved")
+  assert.deepEqual([...first.failures, ...second.failures], [])
+})
+
+test("AgentChannel handles approvals and cancellation while another request awaits", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  await h.subscribe()
+  const pending = deferred<unknown>()
+  h.sessions.handler = async method => method === "_deskfleet/input/submit" ? pending.promise : { accepted: true }
+  h.request("submit", "_deskfleet/input/submit", { sessionId: "1", operationId: "submit" })
+  h.sessions.emit(event("1"))
+  const approval = await h.waitFor(message => message.method === "session/request_permission")
+  h.channel.receive(Buffer.concat([
+    wire({ id: approval.id, result: { outcome: { outcome: "selected", optionId: "allow" } } }),
+    wire({ id: "cancel", method: "_deskfleet/turn/cancel", params: { sessionId: "1", turnId: "turn", operationId: "cancel" } }),
+  ]))
+  await h.waitFor(message => message.method === "_deskfleet/permission/receipt")
+  await h.waitFor(message => message.id === "cancel")
+  assert.equal(h.messages.some(message => message.id === "submit"), false)
+  assert.deepEqual(h.sessions.calls.slice(-3).map(call => call.method), ["_deskfleet/input/submit", "_deskfleet/permission/respond", "_deskfleet/turn/cancel"])
+  const decision = h.sessions.calls.find(call => call.method === "_deskfleet/permission/respond")!
+  assert.match((decision.params as { operationId: string }).operationId, /^[0-9a-f-]{36}$/u)
+  pending.resolve({ delivered: true })
+  assert.equal((await h.waitFor(message => message.id === "submit")).result.delivered, true)
+})
+
+test("AgentChannel subscribes before its snapshot and pages history without losing live events", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<unknown>()
+  const events = [event("1", { ...permission(), state: "resolved" }), event("2", { ...permission(), state: "cancelled" })]
+  h.sessions.handler = async method => method === "_deskfleet/session/subscribe" ? reading.promise : events
+  h.request("subscribe", "_deskfleet/session/subscribe", { sessionId: "1" })
+  for (const value of events) h.sessions.emit(value)
+  h.sessions.emit({ ...event("3"), sessionId: "another" })
+  assert.equal(h.messages.some(message => message.method === "_deskfleet/session/event"), false)
+  reading.resolve(snapshot)
+  await h.waitFor(message => message.method === "_deskfleet/session/event" && message.params.seq === "2")
+  h.request("history", "_deskfleet/session/history", { sessionId: "1", afterSeq: "0", limit: 100 })
+  assert.deepEqual((await h.waitFor(message => message.id === "history")).result, events)
+  assert.deepEqual(h.messages.filter(message => message.method === "_deskfleet/session/event").map(message => message.params.seq), ["1", "2"])
+  assert.ok(h.messages.findIndex(message => message.id === "subscribe") < h.messages.findIndex(message => message.method === "_deskfleet/session/event"))
+  h.sessions.emit(event("3", { ...permission(), state: "resolved" }))
+  await h.waitFor(message => message.method === "_deskfleet/session/event" && message.params.seq === "3")
+  assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel does not re-open stale snapshot permissions resolved during first or repeated subscription", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  for (const id of ["first", "again"]) {
+    const reading = deferred<unknown>()
+    h.sessions.handler = async () => reading.promise
+    h.request(id, "_deskfleet/session/subscribe", { sessionId: "1" })
+    h.sessions.emit(event("1", { ...permission(), state: "resolved" }))
+    reading.resolve({ ...snapshot, permissions: [permission()] })
+    await h.waitFor(message => message.id === id)
+  }
+  assert.equal(h.messages.some(message => message.method === "session/request_permission"), false)
+})
+
+test("AgentChannel publishes neither events nor permissions from a rejected subscription", async t => {
+  const h = attach()
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<unknown>()
+  h.sessions.handler = async () => reading.promise
+  h.request("denied", "_deskfleet/session/subscribe", { sessionId: "1" })
+  h.sessions.emit(event("1"))
+  reading.reject(new Error("Session is not accessible"))
+  assert.match((await h.waitFor(message => message.id === "denied")).error!.message, /not accessible/)
+  h.sessions.emit(event("2"))
+  assert.equal(h.messages.some(message => message.method), false)
+  h.sessions.handler = async () => snapshot
+  assert.deepEqual((await h.subscribe()).result, snapshot)
+})
+
+test("AgentChannel fans permissions out per viewer and audits late decisions with authenticated actors", async t => {
+  const sessions = new Sessions()
+  const otherActor = { ...actor, deviceId: "second" }
+  const first = attach(sessions)
+  const second = attach(sessions, otherActor)
+  t.after(() => { first.channel.close(); second.channel.close() })
+  await Promise.all([first.initialize(), second.initialize()])
+  await Promise.all([first.subscribe(), second.subscribe()])
+  const shared = permission()
+  let winner: AgentPermission | undefined
+  sessions.handler = async (_method, params, identity) => {
+    if (winner) throw new Error("Permission already resolved")
+    winner = { ...shared, state: "resolved", optionId: params.optionId, actor: identity }
+    sessions.emit(event("2", winner))
+    return winner
+  }
+  sessions.emit(event("1", shared))
+  const [left, right] = await Promise.all([first.waitFor(message => message.method === "session/request_permission"), second.waitFor(message => message.method === "session/request_permission")])
+  assert.equal(left.params.sessionId, "1")
+  assert.equal(left.params._meta.deskfleet.permissionId, shared.id)
+  const operationId = "40f1e456-362e-484c-a541-64d1c12cd474"
+  first.channel.receive(wire({ id: left.id, result: { outcome: { outcome: "selected", optionId: "allow" }, _meta: { deskfleet: { operationId } } } }))
+  await second.waitFor(message => message.method === "$/cancel_request")
+  second.channel.receive(wire({ id: right.id, result: { outcome: { outcome: "selected", optionId: "deny" }, _meta: { deskfleet: { operationId: "late" } } } }))
+  assert.equal((await first.waitFor(message => message.method === "_deskfleet/permission/receipt")).params.operationId, operationId)
+  assert.match((await second.waitFor(message => message.method === "_deskfleet/permission/receipt")).params.error, /already resolved/)
+  const decisions = sessions.calls.filter(call => call.method === "_deskfleet/permission/respond")
+  assert.equal(decisions.length, 2)
+  assert.deepEqual(decisions.map(call => call.actor), [actor, otherActor])
+  assert.equal(winner!.optionId, "allow")
+})
+
+test("AgentChannel detaches without cancelling shared work or permissions and reissues pending requests on reconnect", async t => {
+  const sessions = new Sessions()
+  sessions.handler = async () => ({ ...snapshot, permissions: [permission()] })
+  const first = attach(sessions)
+  await first.initialize()
+  await first.subscribe()
+  await first.waitFor(message => message.method === "session/request_permission")
+  first.channel.close()
+  first.channel.close()
+  assert.equal(sessions.listeners.size, 0)
+  assert.deepEqual(sessions.calls.map(call => call.method), ["_deskfleet/session/subscribe"])
+  const second = attach(sessions)
+  t.after(() => second.channel.close())
+  await second.initialize()
+  await second.subscribe()
+  await second.waitFor(message => message.method === "session/request_permission")
+  assert.deepEqual(sessions.calls.map(call => call.method), ["_deskfleet/session/subscribe", "_deskfleet/session/subscribe"])
+})
+
+test("AgentChannel retries native backpressure without dropping or reordering chunks", async t => {
+  const attempts: Buffer[] = []
+  let stalls = 0
+  const h = attach(undefined, actor, async chunk => {
+    attempts.push(Buffer.from(chunk))
+    if (stalls-- > 0) throw new Error("data channel send buffer is full")
+  })
+  t.after(() => h.channel.close())
+  await h.initialize()
+  attempts.length = 0
+  stalls = 2
+  h.request("first", "_deskfleet/session/list")
+  h.request("second", "_deskfleet/session/list")
+  await h.waitFor(message => message.id === "second")
+  assert.deepEqual(h.messages.map(message => message.id), ["initialize", "first", "second"])
+  assert.equal(attempts.length, 3)
+  assert.deepEqual(attempts[0], attempts[1])
+  assert.deepEqual(attempts[1], attempts[2])
+  assert.deepEqual(attempts[2], Buffer.concat([wire({ id: "first", result: null }), wire({ id: "second", result: null })]))
+  assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel recovers after more than five seconds of backpressure without replaying requests", async t => {
+  let blocked = false
+  const attempts: Buffer[] = []
+  const h = attach(undefined, actor, async chunk => {
+    if (blocked) { attempts.push(Buffer.from(chunk)); throw new Error("send buffer is full") }
+  })
+  t.after(() => h.channel.close())
+  await h.initialize()
+  t.mock.timers.enable({ apis: ["Date"] })
+  blocked = true
+  h.request("slow", "_deskfleet/session/list")
+  await nextTurn(); await nextTurn()
+  t.mock.timers.tick(6_000)
+  await delay(20)
+  assert.deepEqual(h.failures, [])
+  assert.equal(h.messages.some(message => message.id === "slow"), false)
+  blocked = false
+  await h.waitFor(message => message.id === "slow")
+  assert.equal(h.messages.filter(message => message.id === "slow").length, 1)
+  assert.equal(h.sessions.calls.length, 1)
+  assert.deepEqual(attempts[0], attempts[1], "capacity retries retain the exact output bytes")
+})
+
+test("a thirty-second send stall detaches only the Agent viewer and keeps its sibling and service alive", async t => {
+  const sessions = new Sessions()
+  let blocked = false
+  const slow = attach(sessions, actor, () => blocked ? new Promise(() => {}) : Promise.resolve())
+  const healthy = attach(sessions)
+  t.after(() => { slow.channel.close(); healthy.channel.close() })
+  await slow.initialize(); await healthy.initialize()
+  await slow.subscribe(); await healthy.subscribe()
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+  blocked = true
+  sessions.emit(event("1"))
+  await nextTurn()
+  t.mock.timers.tick(29_999)
+  await nextTurn()
+  assert.deepEqual(slow.failures, [])
+  assert.equal(sessions.listeners.size, 2)
+  t.mock.timers.tick(1)
+  await nextTurn()
+  assert.match(String(slow.failures[0]), /send buffer stalled/)
+  assert.equal(sessions.listeners.size, 1)
+  healthy.request("still-running", "_deskfleet/session/list")
+  await nextTurn(); await nextTurn()
+  assert.equal(healthy.messages.some(message => message.id === "still-running"), true)
+  assert.deepEqual(healthy.failures, [])
+  assert.equal(sessions.calls.some(call => call.method === "_deskfleet/turn/cancel"), false)
+})
+
+test("AgentChannel rejects malformed envelopes and bounds messages and slow viewers", async t => {
+  await t.test("invalid IDs, methods and JSON cannot reach the service", async t => {
+    const h = attach()
+    t.after(() => h.channel.close())
+    await h.initialize()
+    h.channel.receive(Buffer.from('{"jsonrpc":"2.0","id":{},"method":"_deskfleet/session/list"}\n'))
+    h.channel.receive(Buffer.from('{broken}\n'))
+    h.request("unknown", "session/prompt", {})
+    await h.waitFor(message => message.id === "unknown")
+    assert.deepEqual(h.messages.filter(message => message.error).map(message => message.error!.code), [-32600, -32700, -32601])
+    assert.equal(h.sessions.calls.length, 0)
+  })
+  await t.test("oversized incomplete input closes only the viewer", () => {
+    const h = attach()
+    h.channel.receive(new Uint8Array(AGENT_MESSAGE_BYTES + 1).fill(32))
+    assert.match(String(h.failures[0]), /byte limit/)
+    assert.equal(h.sessions.listeners.size, 0)
+    assert.equal(h.sessions.calls.length, 0)
+  })
+  await t.test("malformed responses close the viewer without responding to a response", async () => {
+    const h = attach()
+    await h.initialize()
+    const count = h.messages.length
+    h.channel.receive(wire({ id: "invalid", result: {}, error: { code: -1, message: "both" } }))
+    assert.match(String(h.failures[0]), /Invalid JSON-RPC response/)
+    assert.equal(h.messages.length, count)
+    assert.equal(h.sessions.calls.length, 0)
+  })
+  await t.test("bounded output detaches a stalled viewer while the service continues", async () => {
+    const sessions = new Sessions()
+    const blocked = deferred<void>()
+    // This attachment uses a blocked native writer; its initialize response
+    // remains queued while journal events fill the bounded viewer output queue.
+    const slow = attach(sessions, actor, () => blocked.promise)
+    slow.request("initialize", "initialize", { protocolVersion: 1 })
+    slow.request("subscribe", "_deskfleet/session/subscribe", { sessionId: "1" })
+    await delay(0)
+    const text = "x".repeat(2 * 1024 * 1024)
+    for (let seq = 1; seq <= 34; seq++) sessions.emit({ sessionId: "1", seq: String(seq), kind: "acp", createdAt: now, payload: { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } } })
+    assert.equal(slow.failures.length, 1)
+    assert.match(String(slow.failures[0]), /output byte limit/)
+    assert.equal(sessions.calls.some(call => call.method === "_deskfleet/turn/cancel" || call.method === "_deskfleet/permission/respond"), false)
+    slow.channel.close()
+    blocked.resolve()
+    const fresh = attach(sessions)
+    await fresh.initialize()
+    assert.deepEqual((await fresh.subscribe()).result, snapshot)
+    fresh.channel.close()
+  })
+})
+
+test("attendance is announced to initialized viewers and ends when the channel closes", async t => {
+  const sessions = new Sessions()
+  const watchers = new Map<string, Map<string, string>>()
+  const listeners = new Set<(update: { sessionId: string; userIds: string[] }) => void>()
+  const emit = (sessionId: string) => {
+    const userIds = [...new Set(watchers.get(sessionId)?.values() ?? [])].sort()
+    for (const listener of listeners) listener({ sessionId, userIds })
+  }
+  sessions.attend = async (sessionId, connectionId, person) => {
+    const session = watchers.get(sessionId) ?? new Map<string, string>()
+    watchers.set(sessionId, session)
+    session.set(connectionId, person.userId ?? "")
+    emit(sessionId)
+  }
+  sessions.leaveAll = connectionId => {
+    for (const [sessionId, session] of watchers) if (session.delete(connectionId)) emit(sessionId)
+  }
+  sessions.onPresence = listener => { listeners.add(listener); return () => { listeners.delete(listener) } }
+  sessions.presence = () => [...watchers].map(([sessionId, session]) => ({ sessionId, userIds: [...new Set(session.values())].sort() }))
+  const ada = attach(sessions, { ...actor, kind: "user", userId: "ada" })
+  const bob = attach(sessions, { ...actor, kind: "user", userId: "bob", deviceId: "second" })
+  t.after(() => { ada.channel.close(); bob.channel.close() })
+  await ada.initialize()
+  await bob.initialize()
+  ada.request("attend", "_deskfleet/session/attend", { sessionId: "1" })
+  const announced = await bob.waitFor(message => message.method === "_deskfleet/session/presence" && message.params.userIds.includes("ada"))
+  assert.deepEqual(announced.params, { sessionId: "1", userIds: ["ada"] })
+  ada.channel.close()
+  const departed = await bob.waitFor(message => message.method === "_deskfleet/session/presence" && message.params.userIds.length === 0)
+  assert.deepEqual(departed.params, { sessionId: "1", userIds: [] })
+})
+
+test("live auth follows authorized snapshots while notices are never replayed", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  live.auth("1", 2, { kind: "account", label: "Signed in" })
+  live.notice("1", 2, "provider", { severity: "warning", title: "Old notice" })
+  await h.initialize()
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/live"))
+  await h.subscribe()
+  const auth = await h.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.equal(auth.params.kind, "auth")
+  assert.ok(h.messages.indexOf(auth) > h.messages.findIndex(message => message.id === "subscribe"))
+  live.notice("other", 2, "provider", { severity: "warning", title: "Other Session" })
+  live.notice("1", 2, "provider", { severity: "warning", title: "Current notice" })
+  await h.waitFor(message => message.params?.notice?.title === "Current notice")
+  assert.deepEqual(h.messages.filter(message => message.params?.notice).map(message => message.params.notice.title), ["Current notice"])
+  h.channel.close()
+  const count = h.messages.length
+  live.auth("1", 2, null)
+  await delay(1)
+  assert.equal(h.messages.length, count)
+  assert.deepEqual(live.current("1"), { sessionId: "1", runGeneration: 2, kind: "auth", auth: null })
+})
+
+test("reattachment receives the auth clear missed while detached without replaying notices", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const first = attach(sessions)
+  t.after(() => first.channel.close())
+  live.auth("1", 2, { kind: "account", label: "Previous account" })
+  await first.initialize()
+  await first.subscribe()
+  await first.waitFor(message => message.params?.auth?.label === "Previous account")
+  first.channel.close()
+  live.auth("1", 2, null)
+  live.notice("1", 2, "provider", { severity: "warning", title: "While detached" })
+
+  const next = attach(sessions)
+  t.after(() => next.channel.close())
+  await next.initialize()
+  await next.subscribe()
+  const clear = await next.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.deepEqual(clear.params, { sessionId: "1", runGeneration: 2, kind: "auth", auth: null })
+  assert.ok(next.messages.indexOf(clear) > next.messages.findIndex(message => message.id === "subscribe"))
+  assert.equal(next.messages.some(message => message.params?.notice), false)
+})
+
+test("authorized subscriptions explicitly clear missing auth using the snapshot's latest generation", async t => {
+  const sessions = new Sessions()
+  sessions.handler = async () => ({ ...snapshot, runs: [
+    { sessionId: "1", generation: 3, state: "stopped", startedAt: now, endedAt: now },
+    { sessionId: "1", generation: 1, state: "stopped", startedAt: now, endedAt: now },
+  ] })
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  await h.subscribe()
+  const clear = await h.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.deepEqual(clear.params, { sessionId: "1", runGeneration: 3, kind: "auth", auth: null })
+})
+
+test("clears during subscription keep their newer generation and precede subsequent live auth", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("pending", "_deskfleet/session/subscribe", { sessionId: "1" })
+  live.auth("1", 2, { kind: "account", label: "Earlier account" })
+  live.auth("1", 3, null)
+  live.notice("1", 3, "provider", { severity: "info", title: "During attachment" })
+  reading.resolve({ ...snapshot, runs: [{ sessionId: "1", generation: 2, state: "stopped", startedAt: now, endedAt: now }] })
+  await h.waitFor(message => message.method === "_deskfleet/session/live")
+  live.auth("1", 3, { kind: "api_key", label: "New identity" })
+  await h.waitFor(message => message.params?.auth?.label === "New identity")
+  assert.deepEqual(h.messages.filter(message => message.method === "_deskfleet/session/live").map(message => message.params), [
+    { sessionId: "1", runGeneration: 3, kind: "auth", auth: null },
+    { sessionId: "1", runGeneration: 3, kind: "auth", auth: { kind: "api_key", label: "New identity" } },
+  ])
+})
+
+test("rejected subscriptions do not read auth snapshots or publish live auth and notices", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = () => { assert.fail("Unauthorized subscription read live identity") }
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("denied-auth", "_deskfleet/session/subscribe", { sessionId: "1" })
+  live.auth("1", 2, { kind: "account", label: "Private account" })
+  live.notice("1", 2, "provider", { severity: "info", title: "Private notice" })
+  reading.reject(new Error("Session is not accessible"))
+  assert.match((await h.waitFor(message => message.id === "denied-auth")).error!.message, /not accessible/u)
+  live.auth("1", 2, null)
+  await delay(1)
+  assert.equal(h.messages.some(message => message.method === "_deskfleet/session/live"), false)
+})

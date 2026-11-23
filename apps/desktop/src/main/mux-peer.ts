@@ -1,6 +1,6 @@
 import { createPeer } from "@deskfleet/native"
 import type { MuxPeerFactory } from "@deskfleet/client/mux-client"
-import { MUX_LABELS, type MuxLane } from "@deskfleet/client/mux/protocol"
+import { MUX_LABELS, type MuxLane } from "@deskfleet/protocol/mux"
 
 const lanes = new Map<string, MuxLane>(Object.entries(MUX_LABELS).map(([lane, label]) => [label, lane as MuxLane]))
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events"
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { APPEARANCE_CHANGED_EVENT, DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "../../../../packages/client/src/appearance.ts"
+import { APPEARANCE_CHANGED_EVENT, DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "@deskfleet/client/appearance"
 import type { AppearanceSettingsController } from "./appearance-settings.ts"
 
 const { handle, nativeTheme, refreshTrayMenu } = vi.hoisted(() => ({

@@ -370,9 +370,9 @@ snapshot policy is introduced.
 
 ## Implementation and validation
 
-- `apps/daemon/src/files-service.ts`, `files-uploads.ts`, and `files-paths.ts` own
-  machine filesystem behavior and staging; `files-channel.ts` binds the wire
-  protocol to authorized peer access.
+- `apps/daemon/src/files/` owns machine filesystem behavior: `service.ts`,
+  `uploads.ts`, and `paths.ts` implement reads and staging, and `channel.ts`
+  binds the wire protocol to authorized peer access.
 - `packages/client/src/files-rpc.ts` and `files-signaling.ts` own common remote
   requests and peer lifetime; `file-transfers.ts` owns queue behavior.
 - `apps/desktop/src/main/files.ts`, `files-controller.ts`, and `files-grants.ts` own
@@ -386,7 +386,7 @@ folder selection, grant checks and revocation, captured Session paths, empty
 files/directories, traversal rejection, conflict choices, concurrent
 native commits, cancellation cleanup, queue aggregation, and renderer resources.
 Run daemon tests with `mise exec -- node --test apps/daemon/src/files-*.test.ts
-apps/daemon/src/authorized-peers.test.ts`; shared client/UI tests use
+apps/daemon/src/peers/authorized-peers.test.ts`; shared client/UI tests use
 `mise exec -- pnpm --filter @deskfleet/desktop test`.
 
 `mise run files:benchmark` measures native WebRTC uploads and downloads after the

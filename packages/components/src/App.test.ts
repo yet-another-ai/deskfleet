@@ -10,7 +10,7 @@ import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
 import { fakeCentral, machineFixture } from "./test/central.ts"
-import type { LocalAgentState } from "../../client/src/local-agent.ts"
+import type { LocalAgentState } from "@deskfleet/client/local-agent"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
 import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
 

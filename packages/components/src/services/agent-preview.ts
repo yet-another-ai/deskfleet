@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentEvent, AgentPreview } from "@deskfleet/protocol/agent"
 
 interface PreviewStream { id: string; base: bigint; events: AgentEvent[] }
 

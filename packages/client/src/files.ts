@@ -1,5 +1,5 @@
-import type { FileConflict, FileEntry, FileKind, FileListing as DaemonFileListing } from "../../../apps/daemon/src/files-protocol.ts"
-export type { FileConflict, FileEntry } from "../../../apps/daemon/src/files-protocol.ts"
+import type { FileConflict, FileEntry, FileKind, FileListing as DaemonFileListing } from "@deskfleet/protocol/files"
+export type { FileConflict, FileEntry } from "@deskfleet/protocol/files"
 /** Desktop grants are opaque main-process capabilities; remote wire listings carry none. */
 export type FileListing = DaemonFileListing & { grantId?: string }
 export type FileTarget = { kind: "local"; grantId?: string } | { kind: "machine"; machineId: string; teamId: string }

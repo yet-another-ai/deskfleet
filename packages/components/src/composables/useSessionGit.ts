@@ -1,6 +1,6 @@
 import { useDebounceFn, useDocumentVisibility, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue"
-import type { GitChangeKind, GitDiffRequest, GitFileChange, GitStatusSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
+import type { GitChangeKind, GitDiffRequest, GitFileChange, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { gitDiffCardKey, type GitDiffCard } from "../components/details/git-diff-card.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 

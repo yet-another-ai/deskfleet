@@ -10,6 +10,6 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["apps/daemon/**/*.ts", "crates/node/*.ts", "scripts/*.ts", "packages/agents/**/*.ts", "packages/mcp/**/*.ts", "packages/dsh-runtime/**/*.ts"],
+  "include": ["apps/daemon/**/*.ts", "crates/node/*.ts", "scripts/*.ts", "packages/agents/**/*.ts", "packages/mcp/**/*.ts", "packages/dsh-runtime/**/*.ts", "packages/protocol/**/*.ts"],
   "exclude": ["**/dist/**", "**/node_modules/**"]
 }

@@ -2,7 +2,7 @@
 import { ChevronRight } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import type { GitFileChange, GitFileStatus } from "../../../../../apps/daemon/src/git-protocol.ts"
+import type { GitFileChange, GitFileStatus } from "@deskfleet/protocol/git"
 
 const props = defineProps<{
   change: GitFileChange

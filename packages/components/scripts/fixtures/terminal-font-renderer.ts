@@ -1,6 +1,6 @@
 import { Terminal } from "@xterm/xterm"
 import { WebglAddon } from "@xterm/addon-webgl"
-import { DEFAULT_TERMINAL_FONT } from "../../../client/src/appearance.ts"
+import { DEFAULT_TERMINAL_FONT } from "@deskfleet/client/appearance"
 import "@xterm/xterm/css/xterm.css"
 
 export interface TerminalFontResult {

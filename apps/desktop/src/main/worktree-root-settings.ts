@@ -1,6 +1,6 @@
-import { readWorktreeRoot, writeWorktreeRoot } from "../../../daemon/src/worktree-settings.ts"
-import { readWorktreePreferences, writeWorktreePreferences, type WorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
-import type { WorktreeRootState } from "../../../../packages/client/src/settings.ts"
+import { readWorktreePreferences, readWorktreeRoot, writeWorktreePreferences, writeWorktreeRoot } from "@deskfleet/daemon/host-settings"
+import type { WorktreePreferences } from "@deskfleet/protocol/worktree-preferences"
+import type { WorktreeRootState } from "@deskfleet/client/settings"
 
 /** The local daemon reads the same preference before provisioning each Session. */
 export class WorktreeRootSettingsController {

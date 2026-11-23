@@ -4,7 +4,7 @@ import {
   decodeMuxControl, decodeMuxFrame, encodeMuxControl, encodeMuxFrame,
   muxDefaultLane, muxFrameCost, muxLaneAllowed, muxPurpose,
   type MuxControl, type MuxDataLane, type MuxLane, type MuxPurpose,
-} from "./protocol.ts"
+} from "@deskfleet/protocol/mux"
 
 export interface MuxConnectionOptions {
   role: "client" | "server"

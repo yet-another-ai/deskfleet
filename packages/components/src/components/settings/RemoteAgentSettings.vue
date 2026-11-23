@@ -2,7 +2,7 @@
 import { computed } from "vue"
 import { useAsyncState } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
-import type { RemoteAgentSettings } from "../../../../client/src/settings.ts"
+import type { RemoteAgentSettings } from "@deskfleet/client/settings"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"

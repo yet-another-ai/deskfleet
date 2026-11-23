@@ -1,3 +1,3 @@
-export { agentConfigurationSelection } from "../../../apps/daemon/src/agent-configuration-protocol.ts"
-export { agentConfigurationIdentity, cachedAgentConfiguration } from "../../../apps/daemon/src/agent-configuration-matrix.ts"
-export type { AgentChoice, AgentConfigOption, AgentConfiguration, AgentConfigurationMatrix, AgentConfigurationSnapshot, AgentConfigurationParams, AgentConfigurationSelection, AgentQuotaItem } from "../../../apps/daemon/src/agent-configuration-protocol.ts"
+export { agentConfigurationSelection } from "@deskfleet/protocol/agent-configuration"
+export { agentConfigurationIdentity, cachedAgentConfiguration } from "@deskfleet/protocol/agent-configuration-matrix"
+export type { AgentChoice, AgentConfigOption, AgentConfiguration, AgentConfigurationMatrix, AgentConfigurationSnapshot, AgentConfigurationParams, AgentConfigurationSelection, AgentQuotaItem } from "@deskfleet/protocol/agent-configuration"

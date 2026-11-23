@@ -1,5 +1,5 @@
 import { ipcRenderer } from "electron"
-import { ONBOARDING_CHANNEL, type OnboardingApi } from "../../../../packages/client/src/onboarding.ts"
+import { ONBOARDING_CHANNEL, type OnboardingApi } from "@deskfleet/client/onboarding"
 
 export function onboardingApi(): OnboardingApi {
   return {

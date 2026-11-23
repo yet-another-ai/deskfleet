@@ -182,6 +182,7 @@ flowchart LR
 | [`apps/server`](apps/server) | Actix Web control-plane API, authentication, signaling, and static web host |
 | [`apps/desktop-service`](apps/desktop-service) | Native desktop service helper |
 | [`packages/components`](packages/components) | Shared Vue UI components, styles, and localization catalogs (`en-US`, `zh-CN`, `ja-JP`) |
+| [`packages/protocol`](packages/protocol) | Platform-neutral wire contracts and validators shared by the daemon, agents, and clients |
 | [`packages/client`](packages/client) | Shared client stores, platform contracts, and HTTPS/WebSocket/WebRTC adapters |
 | [`packages/mcp`](packages/mcp) | Built-in `@deskfleet/mcp` stdio server injected into managed ACP sessions |
 | [`crates/*`](crates) | Rust workspace crates for data models, storage, protocol contracts, WebRTC, PTY, and desktop media |
@@ -197,7 +198,7 @@ flowchart LR
 | `deskfleet-store` | [`crates/store`](crates/store) | SeaORM entities and transactional local SQLite workspace/worktree catalog persistence |
 | `deskfleet-control-store` | [`crates/control-store`](crates/control-store) | PostgreSQL identities, teams, machines, authorization, and central replicas |
 | `deskfleet-migration` | [`crates/migration`](crates/migration) | Catalog schema migrations and optional migration CLI |
-| `deskfleet-protocol` | [`crates/protocol`](crates/protocol) | Shared Rust/TypeScript wire contracts and protocol version |
+| `deskfleet-protocol` | [`crates/protocol`](crates/protocol) | Central Rust wire contracts and protocol version; generates `@deskfleet/protocol/generated/central-control` |
 | `deskfleet-native` | [`crates/native`](crates/native) | Platform capabilities (WebRTC peers, PTY terminals, desktop capture/media) independent of Node.js |
 | `deskfleet-node` | [`crates/node`](crates/node) | Thin `napi-rs` bindings exposing `deskfleet-native` and local catalog persistence as `@deskfleet/native` |
 | `deskfleet-desktop-viewer` | [`crates/desktop-viewer`](crates/desktop-viewer) | Independent native remote desktop viewer window (`winit` / `wgpu`) |
