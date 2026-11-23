@@ -15,6 +15,12 @@ export interface AccountState {
   }
 }
 
+/** rc.5 watch/watchState stream envelopes; state remains the client-safe account view. */
+interface AccountUpdate {
+  type: "snapshot" | "credentials-changed"
+  state: AccountState
+}
+
 export interface AccountStatus {
   auth: "authenticated" | "unauthenticated" | "unknown"
   method?: "account" | "api-key"
@@ -24,7 +30,7 @@ interface Account {
   getState(): Promise<AccountState>
   startSignIn(metadata: { version: string; locale: string; timezoneOffsetSeconds: number }, origin: string, source: "web"): Promise<AccountState>
   cancelSignIn(id: string): Promise<AccountState>
-  watch(signal: AbortSignal): AsyncIterable<AccountState>
+  watch(signal: AbortSignal): AsyncIterable<AccountUpdate>
 }
 
 export interface AccountServices {
@@ -64,12 +70,13 @@ export async function createAccountServices(entryPoint: string, login = false, o
 } = {}): Promise<AccountServices> {
   const runtime = createRequire(entryPoint)
   const base = createRequire(runtime.resolve("@deepseek-ai/dsh-base/package.json"))
-  const accountRequire = createRequire(base.resolve("@deepseek-ai/dsh-deepseek-account-platform"))
+  // rc.5 renamed dsh-deepseek-account-platform → dsh-deepseek-account (PlatformAccount → DeepSeekAccount).
+  const accountRequire = createRequire(base.resolve("@deepseek-ai/dsh-deepseek-account"))
   const load = (name: string, resolve = base) => import(pathToFileURL(resolve.resolve(name)).href)
-  const [{ Context }, { LocalCredentialProvider }, { default: AuthorizationService }, { PlatformAccount },
+  const [{ Context }, { LocalCredentialProvider }, { default: AuthorizationService }, { default: DeepSeekAccount },
     { credentialRef, credentialKey }, { loadLayeredEnv }, { resolveDshHome }] = await Promise.all([
     load("@deepseek-ai/cordis"), load("@deepseek-ai/dsh-credentials-local"),
-    load("@deepseek-ai/dsh-authorization"), load("@deepseek-ai/dsh-deepseek-account-platform"),
+    load("@deepseek-ai/dsh-authorization"), load("@deepseek-ai/dsh-deepseek-account"),
     load("@deepseek-ai/dsh-credentials", accountRequire), load("@deepseek-ai/dsh-app-boot", runtime),
     load("@deepseek-ai/dsh-home-paths", runtime),
   ])
@@ -100,7 +107,7 @@ export async function createAccountServices(entryPoint: string, login = false, o
     if (login) {
       const { installProxyFromEnvironment } = await load("@deepseek-ai/dsh-http-proxy", runtime)
       disposeProxy = await installProxyFromEnvironment(environment, (message: string) => process.stderr.write(`dsh: ${message}\n`))
-      const config = PlatformAccount.Config(options.platform ?? {})
+      const config = DeepSeekAccount.Config(options.platform ?? {})
       const stored = await ctx.credentials.readRecord(accountKey)
       // The upstream constructor removes foreign-issuer grants. A cancelled DeskFleet
       // login must preserve existing credentials, so reject before mounting that service.
@@ -110,7 +117,7 @@ export async function createAccountServices(entryPoint: string, login = false, o
       await mount(AuthorizationService)
       const { default: WebServer } = await load("@deepseek-ai/dsh-host-webserver", accountRequire)
       await mount(WebServer, { host: "127.0.0.1", port: 0 })
-      await mount(PlatformAccount, config)
+      await mount(DeepSeekAccount, config)
     }
     return {
       account: login ? ctx.deepseekAccount as Account : undefined,
@@ -237,9 +244,9 @@ export async function runAccountLogin(services: AccountServices, options: {
       pending.add(task)
     }, cancel)
     let printedUrl: string | undefined
-    for await (const state of account.watch(signal)) {
+    for await (const update of account.watch(signal)) {
       if (signal.aborted) break
-      const attempt = state.attempt
+      const attempt = update.state.attempt
       if (!attempt || attempt.id !== attemptId) continue
       if (attempt.authorizeUrl && attempt.authorizeUrl !== printedUrl) {
         printedUrl = attempt.authorizeUrl

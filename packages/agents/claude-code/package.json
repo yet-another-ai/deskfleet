@@ -9,7 +9,7 @@
     "./protocol": "./src/protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.107.0",
+    "@agentclientprotocol/claude-agent-acp": "0.109.0",
     "@deskfleet/agent-core": "workspace:*"
   }
 }

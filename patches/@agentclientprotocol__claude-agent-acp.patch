@@ -1,7 +1,7 @@
 diff --git a/dist/v1/acp-agent.js b/dist/v1/acp-agent.js
 --- a/dist/v1/acp-agent.js
 +++ b/dist/v1/acp-agent.js
-@@ -594,6 +594,7 @@
+@@ -600,6 +600,7 @@
                      : {}),
                  steering: {
                      supported: true,

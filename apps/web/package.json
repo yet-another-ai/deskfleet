@@ -15,7 +15,7 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "8.6.2",
     "@capacitor/ios": "8.6.2",
-    "@capacitor/push-notifications": "8.0.2",
+    "@capacitor/push-notifications": "8.1.3",
     "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/capacitor-bridge": "workspace:*"
   },
@@ -24,7 +24,7 @@
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.8",
-    "@proj-airi/cap-vite": "0.15.4",
+    "@proj-airi/cap-vite": "0.15.5",
     "@types/node": "24.19.2",
     "@vitejs/plugin-vue": "6.0.11",
     "@vue/compiler-sfc": "3.6.0-rc.15",

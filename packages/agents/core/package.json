@@ -9,6 +9,6 @@
     "./protocol": "./src/protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "2.7.0"
+    "@agentclientprotocol/sdk": "2.8.0"
   }
 }
