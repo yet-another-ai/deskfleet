@@ -521,15 +521,21 @@ or install [Renovate](https://github.com/apps/renovate) for that repository.
 ## Agent skills
 
 APM installs `rust-skills`, `stop-that-shit`, `stss`, `i-have-adhd`,
-`create-pr-with-evidence`, and `vueuse-functions` from the commit references in
-`apm.yml`. `apm.lock.yaml` records their resolved sources and deployed files.
-Both manifests and the installed `.agents/skills/` tree belong in source control.
-Only the local download cache, `apm_modules/`, is ignored.
+`create-pr-with-evidence`, `modern-web-guidance`, and `vueuse-functions` from
+the commit references in `apm.yml`. `apm.lock.yaml` records their resolved
+sources and deployed files. Both manifests and the installed `.agents/skills/`
+tree belong in source control. Only the local download cache, `apm_modules/`,
+is ignored.
 
 `vueuse-functions` is the official VueUse agent skill from `vueuse/skills`, pinned
 to that single skill. Cursor loads `.agents/skills/`, and the skill can be invoked
 as `/vueuse-functions`. `AGENTS.md` states when to apply it. To update it, change
 the `vueuse/skills` `ref` and keep `skills` limited to `vueuse-functions`.
+
+`modern-web-guidance` comes from `GoogleChrome/modern-web-guidance`
+(`skills/modern-web-guidance`), pinned to that skill rather than the
+`chrome-extensions` skill in the same repository, and deploys to
+`.agents/skills/modern-web-guidance/`. Invoke it as `/modern-web-guidance`.
 
 `i-have-adhd` comes from `ayghri/i-have-adhd` (`skills/i-have-adhd`) and deploys
 to `.agents/skills/i-have-adhd/`. Invoke it as `/i-have-adhd`.

@@ -106,3 +106,8 @@ number multi-step work, and restate state across turns. Invoke it as
 architecture evidence, and before/after visual evidence when UI changes. Invoke
 it as `/create-pr-with-evidence` when opening or preparing a PR. The installed
 directory is `.agents/skills/create-pr-with-evidence-skill/`.
+
+`modern-web-guidance` provides modern web platform best practices for HTML,
+CSS, accessibility, forms, client-side JS, performance, and security. Invoke it
+as `/modern-web-guidance` when implementing or updating web UI or client-side
+browser code; its installed directory is `.agents/skills/modern-web-guidance/`.
