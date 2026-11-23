@@ -84,6 +84,21 @@ Intel 向けデスクトップ Cask は、コンパニオン Tap のパッケー
    ```
 5. 登録済みのチーム状態は、秘密情報を露出せずに `./deskfleet-daemon status` でいつでも確認できます。コマンドや保存先の詳細はリポジトリの[デーモンガイド](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)、Android 端末での構築手順は [Android で実行する（Termux）](./android) をご覧ください。
 
+### ホスト設定を構成する
+
+ヘッドレスマシン（Termux 上の Android 端末を含む）では、`./deskfleet-daemon settings` を使って `$DESKFLEET_DAEMON_DIRECTORY`（初期値 `~/.deskfleet`）内のホスト設定を管理できます。変更はホスト上の全チームに再起動なしで即時反映されます：
+
+```sh
+./deskfleet-daemon settings                                      # すべての設定を表示
+./deskfleet-daemon settings set remoteAgents.allowOperate true   # リモート MCP 操作を許可
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+./deskfleet-daemon settings set worktrees.root /path/to/worktrees
+./deskfleet-daemon settings reset worktrees.root                 # キーまたはセクションをリセット
+```
+
+- **リモートエージェント権限**（`true` \| `false`、すべて初期値 `false`）：`remoteAgents.allowRead`、`remoteAgents.allowOperate`、`remoteAgents.allowSessions`、`remoteAgents.allowWorkspaces`、`remoteAgents.allowSuperAgent`、`remoteAgents.allowLocalCrossWorkspace`。
+- **ワークツリー設定**：`worktrees.root`、`worktrees.branchNaming`（`semantic` \| `session`）、`worktrees.cleanup.<archived|merged|inactive|settled|unchanged>`、`worktrees.cleanup.inactiveDays`（`1`–`3650`）、`worktrees.cleanup.settledDays`（`0`–`3650`）、`worktrees.cleanup.keepLocalChanges`（`uncommitted` \| `all` \| `none`）。詳細は `./deskfleet-daemon settings --help` を参照してください。
+
 ## ソースコードから実行する（ローカル開発環境）
 
 クライアント、デーモン、中央サーバー一式をローカルでソースから動かすには、Git、[mise](https://mise.jdx.dev/)、Docker Compose を含む Docker をインストールします。Docker を起動した状態で、ログインシェル（Windows では PowerShell 7 `pwsh`）から次を実行してください：

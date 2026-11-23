@@ -84,6 +84,21 @@ Intel 桌面 Cask 需要先合并配套的 Tap 打包变更（[`yet-another-ai/h
    ```
 5. 随时可运行 `./deskfleet-daemon status` 查看已注册的团队状态（不会输出敏感密钥）。完整命令行选项与存储布局请参阅仓库中的 [daemon 指南](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)；如需在 Android 手机或平板上运行，请参阅 [在 Android 上运行（Termux）](./android)。
 
+### 配置本机设置
+
+在无桌面机器（包括通过 Termux 运行的 Android 设备）上，可使用 `./deskfleet-daemon settings` 管理保存在 `$DESKFLEET_DAEMON_DIRECTORY`（默认 `~/.deskfleet`）中的宿主级配置。修改对该机器注册的所有团队生效，无需重启 daemon：
+
+```sh
+./deskfleet-daemon settings                                      # 查看全部设置
+./deskfleet-daemon settings set remoteAgents.allowOperate true   # 允许远程 Agent 操作本机
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+./deskfleet-daemon settings set worktrees.root /path/to/worktrees
+./deskfleet-daemon settings reset worktrees.root                 # 重置单个键或分组
+```
+
+- **远程 Agent 权限**（`true` \| `false`，默认全为 `false`）：`remoteAgents.allowRead`（读取）、`remoteAgents.allowOperate`（操作 MCP 工具）、`remoteAgents.allowSessions`（启动/发送会话）、`remoteAgents.allowWorkspaces`（创建工作区）、`remoteAgents.allowSuperAgent`（允许 Super Agent）、`remoteAgents.allowLocalCrossWorkspace`（跨本地工作区委派）。
+- **Worktree 设置**：`worktrees.root`、`worktrees.branchNaming`（`semantic` \| `session`）、`worktrees.cleanup.<archived|merged|inactive|settled|unchanged>`、`worktrees.cleanup.inactiveDays`（`1`–`3650`）、`worktrees.cleanup.settledDays`（`0`–`3650`）、`worktrees.cleanup.keepLocalChanges`（`uncommitted` \| `all` \| `none`）。完整说明可运行 `./deskfleet-daemon settings --help`。
+
 ## 从源码运行（本地开发栈）
 
 如需从源码在本地运行完整的客户端、daemon 与中心服务端，请先安装 Git、[mise](https://mise.jdx.dev/) 以及带有 Docker Compose 的 Docker。启动 Docker 后执行：

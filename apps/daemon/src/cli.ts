@@ -6,6 +6,7 @@ import { daemonControlDirectory } from "./control/discovery.ts"
 import { runAgent } from "./agent/cli.ts"
 import { bundledAdapter, configureAdapterHost } from "./acp/adapters.ts"
 import { runMachineCli } from "./machine/cli.ts"
+import { runSettingsCli } from "./machine/settings-cli.ts"
 import { ICAT_ARGUMENT, runIcat } from "./terminals/images.ts"
 
 interface DaemonCliRuntime {
@@ -42,6 +43,10 @@ async function main(runtime: DaemonCliRuntime) {
     await runMachineCli(process.argv[2], process.argv.slice(3))
     return
   }
+  if (process.argv[2] === "settings") {
+    await runSettingsCli(process.argv.slice(3))
+    return
+  }
   const { values } = parseArgs({
     options: {
       info: { type: "boolean" },
@@ -55,6 +60,7 @@ async function main(runtime: DaemonCliRuntime) {
     console.log("       deskfleet-daemon status")
     console.log("       deskfleet-daemon prepare-enrollment --server-url URL --team-id ID")
     console.log("       deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json")
+    console.log("       deskfleet-daemon settings [get [key] | set <key> <value> | reset <key>]")
     return
   }
   if (values.info) {

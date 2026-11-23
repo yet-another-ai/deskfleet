@@ -93,6 +93,21 @@ For remote workstations, VMs, or build servers without a desktop session, run th
    ```
 5. Run `./deskfleet-daemon status` at any time to inspect registered teams without exposing secrets. See the [daemon guide](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md) for the full CLI reference and storage layout, or [Run on Android (Termux)](./android) to set up `deskfleet-daemon` on an Android device.
 
+### Configure host settings
+
+On headless machines (including Android via Termux), use `./deskfleet-daemon settings` to manage host-level settings in `$DESKFLEET_DAEMON_DIRECTORY` (default `~/.deskfleet`). Changes apply across all teams on the host and take effect immediately without restarting the daemon:
+
+```sh
+./deskfleet-daemon settings                                      # Show all settings
+./deskfleet-daemon settings set remoteAgents.allowOperate true   # Enable remote MCP operation
+./deskfleet-daemon settings set remoteAgents.allowSuperAgent true
+./deskfleet-daemon settings set worktrees.root /path/to/worktrees
+./deskfleet-daemon settings reset worktrees.root                 # Reset one key or section
+```
+
+- **Remote Agent permissions** (`true` \| `false`, all default `false`): `remoteAgents.allowRead`, `remoteAgents.allowOperate`, `remoteAgents.allowSessions`, `remoteAgents.allowWorkspaces`, `remoteAgents.allowSuperAgent`, `remoteAgents.allowLocalCrossWorkspace`.
+- **Worktree settings**: `worktrees.root`, `worktrees.branchNaming` (`semantic` \| `session`), `worktrees.cleanup.<archived|merged|inactive|settled|unchanged>`, `worktrees.cleanup.inactiveDays` (`1`–`3650`), `worktrees.cleanup.settledDays` (`0`–`3650`), `worktrees.cleanup.keepLocalChanges` (`uncommitted` \| `all` \| `none`). Run `./deskfleet-daemon settings --help` for full details.
+
 ## Run from source (local development stack)
 
 To run the complete client, daemon, and server stack locally from source, install Git, [mise](https://mise.jdx.dev/), and Docker with Docker Compose. With Docker running:

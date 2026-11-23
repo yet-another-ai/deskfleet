@@ -138,11 +138,14 @@ other machines have four independent switches for reading this computer,
 operating it, starting and messaging Sessions, and creating Workspaces.
 All switches default to off.
 
-Headless operators can edit `<host directory>/remote-agent-settings.json`.
-A file containing `{"allowSuperAgent": true}` enables hosted access. In an
-existing file, add that field alongside the machine-agent preferences. The
-preferences apply across the host's registrations. Every call stays within
-the initiating Session's Team and backend.
+Headless operators can configure these switches with
+`deskfleet-daemon settings set remoteAgents.<key> <true|false>` (for example,
+`deskfleet-daemon settings set remoteAgents.allowSuperAgent true`) or edit
+`<host directory>/remote-agent-settings.json` directly. A file containing
+`{"allowSuperAgent": true}` enables hosted access. In an existing file, add that
+field alongside the machine-agent preferences. The preferences apply across the
+host's registrations. Every call stays within the initiating Session's Team and
+backend.
 
 The issuing daemon checks the active Session and its user's current membership,
 then calls `/api/daemon/mcp` with its own machine credential. The backend repeats

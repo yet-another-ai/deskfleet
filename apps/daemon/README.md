@@ -79,6 +79,11 @@ credential reconnects the same Team's retained Workspaces and Sessions. Adding a
 different Team creates a separate catalog and runs it alongside existing Teams.
 An active credential cannot be replaced by another token through enrollment.
 
+`deskfleet-daemon settings [get [key] | set <key> <value> | reset <key>]`
+manages host-level settings in `<daemon directory>` (`remoteAgents.*` and
+`worktrees.*`); changes take effect immediately without restarting. Run
+`deskfleet-daemon settings --help` for the full key list.
+
 The daemon publishes a private Unix socket or Windows named pipe through
 `<daemon directory>/daemon.json`.
 Only one live daemon can own it. The discovery token permits host setup,
