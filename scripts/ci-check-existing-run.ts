@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
 
 export const REQUIRED_PUBLISH_TEST_JOBS = [
@@ -132,6 +133,68 @@ export async function shouldSkipPublishTest(options: {
   }
 }
 
+function gitIsAncestor(ancestor: string, descendant: string, cwd = process.cwd()): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd,
+      stdio: ["ignore", "ignore", "ignore"],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Find the most recent successful main CI commit that is an ancestor of headSha.
+ * When earlier main pushes were cancelled or failed, diffing from this commit
+ * ensures their unvalidated paths remain included in classification.
+ */
+export async function resolveMainBaseSha(options: {
+  repository: string
+  headSha: string
+  eventBefore?: string
+  token: string
+  apiUrl?: string
+  cwd?: string
+  fetchImpl?: FetchLike
+  isAncestor?: (ancestor: string, descendant: string) => boolean
+}): Promise<string | null> {
+  const {
+    repository,
+    headSha,
+    eventBefore,
+    token,
+    apiUrl = "https://api.github.com",
+    cwd = process.cwd(),
+    fetchImpl = fetch,
+    isAncestor = (a, b) => gitIsAncestor(a, b, cwd),
+  } = options
+  const shaPattern = /^[0-9a-f]{40}$/u
+  if (!repository || !shaPattern.test(headSha)) return null
+  try {
+    const ciRuns = await githubJson<{ workflow_runs: WorkflowRunSummary[] }>(
+      apiUrl,
+      `/repos/${repository}/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=20`,
+      token,
+      fetchImpl,
+    )
+    for (const run of ciRuns.workflow_runs ?? []) {
+      if (run.status !== "completed" || run.conclusion !== "success") continue
+      if (run.event === "pull_request") continue
+      if (!shaPattern.test(run.head_sha) || run.head_sha === headSha) continue
+      if (!isAncestor(run.head_sha, headSha)) continue
+      if (eventBefore && shaPattern.test(eventBefore) && isAncestor(eventBefore, run.head_sha)) {
+        return eventBefore
+      }
+      return run.head_sha
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 if (import.meta.main) {
   const mode = process.argv[2]
   const repository = process.env.GITHUB_REPOSITORY ?? ""
@@ -147,7 +210,12 @@ if (import.meta.main) {
     const skip = await shouldSkipPublishTest({ repository, sha, token, apiUrl })
     console.log(skip ? `Reusing passing main CI test results for ${sha}.` : `Running full Test suite for release commit ${sha}.`)
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `skip_test=${skip}\n`)
+  } else if (mode === "main-base") {
+    const eventBefore = process.env.GITHUB_EVENT_BEFORE ?? ""
+    const baseSha = await resolveMainBaseSha({ repository, headSha: sha, eventBefore, token, apiUrl })
+    console.log(baseSha ? `Resolved last passing main CI commit: ${baseSha}.` : `No recent passing main CI ancestor found for ${sha}; falling back to full validation.`)
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `main_base_sha=${baseSha ?? ""}\n`)
   } else {
-    throw new Error("Usage: node scripts/ci-check-existing-run.ts <schedule|publish-test>")
+    throw new Error("Usage: node scripts/ci-check-existing-run.ts <schedule|publish-test|main-base>")
   }
 }

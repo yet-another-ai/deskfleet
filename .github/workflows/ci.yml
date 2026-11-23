@@ -58,9 +58,26 @@ jobs:
             echo "skip_schedule=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve last passing main CI commit
+        id: main_base
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          echo "main_base_sha=" >> "$GITHUB_OUTPUT"
+          if ! node scripts/ci-check-existing-run.ts main-base; then
+            echo "::warning::Could not resolve last passing main CI commit; running full CI."
+            echo "main_base_sha=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Classify documentation-only changes
         id: classify
         shell: bash
+        env:
+          CI_MAIN_BASE_SHA: ${{ steps.main_base.outputs.main_base_sha }}
+          CI_REQUIRE_MAIN_BASE_SHA: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '' }}
         run: |
           # Use the hosted runner's Node without provisioning a toolchain. Older
           # runtimes or missing output must fall back to full CI, never a skip.

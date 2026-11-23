@@ -28,10 +28,13 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   `specs_only` pushes, which produce no website artifact.
   A new pull request push or rapid back-to-back push to `main` cancels the
   previous in-progress run for that group so only the latest commit finishes,
-  saves caches, and deploys Pages. Scheduled and manual runs finish once
-  started. Reusable workflows inherit the caller's group. After each run on
-  `main`, `Prune caches` removes retired and superseded entries as described
-  under [Toolchains and caches](#toolchains-and-caches).
+  saves caches, and deploys Pages. On `main` pushes, `scripts/ci-check-existing-run.ts main-base`
+  resolves the last passing `CI` ancestor commit so classification diffs the
+  entire unvalidated commit range across any cancelled or failed intermediate
+  runs (failing closed to full CI if unresolved). Scheduled and manual runs
+  finish once started. Reusable workflows inherit the caller's group. After each
+  run on `main`, `Prune caches` removes retired and superseded entries as
+  described under [Toolchains and caches](#toolchains-and-caches).
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
   rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
@@ -134,11 +137,12 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 - `.github/workflows/nix-server.yml` builds the experimental server and Web image
   from source with the root flake, loads it, and runs the existing server image
   smoke test. It runs in parallel with Test and Build under a dedicated
-  `run_nix_server` gate (flake/Nix files, server image smoke scripts, and pnpm/
-  mise lock inputs), plus daily scheduled and manual runs, and its result is
-  required by `Gate`. It follows the native Linux smoke/full matrix and uploads
-  each tested image as `deskfleet-server-nix-<platform>` for three days. These
-  images do not replace the official image published by the tag workflow.
+  `run_nix_server` gate (flake/Nix files, Cargo/server crate inputs fileset by
+  `nix/server.nix`, server image smoke scripts, and pnpm/Web/mise manifest
+  inputs), plus daily scheduled and manual runs, and its result is required by
+  `Gate`. It follows the native Linux smoke/full matrix and uploads each tested
+  image as `deskfleet-server-nix-<platform>` for three days. These images do not
+  replace the official image published by the tag workflow.
 - `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
   x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
   a disposable Arch container. Publish requires it before creating the draft or

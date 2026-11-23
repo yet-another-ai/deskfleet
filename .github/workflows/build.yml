@@ -8,6 +8,26 @@ on:
         type: boolean
         required: false
         default: false
+      run_package:
+        description: Build desktop, server, and standalone daemon packages.
+        type: boolean
+        required: false
+        default: true
+      run_super_agent:
+        description: Build and smoke-test the Nix Super Agent container image on Linux.
+        type: boolean
+        required: false
+        default: true
+      run_android:
+        description: Build the Android App Bundle and APK.
+        type: boolean
+        required: false
+        default: true
+      run_ios:
+        description: Build the iOS archive.
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       smoke_build:

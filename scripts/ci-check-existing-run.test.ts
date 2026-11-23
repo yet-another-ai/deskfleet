@@ -3,6 +3,7 @@ import test from "node:test"
 import {
   REQUIRED_PUBLISH_TEST_JOBS,
   hasFullPassingTestSuite,
+  resolveMainBaseSha,
   shouldSkipPublishTest,
   shouldSkipScheduledRun,
 } from "./ci-check-existing-run.ts"
@@ -103,10 +104,54 @@ test("shouldSkipPublishTest requires every full-matrix test job to succeed on th
   assert.equal(partial, false)
 })
 
+test("resolveMainBaseSha skips cancelled and failed runs back to the last passing main ancestor", async () => {
+  const c0 = "0".repeat(39) + "1"
+  const c1 = "0".repeat(39) + "2"
+  const c2 = "0".repeat(39) + "3"
+  const ancestors = new Set([`${c0}->${c2}`, `${c0}->${c1}`, `${c1}->${c2}`])
+  const isAncestor = (a: string, b: string) => a === b || ancestors.has(`${a}->${b}`)
+
+  const resolved = await resolveMainBaseSha({
+    repository: "yet-another-ai/deskfleet",
+    headSha: c2,
+    eventBefore: c1,
+    token: "tok",
+    isAncestor,
+    fetchImpl: stubFetch({
+      "/repos/yet-another-ai/deskfleet/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=20": {
+        body: {
+          workflow_runs: [
+            { id: 3, head_sha: c1, status: "completed", conclusion: "cancelled", event: "push" },
+            { id: 2, head_sha: otherSha, status: "completed", conclusion: "success", event: "pull_request" },
+            { id: 1, head_sha: c0, status: "completed", conclusion: "success", event: "push" },
+          ],
+        },
+      },
+    }),
+  })
+  assert.equal(resolved, c0)
+
+  const missing = await resolveMainBaseSha({
+    repository: "yet-another-ai/deskfleet",
+    headSha: c2,
+    eventBefore: c1,
+    token: "tok",
+    isAncestor,
+    fetchImpl: stubFetch({
+      "/repos/yet-another-ai/deskfleet/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=20": {
+        body: { workflow_runs: [{ id: 3, head_sha: c1, status: "completed", conclusion: "cancelled", event: "push" }] },
+      },
+    }),
+  })
+  assert.equal(missing, null)
+})
+
 test("API errors and invalid SHAs fail safe to running CI", async () => {
   assert.equal(await shouldSkipScheduledRun({ repository: "yet-another-ai/deskfleet", sha: "bad", token: "tok" }), false)
   assert.equal(await shouldSkipPublishTest({ repository: "yet-another-ai/deskfleet", sha: "bad", token: "tok" }), false)
+  assert.equal(await resolveMainBaseSha({ repository: "yet-another-ai/deskfleet", headSha: "bad", token: "tok" }), null)
   const failingFetch = async () => { throw new Error("network down") }
   assert.equal(await shouldSkipScheduledRun({ repository: "yet-another-ai/deskfleet", sha, token: "tok", fetchImpl: failingFetch }), false)
   assert.equal(await shouldSkipPublishTest({ repository: "yet-another-ai/deskfleet", sha, token: "tok", fetchImpl: failingFetch }), false)
+  assert.equal(await resolveMainBaseSha({ repository: "yet-another-ai/deskfleet", headSha: sha, token: "tok", fetchImpl: failingFetch }), null)
 })

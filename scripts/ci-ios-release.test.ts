@@ -18,6 +18,9 @@ test("signed iOS rehearsal is explicit, production-scoped, and does not run othe
   const build = workflow("build")
   const dispatch = build.split("  workflow_dispatch:\n")[1]?.split("  workflow_call:")[0]
   assert.match(dispatch ?? "", /signed_ios:[\s\S]*?type: boolean[\s\S]*?default: false/)
+  for (const input of ["run_package", "run_super_agent", "run_android", "run_ios"]) {
+    assert.match(dispatch ?? "", new RegExp(`${input}:[\\s\\S]*?type: boolean[\\s\\S]*?default: true`), `workflow_dispatch must default ${input} to true`)
+  }
   assert.match(job(build, "package"), /if: \$\{\{ !inputs\.signed_ios && \(inputs\.production_release \|\| inputs\.run_package\) \}\}/)
   assert.match(job(build, "android"), /if: \$\{\{ !inputs\.signed_ios && \(inputs\.production_release \|\| inputs\.run_android\) \}\}/)
   const ios = job(build, "ios")

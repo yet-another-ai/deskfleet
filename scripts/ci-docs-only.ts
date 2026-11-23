@@ -56,9 +56,17 @@ export function isNixServerPath(path: string): boolean {
     path === ".github/workflows/nix-server.yml" ||
     path === "scripts/smoke-server-image.ts" ||
     path === "scripts/fixtures/image-smoke.ts" ||
-    // `nix/web.nix` installs from these pnpm lock/manifest inputs and `nix/toolchain.nix` reads mise.
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|mise\.toml|mise\.lock)$/u.test(path) ||
-    /^(?:apps\/(?:web|daemon)|packages\/(?:client|components))\/package\.json$/u.test(path) ||
+    // `nix/server.nix` filesets the workspace Cargo metadata, server/backend crates, and vendored pty patch.
+    /^(?:Cargo\.toml|Cargo\.lock)$/u.test(path) ||
+    /^(?:apps|crates)\/[^/]+\/(?:Cargo\.toml|build\.rs|src\/(?:lib|main)\.rs)$/u.test(path) ||
+    path.startsWith("apps/server/src/") ||
+    path === "packages/mcp/src/remote-tools.json" ||
+    /^(?:crates\/(?:control-store|model|protocol)\/src|vendor\/portable-pty)\//u.test(path) ||
+    // `nix/web.nix` installs from these pnpm lock/manifest/build-config inputs and `nix/toolchain.nix` reads mise.
+    /^(?:tsconfig\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|mise\.toml|mise\.lock)$/u.test(path) ||
+    /^(?:apps\/(?:web|daemon)|packages\/(?:capacitor-bridge|client|components|protocol))\/package\.json$/u.test(path) ||
+    /^apps\/web\/(?:index\.html|tsconfig\.json|vite\.config\.ts)$/u.test(path) ||
+    path === "packages/components/uno.config.ts" ||
     path.startsWith("patches/")
 }
 
@@ -215,15 +223,33 @@ export interface ClassificationResult {
   runBackend: boolean
 }
 
+export interface ClassifyOptions {
+  /** Last passing main CI commit SHA; expands main push diffs across cancelled/failed intermediate runs. */
+  mainBaseSha?: string
+  /** Require a valid mainBaseSha on main pushes; if missing, fail closed to fullValidation. */
+  requireMainBaseSha?: boolean
+}
+
 export function classifyChanges(
   eventName: string,
   ref: string,
   event: ChangeEvent,
-  cwd = process.cwd()
+  cwd = process.cwd(),
+  options: ClassifyOptions = {},
 ): ClassificationResult {
   const git = (...args: string[]) => execFileSync("git", args, {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
   })
+  const isAncestor = (ancestor: string, descendant: string): boolean => {
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+        cwd, stdio: ["ignore", "ignore", "ignore"]
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
   try {
     let base: string
     let head: string
@@ -242,6 +268,14 @@ export function classifyChanges(
       if (!commit(event.before) || !commit(event.after)) return fullValidation
       base = event.before
       head = event.after
+      if (options.requireMainBaseSha || options.mainBaseSha !== undefined) {
+        if (!commit(options.mainBaseSha) || !isAncestor(options.mainBaseSha, head)) {
+          return fullValidation
+        }
+        if (isAncestor(options.mainBaseSha, base)) {
+          base = options.mainBaseSha
+        }
+      }
     } else {
       return fullValidation
     }
@@ -287,7 +321,15 @@ if (import.meta.main) {
   let res: ClassificationResult = { ...fullValidation }
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")) as ChangeEvent
-    res = classifyChanges(process.env.GITHUB_EVENT_NAME ?? "", process.env.GITHUB_REF ?? "", event)
+    const requireMainBaseSha = process.env.CI_REQUIRE_MAIN_BASE_SHA === "1"
+    const mainBaseSha = process.env.CI_MAIN_BASE_SHA?.trim() || undefined
+    res = classifyChanges(
+      process.env.GITHUB_EVENT_NAME ?? "",
+      process.env.GITHUB_REF ?? "",
+      event,
+      process.cwd(),
+      requireMainBaseSha || mainBaseSha ? { mainBaseSha, requireMainBaseSha } : {},
+    )
   } catch {
     // Missing events and unavailable history never justify skipping validation.
   }

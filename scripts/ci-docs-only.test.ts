@@ -153,6 +153,19 @@ test("packaging, Nix server, Super Agent, and mobile detectors route to their ow
     "nix/web.nix",
     ".github/workflows/nix-server.yml",
     "scripts/smoke-server-image.ts",
+    "Cargo.toml",
+    "Cargo.lock",
+    "apps/server/src/main.rs",
+    "crates/control-store/src/lib.rs",
+    "crates/model/src/session.rs",
+    "crates/protocol/src/control/mod.rs",
+    "crates/capture/Cargo.toml",
+    "packages/mcp/src/remote-tools.json",
+    "vendor/portable-pty/src/lib.rs",
+    "packages/capacitor-bridge/package.json",
+    "packages/protocol/package.json",
+    "apps/web/vite.config.ts",
+    "tsconfig.json",
     "pnpm-lock.yaml",
     "mise.toml",
     "mise.lock",
@@ -160,6 +173,8 @@ test("packaging, Nix server, Super Agent, and mobile detectors route to their ow
   for (const file of [
     "apps/desktop/electron-builder.yml",
     "apps/super-agent/agent/agent.ts",
+    "apps/daemon/src/main.ts",
+    "crates/capture/src/x11.rs",
     "apps/web/ios/App/Info.plist",
     "packaging/linux/deb-control.in",
   ]) assert.equal(isNixServerPath(file), false, `not-nix-server:${file}`)
@@ -303,6 +318,47 @@ test("classifies draft PRs, granular packaging/mobile paths, and main pushes", c
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: desktopPackaging }, draft: true }
   }, cwd), baseFlags)
+
+  // Main push after a cancelled iOS commit expands the diff back to the last passing main CI commit
+  save("README.md", "docs-only follow-up commit\n")
+  const docsFollowup = snapshot()
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: iosSha, after: docsFollowup,
+  }, cwd, { mainBaseSha: frontendSha, requireMainBaseSha: true }), {
+    ...baseFlags,
+    runBuild: true,
+    runNixServer: true,
+    runSuperAgent: true,
+    runAndroid: true,
+    runIos: true,
+    allPlatforms: true,
+    runBackend: true,
+  })
+  // A cancelled iOS-only commit followed by a docs-only commit still keeps iOS validation active
+  git("checkout", "-q", iosSha)
+  save("README.md", "docs follow-up on top of ios only\n")
+  const docsOnIos = snapshot()
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: iosSha, after: docsOnIos,
+  }, cwd, { mainBaseSha: frontendSha, requireMainBaseSha: true }), {
+    ...baseFlags,
+    runIos: true,
+    allPlatforms: true,
+  })
+  // Missing or unresolved mainBaseSha when required fails closed to full validation
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: iosSha, after: docsOnIos,
+  }, cwd, { requireMainBaseSha: true }), {
+    docsOnly: false,
+    specsOnly: false,
+    runBuild: true,
+    runNixServer: true,
+    runSuperAgent: true,
+    runAndroid: true,
+    runIos: true,
+    allPlatforms: true,
+    runBackend: true,
+  })
 })
 
 test("platform and backend detectors cover shared actions and build-env paths", () => {
