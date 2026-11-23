@@ -9,4 +9,6 @@ export interface CentralTransport {
   fetch?: typeof globalThis.fetch
   socket?: (url: string) => CentralSocket
   transport?: RequestTransport
+  /** Monotonic counter incremented on host sleep/wake transitions. */
+  suspendEpoch?: () => number
 }

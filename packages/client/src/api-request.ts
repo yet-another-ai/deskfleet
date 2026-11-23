@@ -13,6 +13,8 @@ export interface ApiRequestOptions {
   signal?: AbortSignal
   fetch?: typeof fetch
   transport?: RequestTransport
+  /** Monotonic counter incremented when the host suspends or resumes. */
+  suspendEpoch?: () => number
   /** Revalidate machine admission immediately before fetch; failures remain local errors. */
   beforeFetch?: () => void
   timeoutMs?: number
@@ -57,11 +59,21 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
   const totalTimeout = options.totalTimeoutMs ?? (read ? 45_000 : 105_000)
   const path = new URL(url).pathname
   const started = performance.now()
+  const startSuspendEpoch = options.suspendEpoch?.()
   let phase: "fetch" | "response_body" = "fetch"
   let status: number | undefined
+  let requestId: string | undefined
   let admissionError: unknown
-  const details = () => ({ method, path, body: options.json, signal: options.signal, transport: options.transport,
-    elapsedMs: performance.now() - started, phase, ...(status === undefined ? {} : { status }) })
+  const details = () => {
+    const spannedSuspend = startSuspendEpoch !== undefined && options.suspendEpoch!() !== startSuspendEpoch
+    return {
+      method, path, body: options.json, signal: options.signal, transport: options.transport,
+      elapsedMs: performance.now() - started, phase,
+      ...(status === undefined ? {} : { status }),
+      ...(requestId ? { requestId } : {}),
+      ...(spannedSuspend ? { spannedSuspend: true } : {}),
+    }
+  }
   try {
     return await ky(url, {
       method, json: options.json, headers: options.headers,
@@ -85,14 +97,19 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
         return JSON.parse(text)
       },
       hooks: {
-        beforeRetry: [() => { phase = "fetch"; status = undefined }],
-        afterResponse: [({ response }) => { phase = "response_body"; status = response.status }],
+        beforeRetry: [() => { phase = "fetch"; status = undefined; requestId = undefined }],
+        afterResponse: [({ response }) => {
+          phase = "response_body"
+          status = response.status
+          requestId = response.headers.get("x-request-id") ?? undefined
+        }],
       },
     }).json<T>()
   } catch (error) {
     if (admissionError !== undefined) throw admissionError
     if (error instanceof HTTPError) {
       const response = error.response
+      requestId = response.headers.get("x-request-id") ?? requestId
       const envelope = errorEnvelope(error.data)
       const message = envelope.message || (options.errorPrefix ? `${options.errorPrefix} (${response.status})` : response.statusText || `HTTP ${response.status}`)
       throw attachRequestStack(new HttpError(response.status, message,

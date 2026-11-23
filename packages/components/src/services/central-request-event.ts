@@ -11,7 +11,7 @@ export function centralRequestFingerprint(diagnostics: CentralRequestDiagnostics
   return ["central-request", transport, method, route, rpcMethod ?? "", kind, phase, failureIdentity(diagnostics).failure]
 }
 
-const backgroundOfflineRpcMethods = new Set(["terminalList", "systemStatus"])
+const backgroundOfflineRpcMethods = new Set(["terminalList", "systemStatus", "providerList"])
 
 export function isBackgroundMachineOffline({ trigger, rpcMethod, kind, status, apiErrorCode }: CentralRequestDiagnostics): boolean {
   return trigger === "background" && rpcMethod !== undefined && backgroundOfflineRpcMethods.has(rpcMethod) && kind === "http" && status === 503 && apiErrorCode === "machine_offline"
@@ -20,7 +20,7 @@ export function isBackgroundMachineOffline({ trigger, rpcMethod, kind, status, a
 export function prepareCentralRequest(event: Event, hint: EventHint): Event | null {
   const error = hint.originalException
   if (!(error instanceof CentralRequestError)) return event
-  const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, apiErrorCode, transport, trigger = "unknown", online, visibility } = error.diagnostics
+  const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, apiErrorCode, requestId, spannedSuspend, transport, trigger = "unknown", online, visibility } = error.diagnostics
   if (kind === "cancelled" || isBackgroundMachineOffline(error.diagnostics)) return null
   const { codes, failure } = failureIdentity(error.diagnostics)
   const exception = event.exception?.values?.at(-1)
@@ -40,9 +40,12 @@ export function prepareCentralRequest(event: Event, hint: EventHint): Event | nu
     ...(codes[0] ? { "central.cause_code": codes[0] } : {}),
     ...(online !== undefined ? { "central.online": String(online) } : {}),
     ...(visibility ? { "central.visibility": visibility } : {}),
+    ...(spannedSuspend ? { "central.spanned_suspend": "true" } : {}),
   }
   event.contexts = { ...event.contexts, central_request: {
     method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs, transport, kind, phase, status, api_error_code: apiErrorCode, trigger, online, visibility,
+    ...(requestId ? { request_id: requestId } : {}),
+    ...(spannedSuspend ? { spanned_suspend: true } : {}),
     causes: causes.map(cause => [cause.name, cause.code, cause.syscall].filter(Boolean).join(": ")),
   } }
   return event

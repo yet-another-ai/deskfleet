@@ -68,8 +68,9 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     beforeSend: prepareError,
   })
   requestReports = new CentralRequestReports((error, repetition) => captureException(error, {
-    level: error.diagnostics.trigger === "background" && error.diagnostics.visibility === "hidden"
-      && (error.diagnostics.kind === "network" || error.diagnostics.kind === "timeout") ? "warning" : "error",
+    level: (error.diagnostics.kind === "network" || error.diagnostics.kind === "timeout")
+      && (error.diagnostics.spannedSuspend === true || error.diagnostics.trigger === "background" && error.diagnostics.visibility === "hidden")
+      ? "warning" : "error",
     tags: { "central.report_type": repetition.summary ? "summary" : "occurrence" },
     contexts: { request_repetition: { ...repetition } },
   }))

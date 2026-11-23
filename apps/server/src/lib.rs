@@ -15,6 +15,7 @@ mod network_configuration;
 mod peers;
 pub mod push;
 mod remote_mcp;
+pub mod request_id;
 mod search;
 mod site;
 mod site_usage;
@@ -125,6 +126,7 @@ pub fn configure(config: &mut ServiceConfig) {
     config.route("/healthz", web::get().to(health));
     config.service(
         web::scope("/api")
+            .wrap(actix_web::middleware::from_fn(request_id::middleware))
             .configure(auth::configure)
             .configure(billing::configure)
             .configure(cloud_agent::configure)

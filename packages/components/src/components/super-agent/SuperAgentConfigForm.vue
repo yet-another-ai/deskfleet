@@ -3,6 +3,7 @@ import { Cloud, Cpu, LoaderCircle, Zap } from "@lucide/vue"
 import { computed, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CentralApi, Machine } from "@deskfleet/client/central"
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import type { SuperAgentConfig, SuperAgentMode } from "@deskfleet/client/super-agent"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import UiButton from "../common/UiButton.vue"
@@ -73,7 +74,7 @@ async function loadMachineOptions(targetMachineId: string): Promise<void> {
     const machine = props.machines.find(item => item.id === targetMachineId)
     const [catalogResult, liveProvidersResult] = await Promise.allSettled([
       props.api.catalog(props.teamId, targetMachineId),
-      machine?.online ? props.api.rpc<{ providers?: ProviderOption[] }>(props.teamId, targetMachineId, "providerList", {}) : Promise.resolve(undefined),
+      machine?.online ? withCentralRequestTrigger(props.api, "background").rpc<{ providers?: ProviderOption[] }>(props.teamId, targetMachineId, "providerList", {}) : Promise.resolve(undefined),
     ])
     if (revision !== discoveryRevision) return
     const catalog = catalogResult.status === "fulfilled" ? catalogResult.value : undefined

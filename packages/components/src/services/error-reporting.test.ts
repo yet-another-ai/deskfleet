@@ -371,6 +371,133 @@ test("caller cancellation is ignored while deadlines still report a timeout", as
   expect(events()[0]?.tags?.["central.failure_kind"]).toBe("timeout")
 })
 
+test("background providerList suppresses only structured machine_offline 503 responses", async () => {
+  initializeErrorReporting("web")
+  const fetch = vi.fn<typeof globalThis.fetch>()
+  vi.stubGlobal("fetch", fetch)
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError, { cookieAuth: false })
+  const central = adapter.central as HttpCentralClient
+  const target = { id: "machine", teamId: "team", name: "Machine", originId: "origin", localMachineId: "local", capabilities: {}, online: true }
+  const remote = remoteMachineClient(adapter, central, target)
+  const failure = (status: number, code?: string) => Response.json({ error: { code, message: "Machine request failed" } }, { status })
+  try {
+    fetch.mockResolvedValueOnce(failure(503, "machine_offline"))
+    const offline = await remote.api.providers.list({ background: true }).catch(error => error)
+    expect(offline).toMatchObject({ diagnostics: { status: 503, apiErrorCode: "machine_offline", trigger: "background" } })
+    globalThis.onunhandledrejection?.call(window, { reason: offline } as PromiseRejectionEvent)
+    await flushSdk()
+    expect(events()).toHaveLength(0)
+
+    fetch.mockResolvedValueOnce(failure(503, "machine_busy"))
+      .mockResolvedValueOnce(failure(503, "machine_offline"))
+    await expect(remote.api.providers.list({ background: true })).rejects.toMatchObject({ status: 503 })
+    await expect(remote.api.providers.list()).rejects.toMatchObject({ status: 503 })
+    await flushSdk()
+    expect(events().map(event => [event.tags?.["central.rpc_method"], event.tags?.["central.api_error_code"], event.tags?.["central.trigger"]])).toEqual([
+      ["providerList", "machine_busy", "background"],
+      ["providerList", "machine_offline", "unknown"],
+    ])
+  } finally {
+    remote.dispose()
+    central.dispose()
+  }
+})
+
+test("remoteMachineClient attributes explicit background reads without reclassifying default reads", async () => {
+  initializeErrorReporting("web")
+  const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new DOMException("timed out", "TimeoutError"))
+  vi.stubGlobal("fetch", fetch)
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError, { cookieAuth: false })
+  const central = adapter.central as HttpCentralClient
+  const target = { id: "machine", teamId: "team", name: "Machine", originId: "origin", localMachineId: "local", capabilities: {}, online: true }
+  const remote = remoteMachineClient(adapter, central, target)
+  try {
+    vi.useFakeTimers()
+    const run = async (work: Promise<unknown>) => {
+      const settled = work.catch(() => {})
+      await vi.advanceTimersByTimeAsync(45_000)
+      await settled
+    }
+    await run(remote.api.catalog.list({ background: true }))
+    await run(remote.api.desktop.target({ background: true }))
+    await run(remote.api.agent.history!.list({ background: true }))
+    await run(remote.api.catalog.list())
+    await flushSdk()
+    expect(events().map(event => [event.tags?.["central.route"], event.tags?.["central.trigger"]])).toEqual([
+      ["/api/teams/:teamId/machines/:machineId/catalog", "background"],
+      ["/api/teams/:teamId/machines", "background"],
+      ["/api/teams/:teamId/machines/:machineId/sessions", "background"],
+      ["/api/teams/:teamId/machines/:machineId/catalog", "unknown"],
+    ])
+  } finally {
+    remote.dispose()
+    central.dispose()
+  }
+})
+
+test("suspend-spanning network and timeout failures downgrade to warning, keep fingerprints, and isolate summaries", async () => {
+  vi.useFakeTimers()
+  initializeErrorReporting("desktop")
+  const capture = (kind: "network" | "timeout" | "http", spannedSuspend: boolean, trigger: "background" | "unknown" = "background") => {
+    const error = requestFailure()
+    Object.assign(error.diagnostics, {
+      trigger, visibility: "visible", kind,
+      ...(kind === "http" ? { status: 504 } : {}),
+      ...(spannedSuspend ? { spannedSuspend: true } : {}),
+    })
+    captureCentralRequestError(error)
+  }
+  capture("timeout", true, "unknown")
+  capture("timeout", true, "background")
+  capture("timeout", true, "background")
+  capture("timeout", false, "background")
+  capture("timeout", false, "background")
+  capture("http", true, "background")
+  await vi.advanceTimersByTimeAsync(60_000)
+  await flushSdk()
+  const reports = events()
+  expect(reports.map(event => [
+    event.tags?.["central.failure_kind"],
+    event.tags?.["central.spanned_suspend"],
+    event.tags?.["central.report_type"],
+    event.level,
+  ])).toEqual([
+    ["timeout", "true", "occurrence", "warning"],
+    ["timeout", "true", "occurrence", "warning"],
+    ["timeout", undefined, "occurrence", "error"],
+    ["http", "true", "occurrence", "error"],
+    ["timeout", "true", "summary", "warning"],
+    ["timeout", undefined, "summary", "error"],
+  ])
+  expect(reports[0]?.fingerprint).toEqual(reports[2]?.fingerprint)
+  expect(reports[0]?.contexts?.central_request?.spanned_suspend).toBe(true)
+})
+
+test("requestId survives desktop IPC into central_request context without becoming a tag or changing fingerprints", async () => {
+  initializeErrorReporting("desktop")
+  const requestId = "550e8400-e29b-41d4-a716-446655440000"
+  const fetch = vi.fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "internal", message: "Server failed" } }), {
+      status: 500, headers: { "X-Request-Id": requestId },
+    }))
+  const http = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "private-token" }, persist: async () => {}, authorize: async () => {}, fetch, transport: "electron_net" })
+  const central = centralBridgeClient({
+    invoke: async () => {
+      try { return { ok: true, value: await http.rpc("team", "machine", "terminalList", {}) } }
+      catch (error) { return structuredClone(centralIpcFailure(error)) }
+    },
+    context: vi.fn(), onEvent: () => () => {},
+  }, captureCentralRequestError)
+  try {
+    await central.rpc("team", "machine", "terminalList", {}).catch(() => {})
+    await flushSdk()
+    expect(events()).toHaveLength(1)
+    expect(events()[0]?.contexts?.central_request?.request_id).toBe(requestId)
+    expect(events()[0]?.tags?.["central.request_id"]).toBeUndefined()
+    expect(events()[0]?.fingerprint).toEqual(["central-request", "electron_net", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "terminalList", "http", "response_body", "HTTP 500"])
+  } finally { http.dispose() }
+})
+
 test("background summaries reach the real SDK and user requests keep every occurrence", async () => {
   vi.useFakeTimers()
   initializeErrorReporting("web")

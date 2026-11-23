@@ -174,6 +174,7 @@ export const useFleetStore = defineStore("fleet", () => {
   let refreshingTarget: Promise<LocalDesktopTarget> | null = null
   let refreshingCatalog: Promise<void> | null = null
   let refreshRequested = false
+  let refreshBackground = true
 
   function findWorkspace(workspaceId: string): WorkspaceLocation | null {
     for (const machine of machines.value) {
@@ -203,8 +204,8 @@ export const useFleetStore = defineStore("fleet", () => {
     catalogError.value = null
     reconcileTarget()
   }
-  function refreshLocalDesktop(): Promise<LocalDesktopTarget> {
-    refreshingTarget ??= platformClient.desktop.target().catch((error: unknown) => ({
+  function refreshLocalDesktop(options?: { background?: boolean }): Promise<LocalDesktopTarget> {
+    refreshingTarget ??= platformClient.desktop.target(options?.background ? { background: true } : undefined).catch((error: unknown) => ({
       ...localDesktopTarget.value, online: false, error: error instanceof Error ? error.message : String(error),
     })).then(target => {
       localDesktopTarget.value = target
@@ -213,16 +214,19 @@ export const useFleetStore = defineStore("fleet", () => {
     }).finally(() => { refreshingTarget = null })
     return refreshingTarget
   }
-  function refreshLocalCatalog(): Promise<void> {
+  function refreshLocalCatalog(options?: { background?: boolean }): Promise<void> {
     refreshRequested = true
+    refreshBackground = refreshBackground && options?.background === true
     refreshingCatalog ??= (async () => {
       // Background catalog/presence updates keep the current workspace visible.
       catalogLoading.value = catalogIdentity.value === null
       try {
         do {
+          const background = refreshBackground
           refreshRequested = false
+          refreshBackground = true
           try {
-            const snapshot = await platformClient.catalog.list()
+            const snapshot = await platformClient.catalog.list(background ? { background: true } : undefined)
             if (!refreshRequested) applySnapshot(snapshot)
           } catch (error) {
             // A newer notification still needs a read when this request fails.
@@ -240,18 +244,18 @@ export const useFleetStore = defineStore("fleet", () => {
     })()
     return refreshingCatalog
   }
-  async function refreshLocal(): Promise<void> {
-    await refreshLocalDesktop()
-    await refreshLocalCatalog()
+  async function refreshLocal(options?: { background?: boolean }): Promise<void> {
+    await refreshLocalDesktop(options)
+    await refreshLocalCatalog(options)
   }
   const unsubscribe = platformClient.catalog.onChanged(sessionId => {
     // A remote machine's presence and renames arrive as catalog changes. Its catalog,
     // applied after the target, carries the current Team name.
     if (!sessionId) {
-      void (target ? refreshLocal() : refreshLocalCatalog())
+      void (target ? refreshLocal({ background: true }) : refreshLocalCatalog({ background: true }))
       void terminals.refresh()
     }
-    void agents.refresh(sessionId)
+    void agents.refresh(sessionId, { background: true })
   })
   onScopeDispose(unsubscribe)
   const canManageCatalog = computed(() => localDesktopTarget.value.online && catalogReady.value)

@@ -96,8 +96,14 @@ during `fetch` or `response_body`, and include HTTP status when a response exist
 HTTP errors also retain allowlisted API error codes in `central.api_error_code`
 and `central_request.api_error_code`, including `machine_offline`, `daemon_timeout`,
 `daemon_error`, and `turn_service_unavailable`, plus the fixed core API codes.
-Unknown response codes are omitted. The code survives Electron IPC without
-exporting response bodies, and does not change existing issue fingerprints.
+Unknown response codes are omitted. When the server returns a valid UUID
+`X-Request-Id` header, failed responses also retain it in
+`central_request.request_id` (not as a high-cardinality tag) to correlate Sentry
+events with server `http_request` tracing spans. On desktop, requests that span
+an Electron `powerMonitor` suspend or resume transition record
+`central.spanned_suspend` and `central_request.spanned_suspend`. Both fields
+survive Electron IPC without exporting response bodies, and do not change
+existing issue fingerprints.
 A non-JSON HTTP error retains its HTTP status; malformed successful JSON is a
 decoding failure. Response-body connection failures retain their transport cause.
 The shared Ky transport normalizes failures only after its configured recovery
@@ -136,18 +142,19 @@ This reporting path does not retry requests or change proxy/network selection.
 or `unknown` attribution; concurrent requests do not share mutable trigger state.
 Automatic account/startup/reconnect loads, GitHub status polling, pinned-session
 metadata, task-notification monitoring, terminal list refreshes, scheduled-task
-polling, and session-read acknowledgements opt into `background`. Account actions,
+polling, automatic catalog/provider/session-list push and focus refreshes, and
+session-read acknowledgements opt into `background`. Account actions,
 machine/workspace/provider/session mutations, terminal actions, and manual
 scheduled-task refreshes opt into `user`. Calls that can serve both automatic
 and interactive reads keep `unknown`; a GET or RPC name alone does not establish
 that a request runs in the background.
 
-A background `terminalList` or `systemStatus` HTTP 503 with the application code
-`machine_offline` is a normal refresh outcome when the control route disappears.
-It produces no Sentry event. HTTP 503 without that code, `machine_busy`,
-non-background `systemStatus` failures, and HTTP 504 follow normal reporting.
-The caller still receives the failure and retains its cached terminal list or
-battery reading until the next successful refresh.
+A background `terminalList`, `systemStatus`, or `providerList` HTTP 503 with
+the application code `machine_offline` is a normal refresh outcome when the
+control route disappears. It produces no Sentry event. HTTP 503 without that
+code, `machine_busy`, non-background failures, and HTTP 504 follow normal
+reporting. The caller still receives the failure and retains its cached data
+until the next successful refresh.
 
 Only handled background network/timeouts, HTTP 429, and HTTP 5xx are collapsed.
 The first error is sent immediately. Matching failures within the next minute
@@ -174,15 +181,18 @@ The renderer samples the browser's online boolean and visible/hidden state when
 the operation fails; these are hints, not proof of server reachability. No IP,
 hostname, proxy URL, network name, or raw socket data is collected.
 
-Handled background network failures and timeouts observed while hidden are sent
-at warning level, including their summaries. Other failures, including HTTP 5xx,
-user-initiated and unknown-trigger requests, stay at error level. Configure Sentry
-alerts to match event level `error` for the primary alert and inspect warnings
-separately. Filter events by `central.trigger:background` and
-`central.visibility:hidden` when investigating background noise; a shared issue
-can contain both warning and error events. This changes reporting only, not UI
-errors, retries, or request execution. A hidden state does not prove that a
-failure was caused by backgrounding.
+Handled background network failures and timeouts observed while hidden, and
+handled desktop network failures and timeouts that span a system suspend or
+resume transition (`central.spanned_suspend:true`), are sent at warning level,
+including their summaries. Other failures, including HTTP 5xx, non-suspended
+user-initiated and unknown-trigger requests, stay at error level. Configure
+Sentry alerts to match event level `error` for the primary alert and inspect
+warnings separately. Filter events by `central.trigger:background` and
+`central.visibility:hidden` (or `central.spanned_suspend:true`) when
+investigating background or sleep-resume noise; a shared issue can contain both
+warning and error events. This changes reporting only, not UI errors, retries,
+or request execution. A hidden state does not prove that a failure was caused by
+backgrounding.
 
 The integration does not enable tracing, profiling, session replay, or log
 capture. It does not attach component props, breadcrumbs, other profile fields, or
