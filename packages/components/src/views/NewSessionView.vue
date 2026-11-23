@@ -2,13 +2,16 @@
 import { vNavigationMotion } from "../directives/navigation-motion.ts"
 import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { useStorage } from "@vueuse/core"
 import { storeToRefs } from "pinia"
-import { computed, onScopeDispose, ref, shallowRef } from "vue"
+import { computed, onScopeDispose, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
+import WorkspaceCreateDialog from "../components/catalog/WorkspaceCreateDialog.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
+import FirstTaskGuide from "../components/session/FirstTaskGuide.vue"
 import SessionWelcome from "../components/session/SessionWelcome.vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
@@ -47,6 +50,31 @@ const baseRevisions = ref<GitPreparationSnapshot["baseRevisions"]>()
 const workingDirectory = ref<string>()
 const submitting = ref(false)
 const error = shallowRef<unknown>()
+const composer = useTemplateRef<InstanceType<typeof SessionComposer>>("composer")
+const choosingProjectFolder = ref(false)
+const skippedGuides = useStorage<string[]>("deskfleet.skipped-first-task-guides", [], undefined, { writeDefaults: false })
+const guideScope = computed(() => JSON.stringify([account?.account.value.serverUrl, account?.account.value.user?.id, account?.teamId.value, fleet.targetId]))
+const guideStep = computed(() => {
+  const target = newSessionTarget.value
+  // A synchronized catalog may not include a complete Session inventory yet.
+  if (!target?.machine.online || !fleet.catalogReady || fleet.catalog?.sessionIds?.length !== 0
+    || Object.keys(agents.sessions).length > 0 || skippedGuides.value.includes(guideScope.value)) return
+  if (!target.workspace) return "workspace"
+  if (!providers.ready || !providers.selectedId) return "agent"
+  return "task"
+})
+const canSuggestTask = computed(() => !draft.value.trim() && !attachments.value.length && !mentions.value.length)
+
+function suggestTask(): void {
+  if (guideStep.value !== "task" || !canSuggestTask.value) return
+  draft.value = t("firstTask.task.prompt")
+  composer.value?.focus()
+}
+
+function skipGuide(): void {
+  if (guideStep.value) skippedGuides.value = [...skippedGuides.value, guideScope.value]
+}
+
 async function submit(): Promise<void> {
   const target = newSessionTarget.value
   const text = draft.value
@@ -56,6 +84,7 @@ async function submit(): Promise<void> {
   const fileTarget = resourceTarget.value
   const key = draftKey.value
   if (!target || submitting.value || !hasSubmittableText(text, currentAttachments) || hasIncompleteAttachmentUploads(currentAttachments, fileTarget) || !providers.ready || !providers.selectedId) return
+  const guided = guideStep.value === "task"
   const context = target.workspace ? sessionContext.value : "directory"
   submitting.value = true
   error.value = null
@@ -96,7 +125,9 @@ async function submit(): Promise<void> {
     void fleet.refreshLocalCatalog().catch(() => undefined)
     const sameTarget = newSessionTarget.value?.workspace?.id === target.workspace?.id
       && newSessionTarget.value?.machine.id === target.machine.id
-    if (!disposed && router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
+    if (!disposed && router.currentRoute.value.name === "new-session" && sameTarget) {
+      await router.push({ name: "session", params: { sessionId: id }, query: guided ? { firstTask: "1" } : undefined })
+    }
     // A rejected or disconnected submission remains in the Session draft for reconciliation.
     if (canStartPrompt) {
       await (async () => {
@@ -123,12 +154,14 @@ async function submit(): Promise<void> {
 
 <template>
   <PaneHeader />
-  <SessionWelcome v-navigation-motion="motion" :heading="t('newSession.heading')">
+  <SessionWelcome v-navigation-motion="motion" :heading="t(guideStep ? 'firstTask.heading' : 'newSession.heading')" :scrollable="!!guideStep">
+    <FirstTaskGuide v-if="guideStep" :step="guideStep" :has-workspaces="!!newSessionTarget?.machine.workspaces.length" :can-set-up-agent="providers.ready || !!providers.error" :suggest-task="canSuggestTask" @workspace="choosingProjectFolder = true" @suggest="suggestTask" @skip="skipGuide" />
     <p v-if="!newSessionTarget" class="m-0 text-ui-text-muted">{{ t("newSession.noTarget") }}</p>
     <p v-if="submitting" role="status" class="text-sm text-ui-text-muted">{{ t("agent.creating") }}</p>
     <ErrorNotice v-if="error" :error="error" class="w-full max-w-xl" />
     <ErrorNotice v-if="newSessionTarget?.machine.online && providers.error" :error="providers.error" class="w-full max-w-xl" />
-    <p v-else-if="newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="text-ui-accent hover:underline">{{ t('providers.manage') }}</RouterLink></p>
+    <p v-else-if="!guideStep && newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="text-ui-accent hover:underline">{{ t('providers.manage') }}</RouterLink></p>
   </SessionWelcome>
-  <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" v-model:cwd="workingDirectory" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
+  <SessionComposer ref="composer" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" v-model:cwd="workingDirectory" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
+  <WorkspaceCreateDialog v-if="choosingProjectFolder" @created="choosingProjectFolder = false" @cancel="choosingProjectFolder = false" />
 </template>

@@ -123,6 +123,62 @@ test("the archive route retains the sidebar without tiled windows", async () => 
   expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
 })
 
+test("the first-task guide drafts a task for a real workspace and offers handoff after completion", async () => {
+  vi.mocked(platformClient.catalog.list).mockResolvedValue({ ...catalogFixture(), workspaces: [], sessionIds: [] })
+  const createWorkspace = vi.spyOn(platformClient.catalog, "createWorkspace").mockResolvedValue({
+    id: workspaceId, name: "code",
+    worktrees: [{ id: mainWorktreeId, workspaceId, directories: [{ path: "/code" }] }],
+  })
+  const pinia = createPinia()
+  const agents = useAgentSessionsStore(pinia)
+  const snapshot = agentSnapshot()
+  snapshot.session = { ...snapshot.session, id: sessionId, workspaceId, context: "directory" }
+  const createSession = vi.spyOn(agents, "create").mockImplementation(async () => {
+    agents.sessions[sessionId] = snapshot.session
+    agents.views[sessionId] = { snapshot, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+    return snapshot
+  })
+  const submit = vi.spyOn(agents, "submit").mockResolvedValue({ sessionId, operationId: "operation", commandId: "50", inputId: "40" })
+  vi.spyOn(agents, "open").mockResolvedValue()
+  vi.spyOn(agents, "refresh").mockResolvedValue()
+  const wrapper = await mountApp("/", pinia)
+
+  expect(wrapper.get("main").text()).toContain("Run your first Agent task")
+  await button(wrapper, "Choose project folder").trigger("click")
+  await wrapper.get('button[name="directory-path-0"]').trigger("click")
+  await flushPromises()
+  await wrapper.get('[role="dialog"] [data-path="/code"]').trigger("click")
+  await flushPromises()
+  await button(wrapper, "Select folder").trigger("click")
+  await vi.waitFor(() => expect(wrapper.get('button[name="directory-path-0"]').text()).toContain("/code"))
+  await wrapper.get('[role="dialog"] form').trigger("submit")
+  await vi.waitFor(() => expect(button(wrapper, "Use suggested task")?.exists()).toBe(true))
+  expect(createWorkspace).toHaveBeenCalledExactlyOnceWith("code", [{ path: "/code" }])
+  expect(wrapper.get("[data-composer-workspace]").text()).toBe("code")
+
+  await button(wrapper, "Use suggested task").trigger("click")
+  await flushPromises()
+  const prompt = wrapper.get<HTMLTextAreaElement>("textarea").element.value
+  expect(prompt).toMatch(/^Look through this repository/)
+  expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(false)
+  expect(createSession).not.toHaveBeenCalled()
+  expect(submit).not.toHaveBeenCalled()
+  expect(router.currentRoute.value.name).toBe("new-session")
+
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await vi.waitFor(() => expect(submit).toHaveBeenCalledExactlyOnceWith(sessionId, prompt, "backlog", undefined, prompt, { mentions: [], attachmentIds: [] }))
+  expect(createSession).toHaveBeenCalledExactlyOnceWith(workspaceId, expect.any(String), "directory", "codex", undefined, undefined, undefined, { deferStartup: true })
+  expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
+  const handoff = "Continue from another device"
+  expect(wrapper.text()).not.toContain(handoff)
+
+  agents.views[sessionId]!.snapshot!.turns = [{
+    id: "70", sessionId, initialInputId: "40", dispatchCommandId: "50", runGeneration: 1,
+    state: "completed", startedAt: "2026-04-10T10:00:00Z", endedAt: "2026-04-10T10:00:15Z",
+  }]
+  await vi.waitFor(() => expect(wrapper.text()).toContain(handoff))
+})
+
 test("workspace creation opens a dialog, requires paths, supports choosing the first path by reordering, and retains input after failure", async () => {
   const create = vi.spyOn(platformClient.catalog, "createWorkspace").mockRejectedValueOnce(new Error("Directory does not exist"))
   const wrapper = await mountApp()

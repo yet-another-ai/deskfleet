@@ -69,6 +69,15 @@ const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
+const showFirstTaskHandoff = computed(() => {
+  const route = router.currentRoute.value
+  return route.name === "session" && route.params.sessionId === props.sessionId && route.query.firstTask === "1"
+    && snapshot.value?.turns.some(turn => turn.state === "completed")
+})
+function dismissFirstTaskHandoff(): void {
+  const route = router.currentRoute.value
+  if (showFirstTaskHandoff.value) void router.replace({ query: { ...route.query, firstTask: undefined } })
+}
 const projection = useConversationProjection(() => view.value?.events ?? [], snapshot)
 const selectUsage = createAgentUsageSelector()
 const usage = computed(() => selectUsage(view.value?.events ?? []))
@@ -264,6 +273,9 @@ function openInNewWindow(): void {
       </ErrorNotice>
       <ErrorNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" :error="draftError" />
       <template v-if="snapshot">
+        <AgentNotice v-if="showFirstTaskHandoff" :text="t('firstTask.handoff.title')" :detail="t('firstTask.handoff.description')">
+          <UiButton type="button" size="sm" class="shrink-0" @click="dismissFirstTaskHandoff">{{ t('firstTask.handoff.dismiss') }}</UiButton>
+        </AgentNotice>
         <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
           <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
         </AgentNotice>

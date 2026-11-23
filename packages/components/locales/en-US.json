@@ -905,6 +905,34 @@
     "heading": "Start an agent session",
     "noTarget": "Connect to a machine to start a session."
   },
+  "firstTask": {
+    "heading": "Run your first Agent task",
+    "progress": "First task progress",
+    "steps": { "workspace": "Project folder", "agent": "Agent", "task": "First task" },
+    "skip": "Skip guide",
+    "workspace": {
+      "title": "Open a project you already work on",
+      "description": "Choose a project folder on this machine to create a workspace for your Agent.",
+      "existing": "Select a workspace in the composer to give your Agent the project's files and context.",
+      "choose": "Choose project folder"
+    },
+    "agent": {
+      "title": "Set up an Agent for this machine",
+      "description": "Choose an Agent you use, such as Codex or Claude Code. Finish its setup and sign-in, then return here to start the task.",
+      "setup": "Set up an Agent"
+    },
+    "task": {
+      "title": "Give your Agent something to do",
+      "description": "Write a task for this project or try the editable starter below. The Agent starts when you send your message.",
+      "suggest": "Use suggested task",
+      "prompt": "Look through this repository and explain what it does. Show me the main entry points, how to run or test it, and one useful next step. Do not modify files."
+    },
+    "handoff": {
+      "title": "Continue from another device",
+      "description": "Keep this machine online. Sign in to DeskFleet on your phone or another computer, select the same team, and open this session to pick up where you left off.",
+      "dismiss": "Dismiss"
+    }
+  },
   "worktree": {
     "notFound": "This worktree does not exist.",
     "directories": "Directories",
@@ -1777,7 +1805,7 @@
     "joinAction": "Join team",
     "joining": "Joining…",
     "welcome": "Welcome, {name}",
-    "welcomeDescription": "Teams share machines and their agent sessions. Create one, or join an existing team.",
+    "welcomeDescription": "Create or join a team to connect a machine and run your first agent task.",
     "youAreAdmin": "You are an admin of this team.",
     "youAreOwner": "You are the owner of this team.",
     "youAreMember": "You are a member of this team.",
@@ -1877,7 +1905,7 @@
     "credentialsStep": "Paste these credentials into the command, then press Ctrl-D",
     "credentialsWarning": "These credentials are shown only once. Anyone who has them can act as this machine.",
     "emptyTitle": "Add a machine to {team}",
-    "emptyDescription": "Team members run agents and open terminals on the team’s machines. Connect this computer or a server to get started."
+    "emptyDescription": "Add the computer or server that has your repository. You’ll use it to open a workspace and run your first agent task."
   },
   "files": {
     "title": "File transfer",
@@ -1919,7 +1947,7 @@
   },
   "welcome": {
     "title": "Welcome to DeskFleet",
-    "description": "Sign in, then choose how you want to use this computer.",
+    "description": "Run your first agent task in a repository you already use. Start by signing in and choosing how to use this computer.",
     "telemetryConsent": "Help improve DeskFleet with usage and attribution analytics",
     "telemetryConsentDescription": "Optional. Shares anonymous product events and campaign attribution when enabled. Prompts, code, and files are never collected.",
     "notificationsTitle": "Stay up to date with your tasks",
