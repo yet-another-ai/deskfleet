@@ -193,16 +193,24 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView,
     await until(() => menu()?.getAttribute("role") === "menu", "account menu")
     return menu()!
   }
-  while (document.querySelector('[role=dialog][data-state=open]')) {
-    const dialogs = [...document.querySelectorAll<HTMLElement>('[role=dialog][data-state=open]')]
-    const dialog = dialogs.at(-1)!
-    dialog.focus()
-    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+  const openDialogs = () => [...document.querySelectorAll<HTMLElement>('[role=dialog][data-state=open]')]
+  for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
+  for (const dialog of openDialogs().reverse()) {
+    const drawerClose = dialog.querySelector<HTMLButtonElement>(':scope.bottom-sheet > header > button[aria-label="Close"]')
+    if (drawerClose) drawerClose.click()
+    else {
+      dialog.focus()
+      dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    }
     await until(() => !dialog.isConnected, "close dialog")
   }
-  for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
-  await until(() => !!document.querySelector(accountMenuSelector) && !!document.querySelector('[data-window-tab-id="chat"]')?.textContent?.includes("Machine 0 conversation"), "session")
+  const chatTitle = '[data-window-tab-id="chat"], main[data-mobile-windows] > header h1'
+  await until(() => !!document.querySelector(chatTitle)?.textContent?.includes("Machine 0 conversation"), "session")
+  if (view !== "session") {
+    document.querySelector<HTMLButtonElement>('main button[aria-label="Show sidebar"]')?.click()
+    await until(() => !!document.querySelector(accountMenuSelector), "sidebar")
+  }
   if (view === "workspace-edit") {
     const row = document.querySelector<HTMLButtonElement>(`aside section[data-machine-id="${context.machines[0]}"] .workspace-row button[aria-expanded]`)
     if (!row) throw new Error("Fixture workspace row is missing")
@@ -236,12 +244,12 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView,
     const create = [...menu.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Create a team")
     if (!create) throw new Error("Create a team menu item is missing")
     create.click()
-    await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Create a team"), "create team dialog")
+    await until(() => !!document.querySelector('[role=dialog][data-state=open] input[name="team-name"]'), "create team dialog")
   } else if (view === "add-machine") {
     const add = document.querySelector<HTMLButtonElement>('aside button[aria-label="Add machine"]')
     if (!add) throw new Error("Add machine button is missing")
     add.click()
-    await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Add a machine"), "add machine dialog")
+    await until(() => openDialogs().some(dialog => dialog.textContent?.includes("Add a machine")), "add machine dialog")
   } else if (view === "account-menu" || view === "team-menu") {
     await openAccountMenu()
   }
@@ -254,6 +262,7 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
   const directory = resolve(process.env.DESKFLEET_SMOKE_SCREENSHOTS)
   const prepare = (view: CaptureView) => window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)},${JSON.stringify(accountMenuSelector)})`)
   await mkdir(directory, { recursive: true })
+  await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] })
   for (const [width, height] of [[1100, 740], [800, 600]] as const) {
     window.setContentSize(width, height)
     for (const view of ["session", "workspace-edit", "team-menu", "account-menu", "settings-team", "create-team", "invite", "add-machine"] as const) {
@@ -263,8 +272,9 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
       await writeFile(join(directory, `${context.mode}-${width}x${height}-${view}.png`), image.toPNG())
     }
   }
-  await prepare("session")
   window.setContentSize(1440, 950)
+  await prepare("session")
+  await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [] })
   process.stderr.write(`${context.mode} UI screenshots saved to ${directory}\n`)
 }
 
