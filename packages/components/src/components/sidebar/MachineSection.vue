@@ -218,7 +218,7 @@ const machineIndicator = computed(() => {
         <SessionWorkingIndicator v-if="machineIndicator" :state="machineIndicator" />
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>
-      <div v-if="machine.online" class="flex op-0 ui-motion group-hover:op-100 group-focus-within:op-100">
+      <div v-if="machine.online" class="flex ui-motion can-hover:op-0 group-hover:op-100 group-focus-within:op-100">
         <UiButton variant="ghost" size="icon" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="unopened || !fleet.canManageCatalog" @click="addingWorkspace = true"><FolderPlus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </SidebarReorderRow>
@@ -269,14 +269,14 @@ const machineIndicator = computed(() => {
       </li>
       <CollapsibleRoot v-for="workspace in workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
         <WorkspaceContextMenu :workspace-id="workspace.id" :machine-id="machine.id" :name="workspace.name" :directories="workspace.directories" :disabled="!machine.online || !fleet.canManageCatalog">
-          <SidebarReorderRow v-slot="{ source }" :group="workspaceGroup" :id="workspace.id" :items="workspaceItems" class="workspace-row ui-nav-item relative">
+          <SidebarReorderRow v-slot="{ source }" :group="workspaceGroup" :id="workspace.id" :items="workspaceItems" class="workspace-row group/ws ui-nav-item relative">
             <CollapsibleTrigger v-bind="source" type="button" :aria-label="workspace.name" class="relative flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 pl-2.5 pr-1 text-left">
-              <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="workspace-folder-icon shrink-0" aria-hidden="true" />
-              <ChevronRight :size="15" :stroke-width="1.75" class="workspace-collapse-icon absolute left-2.5 shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
+              <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="shrink-0 ui-motion duration-[var(--ui-duration-instant)] group-hover/ws:op-0 can-hover:group-has-[:focus-visible]/ws:op-0" aria-hidden="true" />
+              <ChevronRight :size="15" :stroke-width="1.75" class="hidden can-hover:block pointer-events-none absolute left-2.5 shrink-0 op-0 ui-motion duration-[var(--ui-duration-instant)] group-hover/ws:op-100 group-has-[:focus-visible]/ws:op-100" :class="open && 'rotate-90'" aria-hidden="true" />
               <span class="truncate">{{ workspace.name }}</span>
               <SessionWorkingIndicator v-if="!open && sessionsIndicator(workspace.sessions)" :state="sessionsIndicator(workspace.sessions)" />
             </CollapsibleTrigger>
-            <div class="workspace-actions flex shrink-0 items-center pr-1">
+            <div class="flex shrink-0 items-center pr-1 ui-motion duration-[var(--ui-duration-instant)] can-hover:op-0 can-hover:pointer-events-none group-hover/ws:op-100 group-hover/ws:pointer-events-auto group-has-[:focus-visible]/ws:op-100 group-has-[:focus-visible]/ws:pointer-events-auto">
               <UiButton variant="ghost" size="icon" :label="t('workspace.openDefaultTerminal')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online || openingTerminal || workspace.directories.length === 0" @click="openTerminal(workspace)"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
               <UiButton variant="ghost" size="icon" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)"><SquarePen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
@@ -325,34 +325,3 @@ const machineIndicator = computed(() => {
     </CollapsibleContent>
   </CollapsibleRoot>
 </template>
-
-<style scoped>
-.workspace-folder-icon,
-.workspace-collapse-icon,
-.workspace-actions {
-  transition: opacity var(--ui-duration-instant) var(--ui-ease-out), transform var(--ui-duration-instant) var(--ui-ease-out);
-}
-
-.workspace-collapse-icon,
-.workspace-actions {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.workspace-row:is(:hover, :has(:focus-visible)) .workspace-folder-icon {
-  opacity: 0;
-}
-
-.workspace-row:is(:hover, :has(:focus-visible)) :is(.workspace-collapse-icon, .workspace-actions) {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .workspace-folder-icon,
-  .workspace-collapse-icon,
-  .workspace-actions {
-    transition: none;
-  }
-}
-</style>

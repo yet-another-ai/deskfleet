@@ -36,11 +36,11 @@ function open(event: MouseEvent, navigate: (event?: MouseEvent) => unknown): voi
       <a v-bind="dragSource" :href="href" class="ui-nav-item pr-2.5" :class="[indent[depth], selected && isActive ? 'ui-nav-active group-hover:bg-ui-accent/20' : 'group-hover:bg-ui-hover']" :aria-current="selected && isExactActive ? 'page' : undefined" @click="open($event, navigate)">
         <slot name="icon"><component v-if="icon" :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
         <span class="min-w-0 flex-1 truncate">{{ label }}</span>
-        <span v-if="$slots.trailing || $slots.actions" class="inline-flex min-w-3.5 shrink-0 items-center justify-center gap-1.5 ui-motion" :class="$slots.actions && 'group-hover:op-0 group-focus-within:op-0'">
+        <span v-if="$slots.trailing || $slots.actions" class="inline-flex min-w-3.5 shrink-0 items-center justify-center gap-1.5 ui-motion" :class="$slots.actions && 'group-hover:op-0 can-hover:group-focus-within:op-0'">
           <slot name="trailing" />
         </span>
       </a>
-      <div v-if="$slots.actions" class="absolute inset-y-0 right-1 flex items-center op-0 ui-motion group-hover:op-100 group-focus-within:op-100" :class="selected && isActive ? 'text-ui-accent' : 'text-ui-text'">
+      <div v-if="$slots.actions" class="hidden can-hover:flex pointer-events-none absolute inset-y-0 right-1 items-center op-0 ui-motion group-hover:pointer-events-auto group-hover:op-100 group-focus-within:pointer-events-auto group-focus-within:op-100" :class="selected && isActive ? 'text-ui-accent' : 'text-ui-text'">
         <slot name="actions" />
       </div>
     </RouterLink>

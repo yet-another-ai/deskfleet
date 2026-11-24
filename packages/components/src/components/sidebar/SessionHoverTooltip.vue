@@ -31,7 +31,7 @@ export default defineComponent({
     const runtimes = useMachineRuntimes()
     const hostAgents = useAgentSessionsStore()
     const hostFleet = useFleetStore()
-    const noHover = useMediaQuery("(hover: none)")
+    const noHover = useMediaQuery("(max-width: 1023.9px), (hover: none)")
     const open = ref(false)
     const loading = ref(false)
     const fetched = shallowRef<SessionMessagePreview | null>(null)

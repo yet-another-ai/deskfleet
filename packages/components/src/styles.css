@@ -236,7 +236,7 @@ textarea {
 
 /* Switch thumb position is driven by the shared spring. */
 /* Radios: the checked ring tints and its dot springs in. */
-[role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); }
+@media (hover: hover) { [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); } }
 [data-state="checked"] > .ui-radio {
   border-color: var(--ui-color-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-color-accent) 16%, transparent);
@@ -298,10 +298,12 @@ textarea {
     opacity var(--ui-duration-fast) var(--ui-ease-out),
     background-color var(--ui-duration-fast) var(--ui-ease-out);
 }
-.ui-tab:not(.ui-tab-active):hover::after {
-  opacity: 1;
-  scale: 1;
-  background: var(--ui-color-border-strong);
+@media (hover: hover) {
+  .ui-tab:not(.ui-tab-active):hover::after {
+    opacity: 1;
+    scale: 1;
+    background: var(--ui-color-border-strong);
+  }
 }
 .ui-tab-active::after { opacity: 1; scale: 1; }
 
@@ -331,10 +333,12 @@ textarea {
   height: 2px;
   scale: 1 0;
 }
-.ui-sash:hover::after,
-.deskfleet-windows .dv-sash:not(.dv-disabled):hover::after {
-  opacity: 0.5;
-  scale: 1;
+@media (hover: hover) {
+  .ui-sash:hover::after,
+  .deskfleet-windows .dv-sash:not(.dv-disabled):hover::after {
+    opacity: 0.5;
+    scale: 1;
+  }
 }
 .ui-sash:focus-visible::after,
 .ui-sash:active::after,
@@ -361,9 +365,11 @@ textarea {
   color: var(--ui-color-accent);
   background-color: color-mix(in srgb, var(--ui-color-accent) 12%, transparent);
 }
-.ui-nav-active:is(.ui-button-ghost, .ui-text-button):hover:not(:disabled, [aria-disabled="true"]) {
-  color: var(--ui-color-accent);
-  background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+@media (hover: hover) {
+  .ui-nav-active:is(.ui-button-ghost, .ui-text-button):hover:not(:disabled, [aria-disabled="true"]) {
+    color: var(--ui-color-accent);
+    background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+  }
 }
 .ui-nav-active:is(.ui-button-ghost, .ui-text-button):active:not(:disabled, [aria-disabled="true"]) {
   background-color: color-mix(in srgb, var(--ui-color-accent) 25%, transparent);
@@ -494,7 +500,7 @@ textarea {
 .ui-markdown li + li { margin-top: 0.25em; }
 .ui-markdown li > :is(ul, ol) { margin: 0.25em 0 0; }
 .ui-markdown a { color: var(--ui-color-accent); }
-.ui-markdown a:hover { text-decoration: underline; }
+@media (hover: hover) { .ui-markdown a:hover { text-decoration: underline; } }
 .ui-markdown code {
   padding: 0.125em 0.375em;
   border-radius: 0.3125rem;
