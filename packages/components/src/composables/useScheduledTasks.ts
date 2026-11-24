@@ -9,6 +9,9 @@ import { useAccountSession } from "./useAccountSession.ts"
 
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 
+/** Incremented after schedule mutations so sidebar machine lists refresh immediately. */
+export const scheduleSyncRevision = ref(0)
+
 /**
  * The selected machine's scheduled tasks and the actions that change them. One mutation runs
  * at a time; a list response that started before it never replaces its result.
@@ -72,6 +75,7 @@ export function useScheduledTasks() {
       const task = id ? await api!.update(id, input) : await api!.create(input)
       if (!id) track("schedule_action", { action: "create" })
       if (!disposed) replace(task)
+      scheduleSyncRevision.value += 1
       return task
     })
   }
@@ -79,6 +83,7 @@ export function useScheduledTasks() {
     await action(async () => {
       const updated = await api!.update(task.id, { enabled: !task.enabled })
       if (!disposed) replace(updated)
+      scheduleSyncRevision.value += 1
     })
   }
   async function run(task: ScheduledTask): Promise<void> {
@@ -86,6 +91,7 @@ export function useScheduledTasks() {
     const accepted = await action(async () => {
       const result: ScheduleRun = await api!.run(task.id)
       if (!disposed) replace({ ...task, lastRun: result, runs: [result, ...task.runs.filter(run => run.id !== result.id)].slice(0, 50) })
+      scheduleSyncRevision.value += 1
     })
     if (accepted) track("schedule_action", { action: "run" })
     if (accepted && !disposed) await refresh()
@@ -96,6 +102,7 @@ export function useScheduledTasks() {
       await api!.remove(task.id)
       track("schedule_action", { action: "delete" })
       if (!disposed) tasks.value = tasks.value.filter(value => value.id !== task.id)
+      scheduleSyncRevision.value += 1
     })
   }
 

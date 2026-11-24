@@ -23,7 +23,7 @@ async function setup(configure?: (central: ReturnType<typeof fakeCentral>["centr
   configure?.(central, state)
   const account = createAccountSession(central)
   await flushPromises()
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/super-agent", component: SuperAgentView }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/super-agent", name: "super-agent", component: SuperAgentView }] })
   await router.push("/super-agent")
   const wrapper = mount(SuperAgentView, { attachTo: document.body, global: {
     plugins: [createPinia(), i18n, router], provide: { [accountSessionKey as symbol]: account },
@@ -31,13 +31,13 @@ async function setup(configure?: (central: ReturnType<typeof fakeCentral>["centr
   } })
   cleanup.push(() => { wrapper.unmount(); account.dispose() })
   await flushPromises()
-  return { central, account, wrapper, visibility }
+  return { central, account, router, wrapper, visibility }
 }
 
 const at = "2026-11-21T08:00:00Z"
 
 test("starts from a suggested prompt, creates only on send, then resumes committed history at the next cursor", async () => {
-  const { central, wrapper } = await setup()
+  const { central, router, wrapper } = await setup()
   expect(central.createSuperAgentSession).not.toHaveBeenCalled()
   await wrapper.findAll("button").find(button => button.text() === "Plan a release")!.trigger("click")
   expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toContain("release")
@@ -66,12 +66,11 @@ test("starts from a suggested prompt, creates only on send, then resumes committ
   expect(wrapper.get("h1").text()).toBe("Plan our release")
   expect(wrapper.text()).toContain("Shared with Product")
   await wrapper.get('button[aria-label="New conversation"]').trigger("click")
+  await flushPromises()
   expect(wrapper.find('[data-conversation-entry^="input-"]').exists()).toBe(false)
   expect(central.createSuperAgentSession).toHaveBeenCalledTimes(1)
   vi.useRealTimers()
-  await wrapper.get('button[aria-label="Conversations"]').trigger("keydown", { key: "ArrowDown" })
-  await flushPromises()
-  await new DOMWrapper(document.body).get('#super-agent-history [role="menuitem"]').trigger("click")
+  await router.push({ name: "super-agent", query: { session: "hosted:release" } })
   await flushPromises()
   expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0, undefined)
 })
@@ -262,15 +261,6 @@ test("lists unified Cloud and BYOA conversations with engine labels and opens th
   })
 
   vi.useRealTimers()
-  await wrapper.get('button[aria-label="Conversations"]').trigger("keydown", { key: "ArrowDown" })
-  await flushPromises()
-  const historyItems = new DOMWrapper(document.body).findAll('#super-agent-history [role="menuitem"]')
-  expect(historyItems).toHaveLength(2)
-  expect(historyItems[0]!.text()).toContain("Cloud roadmap")
-  expect(historyItems[0]!.text()).toContain("Cloud")
-  expect(historyItems[1]!.text()).toContain("Local audit")
-  expect(historyItems[1]!.text()).toContain("Mac Studio · Claude Code")
-
   await wrapper.get('[data-super-agent-config-trigger]').trigger("click")
   await flushPromises()
   const body = new DOMWrapper(document.body)

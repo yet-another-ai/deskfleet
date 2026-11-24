@@ -266,3 +266,32 @@ test("another machine's pinned session follows its own running, pending, and com
   await pins.refresh(); await flushPromises()
   expect(row("second").find("[data-session-unread]").exists()).toBe(false)
 })
+
+test("pinned rows respect the active sidebar session filter (all / unread / working)", async () => {
+  const { pins, agents, machineId } = await render()
+  const { useLayoutStore } = await import("../../stores/layout.ts")
+  const filter = useLayoutStore().sidebarFilter.filter
+  agents.sessions["30"]!.lastCompletedSeq = "7"
+  agents.sessions["30"]!.lastReadSeq = "7"
+  pins.pin(machineId, "30", "Idle pinned")
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(true)
+
+  filter.value = "unread"
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
+
+  agents.sessions["30"]!.lastCompletedSeq = "8"
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(true)
+
+  filter.value = "working"
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(false)
+
+  const live = agentSnapshot()
+  live.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  agents.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  await flushPromises()
+  expect(wrapper!.find("[data-pinned-sessions]").exists()).toBe(true)
+})

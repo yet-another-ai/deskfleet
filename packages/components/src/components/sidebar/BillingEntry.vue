@@ -1,41 +1,29 @@
 <script setup lang="ts">
-import { CreditCard } from "@lucide/vue"
-import { useAsyncState, useEventListener } from "@vueuse/core"
-import { computed, watch } from "vue"
+import { Sparkles } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { useTeamBilling } from "../../composables/useTeamBilling.ts"
 import { trackEvent } from "../../services/analytics.ts"
-import UiButton from "../common/UiButton.vue"
 
 const account = useAccountSession()!
 const { t } = useI18n()
-const scope = computed(() => JSON.stringify([account.account.value.user?.id, account.team.value?.id, account.team.value?.role]))
-const { state, executeImmediate: load } = useAsyncState(async () => {
-  const key = scope.value
-  const team = account.team.value
-  if (!team) return undefined
-  return { key, billing: await account.central.billing(team.id) }
-}, undefined, { immediate: false, resetOnExecute: false, onError: () => {} })
-watch(scope, () => { void load() }, { immediate: true })
-useEventListener(window, "focus", () => { void load() })
-const billing = computed(() => state.value?.key === scope.value ? state.value.billing : undefined)
-const upgrade = computed(() => billing.value?.plan === "free" && billing.value.paymentsAvailable && billing.value.canManageBilling && !billing.value.manualGrant && !billing.value.enterpriseOverride && (!billing.value.subscription || ["canceled", "incomplete_expired"].includes(billing.value.subscription.status)))
-const action = computed(() => upgrade.value ? "upgrade" as const : "view" as const)
+const { billing, canUpgrade } = useTeamBilling(account)
+
 function open(): void {
-  trackEvent("billing_entry_clicked", { source: "sidebar", current_plan: billing.value?.plan, action: action.value })
+  trackEvent("billing_entry_clicked", { source: "sidebar", current_plan: billing.value?.plan, action: "upgrade" })
   account.openSettings("plans")
 }
 </script>
 
 <template>
-  <div class="shrink-0 px-3 py-3" data-billing-entry>
-    <div class="mb-2 flex min-w-0 items-center justify-between gap-2 text-xs text-ui-text-muted">
-      <span class="truncate">{{ account.team.value?.name }}</span>
-      <span v-if="billing" class="shrink-0">{{ t(`billing.plan.${billing.plan}`) }}</span>
-    </div>
-    <UiButton class="w-full" :variant="upgrade ? 'primary' : 'default'" @click="open">
-      <CreditCard :size="15" :stroke-width="1.75" aria-hidden="true" />
-      {{ t(upgrade ? "billing.upgradePlan" : "billing.plansAndBilling") }}
-    </UiButton>
+  <div v-if="canUpgrade" class="shrink-0 px-2 pb-1.5" data-billing-entry>
+    <button
+      type="button"
+      class="ui-nav-item w-full bg-ui-accent/10 px-2.5 text-ui-accent hover:bg-ui-accent/18 hover:text-ui-accent active:bg-ui-accent/22"
+      @click="open"
+    >
+      <Sparkles :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate text-left font-medium">{{ t("billing.upgradePlan") }}</span>
+    </button>
   </div>
 </template>

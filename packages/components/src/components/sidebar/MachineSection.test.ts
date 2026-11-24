@@ -31,6 +31,7 @@ async function setup(
     routes: [
       { path: "/", name: "new-session", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
+      { path: "/workspaces/:workspaceId", name: "workspace", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
       { path: "/terminals/:terminalId", name: "terminal", component: {} },
     ],
@@ -60,14 +61,15 @@ test("hides a stale battery indicator when the machine is offline", async () => 
 })
 
 test.each([
-  { local: true, desktop: true, label: "Local control" },
-  { local: true, desktop: false, label: "Local control" },
-  { local: false, desktop: true, label: "Remote control" },
-  { local: false, desktop: false, label: "Remote control" },
-])("machines expose one control entry with local=$local and desktop=$desktop", async ({ local, desktop, label }) => {
+  { local: true, desktop: true, expected: "Local control" },
+  { local: true, desktop: false, expected: "Local control" },
+  { local: false, desktop: true, expected: "Remote control" },
+  { local: false, desktop: false, expected: "Remote control" },
+])("machine header folds cleanly and renders a single control entry (local=$local, desktop=$desktop)", async ({ local, desktop, expected }) => {
   const { wrapper, router } = await setup({ local, desktop })
   const links = wrapper.findAll("a")
-  expect(links.map(link => link.text())).toEqual([label])
+  expect(links).toHaveLength(1)
+  expect(links[0]!.text()).toBe(expected)
   expect(wrapper.text().includes("This machine")).toBe(local)
   expect(links[0]!.attributes("href")).toBe("/machines/local-daemon/control")
   expect(links[0]!.attributes("aria-current")).toBe("page")
@@ -97,7 +99,7 @@ test("new session buttons select their workspace, including from the creation pa
   wrapper.unmount()
 })
 
-test("workspace rows fold terminals and sessions without navigating", async () => {
+test("workspace folders fold their terminals and sessions without navigating", async () => {
   const { wrapper, router } = await setup({
     desktop: true,
     workspaces: [{
@@ -106,7 +108,7 @@ test("workspace rows fold terminals and sessions without navigating", async () =
       sessions: [{ id: "session", title: "Implement feature", provider: "Codex", archiveState: "active" }],
     }],
   })
-  expect(wrapper.findAll("a").map(link => [link.text(), link.attributes("href")])).toEqual([
+  expect(wrapper.findAll("a").map(link => [link.text().trim(), link.attributes("href")])).toEqual([
     ["Local control", "/machines/local-daemon/control"],
     ["Workspace shell", "/terminals/workspace-shell"],
     ["Implement feature", "/sessions/session"],
@@ -184,7 +186,15 @@ test("an offline workspace cannot open a terminal", async () => {
 
 test("a workspace terminal on another machine opens that machine's terminal route", async () => {
   const openMachineRoute = vi.fn()
-  const account = { machineId: ref("selected-machine"), localMachineId: ref("local-daemon"), openMachineRoute } as unknown as AccountSession
+  const account = {
+    account: ref({ serverUrl: "https://example.invalid", user: undefined }),
+    teamId: ref<string | null>(null),
+    machines: ref([]),
+    central: { session: vi.fn(), onEvent: () => () => {} },
+    machineId: ref("selected-machine"),
+    localMachineId: ref("local-daemon"),
+    openMachineRoute,
+  } as unknown as AccountSession
   const { wrapper, router } = await setup({
     id: "remote-machine", local: false,
     workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/remote/project" }], terminals: [], sessions: [] }],
@@ -484,5 +494,58 @@ test.each(["machine", "workspace"] as const)("%s hover Archive confirms before a
   expect(router.currentRoute.value.name).toBe("machine-control")
   finishArchive()
   await flushPromises()
+  wrapper.unmount()
+})
+
+test("pinned sessions are deduplicated out of the machine tree and reappear on unpin", async () => {
+  const { usePinnedSessionsStore } = await import("../../stores/pinned-sessions.ts")
+  const { wrapper } = await setup({
+    workspaces: [{
+      id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [],
+      sessions: [
+        { id: "pinned-session", title: "Pinned chat", archiveState: "active" },
+        { id: "other-session", title: "Regular chat", archiveState: "active" },
+      ],
+    }],
+  })
+  const pins = usePinnedSessionsStore()
+  expect(wrapper.find('a[href="/sessions/pinned-session"]').exists()).toBe(true)
+  pins.pin("local-daemon", "pinned-session", "Pinned chat")
+  await flushPromises()
+  expect(wrapper.find('a[href="/sessions/pinned-session"]').exists()).toBe(false)
+  expect(wrapper.find('a[href="/sessions/other-session"]').exists()).toBe(true)
+
+  pins.unpin("local-daemon", "pinned-session")
+  await flushPromises()
+  expect(wrapper.find('a[href="/sessions/pinned-session"]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+test("workspace-less sessions fold inside the Chat folder, bubble working state, and start no-workspace sessions", async () => {
+  const { wrapper, router } = await setup({
+    sessions: [{ id: "machine-session", title: "Machine chat", provider: "Codex", archiveState: "active" }],
+    workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions: [] }],
+  })
+  const fleet = useFleetStore()
+  fleet.targetWorkspace("workspace")
+  const folder = wrapper.get('button[aria-label="Chat"]')
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  expect(wrapper.get('a[href="/sessions/machine-session"]').text()).toBe("Machine chat")
+
+  markWorking("machine-session")
+  await flushPromises()
+  expect(folder.find("[data-session-working]").exists()).toBe(false)
+
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('a[href="/sessions/machine-session"]').exists()).toBe(false)
+  expect(folder.get("[data-session-working]").attributes("data-session-working")).toBe("working")
+
+  const newButtons = wrapper.findAll('button[aria-label="New session"]')
+  await newButtons[0]!.trigger("click")
+  await flushPromises()
+  expect(fleet.targetWorkspaceId).toBeNull()
+  expect(router.currentRoute.value.name).toBe("new-session")
+  expect(folder.attributes("aria-expanded")).toBe("false")
   wrapper.unmount()
 })

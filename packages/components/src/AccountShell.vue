@@ -19,7 +19,6 @@ import TeamOnboarding from "./components/account/TeamOnboarding.vue"
 import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import AppUpdateNotice from "./components/sidebar/AppUpdateNotice.vue"
-import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
 import SidebarLink from "./components/sidebar/SidebarLink.vue"
 import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
@@ -170,7 +169,6 @@ if (props.host.onboarding) void loadOnboarding()
       <div v-else class="flex min-h-0 flex-1 flex-col md:flex-row md:overflow-clip" :class="route.name === 'super-agent' ? 'overflow-clip' : 'overflow-y-auto'">
         <aside class="flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-sidebar pt-2 md:w-65 md:border-b-0 md:border-r md:pt-0">
           <div class="app-drag hidden h-12 shrink-0 md:block" />
-          <TeamSwitcher v-if="teams.length" />
           <nav v-if="session.superAgentEnabled.value" :aria-label="t('nav.label')" class="flex gap-1 px-2 pb-2 md:flex-col">
             <SidebarLink :to="{ name: 'new-session' }" :icon="Monitor" :label="t('team.machines')" />
             <SidebarLink :to="{ name: 'super-agent' }" :icon="Orbit" :label="t('superAgent.title')" />

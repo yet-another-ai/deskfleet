@@ -145,7 +145,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(central.catalog).not.toHaveBeenCalledWith("7", "101")
   account.openSession("102", "30")
   await settled(() => expect(page().get("main").text()).toContain("Message from 102"))
-  await page().get('button[aria-label="Ada"]').trigger("click")
+  await page().get('[data-account-menu] button').trigger("click")
   await page().findAll('button[role="menuitem"]').find(button => button.text() === "Sign out")!.trigger("click")
   await flushPromises()
   expect(document.title).toBe("DeskFleet")
@@ -237,7 +237,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
   fake.central.machines.mockClear()
   revision++
 
-  await buttonText("Refresh")!.trigger("click")
+  await page().get('button[aria-label="Refresh"]').trigger("click")
   await settled(() => {
     const sidebar = page().get("aside").text()
     expect(sidebar).toContain("Workspace m1 revision 1")
@@ -286,7 +286,7 @@ test("refreshing to another account remounts the same Team machine in its new id
 
   await account.reload()
   await settled(() => {
-    expect(page().find('button[aria-label="Grace"]').exists()).toBe(true)
+    expect(page().get("[data-account-menu] button").text()).toContain("Grace")
     expect(page().get("aside").text()).toContain("Shared machine")
     expect(fake.central.catalog).toHaveBeenCalledWith("team-1", "m1")
   })
@@ -359,15 +359,14 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   expect(router.currentRoute.value.path).toBe("/sessions/archived")
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
 
-  // Returning from the archive on the same machine retains its selected Session.
-  const conversations = () => page().get('a[aria-label="Conversations"]')
+  // Returning from the archive on the same machine can open its Session directly from the Conversations sidebar panel.
   await router.push("/sessions/30")
   await settled(() => expect(fake.central.session).toHaveBeenCalledWith("team-1", "m1", "30"))
   await router.push("/sessions/archived")
   await flushPromises()
-  expect(conversations().attributes("href")).toBe("#/sessions/30")
-  await conversations().trigger("click"); await flushPromises()
-  expect(router.currentRoute.value.path).toBe("/sessions/30")
+  expect(page().get('button[role="tab"][aria-label="Conversations"]').attributes("aria-selected")).toBe("true")
+  await page().get('aside a[href="#/"]').trigger("click"); await flushPromises()
+  expect(router.currentRoute.value.path).toBe("/")
   await router.push("/sessions/archived"); await flushPromises()
 
   await page().get('main nav[aria-label="Machine"]').findAll("button").find(button => button.text() === "Laptop Offline")!.trigger("click")
@@ -379,8 +378,7 @@ test("keeps archived lists and their Conversations return path scoped to the sel
   expect(page().find('aside[aria-label="Changes"]').exists()).toBe(false)
   // The second machine also has Session 30, but it must not inherit the first
   // machine's selection when leaving this management list.
-  expect(conversations().attributes("href")).toBe("#/")
-  await conversations().trigger("click"); await flushPromises()
+  await page().get('aside a[href="#/"]').trigger("click"); await flushPromises()
   expect(router.currentRoute.value.path).toBe("/")
   expect(fake.central.session).not.toHaveBeenCalledWith("team-1", "m2", "30")
 })
@@ -389,7 +387,7 @@ test("a user without a Team creates one from onboarding and is asked to add a ma
   const fake = fakeCentral({ teams: [] })
   mountShell(fake.central, "web")
   await flushPromises()
-  expect(page().find('button[aria-label="Team"]').exists()).toBe(false)
+  expect(page().find("[data-team-plan-badge]").exists()).toBe(false)
   expect(view!.text()).toContain("Welcome, Ada")
   await buttonText("Create a teamStart a new team and invite others to it.")!.trigger("click")
   await flushPromises()
@@ -404,15 +402,15 @@ test("a user without a Team creates one from onboarding and is asked to add a ma
   await page().get("[role=dialog] form").trigger("submit")
   await flushPromises()
   await vi.waitFor(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(page().get('button[aria-label="Team"]').text()).toContain("Platform")
+  expect(page().get("[data-account-menu] button").text()).toContain("Platform")
   expect(page().get("main h1").text()).toBe("Add a machine to Platform")
 })
 
-test("joining from the Team menu selects the joined Team", async () => {
+test("joining from the unified identity menu selects the joined Team", async () => {
   const fake = fakeCentral()
   mountShell(fake.central, "web")
   await flushPromises()
-  const trigger = page().get<HTMLButtonElement>('button[aria-label="Team"]')
+  const trigger = page().get<HTMLButtonElement>("[data-account-menu] button")
   await trigger.trigger("keydown", { key: "ArrowDown" })
   await flushPromises()
   expect(document.activeElement).toBe(page().get('[data-team-id="team-1"]').element)
@@ -428,10 +426,10 @@ test("joining from the Team menu selects the joined Team", async () => {
   expect(trigger.text()).toContain("Invited team")
 })
 
-test.each(["Create a team", "Join a team"])("keyboard %s cancellation returns focus to the Team menu trigger", async (label) => {
+test.each(["Create a team", "Join a team"])("keyboard %s cancellation returns focus to the unified identity menu trigger", async (label) => {
   mountShell(fakeCentral().central, "web")
   await flushPromises()
-  const trigger = page().get<HTMLButtonElement>('button[aria-label="Team"]')
+  const trigger = page().get<HTMLButtonElement>("[data-account-menu] button")
   trigger.element.focus()
   await trigger.trigger("keydown", { key: "ArrowDown" })
   await flushPromises()
@@ -452,7 +450,7 @@ test("a Team without machines opens its own settings and can add a machine", asy
   const fake = fakeCentral()
   mountShell(fake.central)
   await flushPromises()
-  await page().get('button[aria-label="Team"]').trigger("click")
+  await page().get("[data-account-menu] button").trigger("click")
   await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Design team"))
@@ -478,10 +476,10 @@ test.each([
   })
   withEmptyCatalogs(fake)
   mountShell(fake.central, platform)
-  await settled(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  await settled(() => expect(page().find("[data-account-menu] button").exists()).toBe(true))
   const source = "/?from=settings-navigation"
   await router.push(source)
-  await page().get('button[aria-label="Team"]').trigger("click")
+  await page().get("[data-account-menu] button").trigger("click")
   await page().findAll('[role="menuitem"]').find(item => item.text() === "Team settings")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Design team"))
   expect(router.currentRoute.value.path).toBe("/team/settings")
@@ -635,7 +633,7 @@ test("a removed computer offers reconnection, which reopens the same machine", a
   await page().get("form").trigger("submit")
   await flushPromises()
   // Signing back in returns to the Team this computer belonged to.
-  expect(page().get('button[aria-label="Team"]').text()).toContain("Original team")
+  expect(page().get("[data-account-menu] button").text()).toContain("Original team")
   expect(view!.text()).toContain("This computer was removed from this Team")
   await buttonText("Reconnect this computer")!.trigger("click")
   await flushPromises()
@@ -690,13 +688,19 @@ test("the selected machine shows when central presence reports it offline", asyn
 test.each(["sidebar", "team_menu"] as const)("billing entry %s opens current Team plans and records its source without a machine", async source => {
   const events = vi.spyOn(analytics, "trackEvent")
   const fake = fakeCentral()
+  fake.central.billing.mockResolvedValue({
+    ...(await fake.central.billing("team-1")),
+    plan: "free",
+    paymentsAvailable: true,
+    canManageBilling: true,
+  })
   mountShell(fake.central, "web")
   await settled(() => expect(page().find("[data-billing-entry]").exists()).toBe(true))
   const origin = "/?from=billing-entry"
   await router.push(origin)
   if (source === "sidebar") await page().get("[data-billing-entry] button").trigger("click")
   else {
-    await page().get('button[aria-label="Team"]').trigger("click")
+    await page().get("[data-account-menu] button").trigger("click")
     await page().findAll('[role="menuitem"]').find(item => item.text() === "Plans & billing")!.trigger("click")
   }
   await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
@@ -710,9 +714,9 @@ test("mobile hides the sidebar billing entry and labels Team usage navigation wi
   const events = vi.spyOn(analytics, "trackEvent")
   const fake = fakeCentral()
   mountShell(fake.central, "web", true)
-  await settled(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  await settled(() => expect(page().find("[data-account-menu] button").exists()).toBe(true))
   expect(page().find("[data-billing-entry]").exists()).toBe(false)
-  await page().get('button[aria-label="Team"]').trigger("click")
+  await page().get("[data-account-menu] button").trigger("click")
   const items = page().findAll('[role="menuitem"]').map(item => item.text())
   expect(items).toContain("Usage")
   expect(items).not.toContain("Plans & billing")

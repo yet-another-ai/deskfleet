@@ -101,7 +101,7 @@ test("the app targets a workspace and waits for Session metadata without exposin
   expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
-test("Pinned sessions appear above Workspaces while retaining their workspace entry", async () => {
+test("Pinned sessions appear above Machines and are deduplicated from the workspace tree", async () => {
   const pinia = createPinia()
   hydrateSession(pinia, "Pinned investigation")
   const wrapper = await mountApp("/", pinia)
@@ -109,10 +109,10 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
   await flushPromises()
   const sidebar = wrapper.get("aside")
   const pinned = sidebar.get("[data-pinned-sessions]")
-  const workspaces = sidebar.findAll("span").find(element => element.text() === "Workspaces")!
-  expect(pinned.element.compareDocumentPosition(workspaces.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const machines = sidebar.findAll("span").find(element => element.text() === "Machines")!
+  expect(pinned.element.compareDocumentPosition(machines.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(pinned.text()).toContain("Pinned investigation")
-  expect(sidebar.get(`a[href="#/sessions/${sessionId}"]`).text()).toBe("Pinned investigation")
+  expect(sidebar.find(`a[href="#/sessions/${sessionId}"]`).exists()).toBe(false)
 })
 
 test("the archive route retains the sidebar without tiled windows", async () => {
@@ -121,7 +121,7 @@ test("the archive route retains the sidebar without tiled windows", async () => 
   const wrapper = await mountApp("/sessions/archived", pinia)
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(wrapper.get("main h1").text()).toBe("Archived sessions")
-  expect(wrapper.get("aside").text()).toContain("Workspaces")
+  expect(wrapper.get("aside").text()).toContain("Machines")
   expect(wrapper.get('[data-archived-sessions]').attributes("aria-current")).toBe("page")
   expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
   expect(wrapper.find('[aria-label="Add window"]').exists()).toBe(false)
@@ -369,12 +369,12 @@ test("the workspace sidebar opens a terminal in its default directory and retain
 test("refresh failure preserves the workspace and disables its terminal action until retry", async () => {
   const wrapper = await mountApp()
   vi.mocked(platformClient.catalog.list).mockRejectedValueOnce(new Error("Daemon disconnected"))
-  await button(wrapper, "Refresh").trigger("click")
+  await wrapper.get('button[aria-label="Refresh"]').trigger("click")
   await flushPromises()
   expect(wrapper.get('aside [role="alert"]').text()).toBe("Daemon disconnected")
   expect(wrapper.find('button[aria-label="storefront"]').exists()).toBe(true)
   expect(wrapper.get('button[aria-label="Open terminal in default directory"]').attributes("aria-disabled")).toBe("true")
-  await button(wrapper, "Refresh").trigger("click")
+  await wrapper.get('button[aria-label="Refresh"]').trigger("click")
   await flushPromises()
   expect(wrapper.get('button[aria-label="Open terminal in default directory"]').attributes("aria-disabled")).toBeUndefined()
 })
@@ -454,9 +454,9 @@ test("the internal main worktree has no directly accessible page", async () => {
   const wrapper = await mountApp(`/worktrees/${mainWorktreeId}`)
   expect(wrapper.get("main").text()).toContain("This worktree does not exist.")
   expect(wrapper.get("main").text()).not.toContain("/code/web")
-  // The current section links to the requested URL; no resource advertises this worktree.
+  // No resource link advertises this internal main worktree.
   const links = wrapper.findAll(`a[href="#/worktrees/${mainWorktreeId}"]`)
-  expect(links.map(link => link.attributes("aria-label"))).toEqual(["Conversations"])
+  expect(links).toHaveLength(0)
 })
 
 test("the localized composer and local footer do not expose an internal main worktree", async () => {
@@ -791,11 +791,15 @@ test("desktop Session menus open a focused standalone window while web and mobil
   }
 
   const mainPinia = hydrate()
-  usePinnedSessionsStore(mainPinia).pin("local-daemon", sessionId, "Inspect menu")
   const wrapper = await mountApp(`/sessions/${sessionId}`, mainPinia, true)
   const expectedUrl = `${window.location.origin}${window.location.pathname}#/sessions/${sessionId}?window=session&machineId=local-daemon`
+  await wrapper.get(`aside section[data-machine-id="local-daemon"] a[href="#/sessions/${sessionId}"]`).trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 })
+  await flushPromises()
+  await new DOMWrapper(document.body).get('[data-session-action="open-in-new-window"]').trigger("click"); await flushPromises()
+
+  usePinnedSessionsStore(mainPinia).pin("local-daemon", sessionId, "Inspect menu")
+  await flushPromises()
   for (const trigger of [
-    () => wrapper.get(`aside section[data-machine-id="local-daemon"] a[href="#/sessions/${sessionId}"]`).trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }),
     () => wrapper.get("aside [data-pinned-sessions] button").trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }),
     () => new DOMWrapper(document.body).get('[aria-label="Session actions"]').trigger("click"),
   ]) {

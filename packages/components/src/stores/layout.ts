@@ -8,6 +8,7 @@ import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
 import { createSidebarOrder } from "../composables/useSidebarOrder.ts"
+import { createSidebarPanel, panelForRouteName } from "../composables/useSidebarPanel.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
 import { scrollToConversationEntry } from "../services/conversation-locate.ts"
 
@@ -120,6 +121,8 @@ export const useLayoutStore = defineStore("layout", () => {
   const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)
   /** Non-persistent filter shared in local-only mode when MachineRuntimes is absent. */
   const sidebarFilter = markRaw(createSidebarFilter())
+  /** Active sidebar panel in local-only mode when MachineRuntimes is absent. */
+  const sidebarPanel = markRaw(createSidebarPanel(panelForRouteName(router.currentRoute.value.name) ?? "conversations"))
 
   function toggleSidebar(): void {
     if (standaloneSession.value) return
@@ -159,6 +162,7 @@ export const useLayoutStore = defineStore("layout", () => {
     terminalPanelHeight,
     sidebarFilter,
     sidebarOrder,
+    sidebarPanel,
     toggleSidebar,
     toggleDetails,
     requestDetailsOpen,

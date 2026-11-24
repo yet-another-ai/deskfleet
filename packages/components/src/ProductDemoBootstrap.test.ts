@@ -14,7 +14,7 @@ test("the first website demo mounts with no platform adapter configured at start
   try {
     expect(getClient().locale).toBe("ja-JP")
     expect(target.lang).toBe("ja-JP")
-    expect(target.querySelector('a[href="/desktops"]')).toBeInstanceOf(HTMLAnchorElement)
+    expect(target.querySelector('[data-sidebar-tab="desktops"]')).toBeInstanceOf(HTMLButtonElement)
   } finally {
     cleanup()
   }

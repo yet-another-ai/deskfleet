@@ -14,7 +14,7 @@ const client = usePlatformClient()
 
 <template>
   <BillingEntry v-if="session.team.value && !client.mobile" />
-  <footer class="flex h-12 shrink-0 items-center gap-1 border-t border-ui-border px-2">
+  <footer class="flex h-13 shrink-0 items-center gap-1 border-t border-ui-border px-2">
     <AccountMenu />
     <slot />
     <UiButton variant="ghost" size="icon" :label="t('nav.settings')" @click="session.openSettings('preferences')"><Settings :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>

@@ -1,6 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
+import { defineComponent, h } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
+import SidebarSearchPanel from "../components/sidebar/SidebarSearchPanel.vue"
 import { initializeAnalytics, shutdownAnalytics } from "../services/analytics.ts"
 import { accountSessionKey, createAccountSession } from "../composables/useAccountSession.ts"
 import { fakeCentral } from "../test/central.ts"
@@ -13,6 +16,8 @@ afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) dispo
 test.each(["web", "macos"] as const)("%s can search through a direct link without Statsig", async platform => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
   initializeAnalytics({ platform, environment: "test" })
+  const pinia = createPinia()
+  setActivePinia(pinia)
   const fake = fakeCentral()
   const account = createAccountSession(fake.central)
   await flushPromises()
@@ -21,8 +26,9 @@ test.each(["web", "macos"] as const)("%s can search through a direct link withou
     { path: "/search", name: "search", component: SearchView },
   ] })
   await router.push("/search?q=private")
-  const wrapper = mount(SearchView, { global: { plugins: [router, i18n], stubs: { PaneHeader: { template: "<header><slot /></header>" } }, provide: { [accountSessionKey as symbol]: account } } })
-  cleanup.push(() => { wrapper.unmount(); account.dispose() })
+  const Host = defineComponent({ render: () => h("div", [h(SearchView), h(SidebarSearchPanel)]) })
+  const wrapper = mount(Host, { global: { plugins: [pinia, router, i18n], stubs: { PaneHeader: { template: "<header><slot /></header>" } }, provide: { [accountSessionKey as symbol]: account } } })
+  cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   await vi.advanceTimersByTimeAsync(300)
   await flushPromises()
   expect(fake.central.search).toHaveBeenCalledExactlyOnceWith("team-1", { q: "private", kind: "all", limit: 30 })
