@@ -31,7 +31,7 @@ mod tests;
 
 pub(crate) const PADDING: f32 = 4.;
 pub(crate) const GRIP_WIDTH: f32 = 20.;
-pub(crate) const MOBILE_GRIP_WIDTH: f32 = 44.;
+pub(crate) const BAR_CONTROL_HEIGHT: f32 = 28.;
 pub(crate) const MOBILE_CONTROL_HEIGHT: f32 = 40.;
 
 #[derive(Clone)]
@@ -227,9 +227,9 @@ fn surface(state: &ToolbarState, live: Live) -> impl IntoElement + use<> {
     }
     root = root.child(bar::bar(state, live, p));
     // Hosts keep at most one panel open; a stale panel never outlives the
-    // connection or a collapsed mobile bar.
+    // connection or a collapsed bar.
     match state.panel {
-        Some(_) if !connected || (state.mobile && state.collapsed) => {}
+        Some(_) if !connected || state.collapsed => {}
         Some(Panel::Control) => root = root.child(input::panel(state, live, p)),
         Some(Panel::Config) => root = root.child(config::panel(state, p)),
         Some(Panel::Monitor) => root = root.child(monitor::panel(state, live, p)),

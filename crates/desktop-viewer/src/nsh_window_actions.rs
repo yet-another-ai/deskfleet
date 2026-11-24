@@ -31,6 +31,15 @@ impl Viewer {
                     self.toolbar_state.panel = Some(panel);
                 }
             }
+            ToolbarAction::ToggleCollapsed => {
+                self.toolbar_state.collapsed = !self.toolbar_state.collapsed;
+                self.toolbar_state.panel = None;
+                self.select_open = false;
+                if self.toolbar_state.collapsed {
+                    self.keyboard_focus.resume();
+                    self.resume_focus(window, cx);
+                }
+            }
             ToolbarAction::ToggleHackerKeyboard if self.toolbar_state.controls_enabled() => {
                 self.toolbar_state.panel = None;
             }

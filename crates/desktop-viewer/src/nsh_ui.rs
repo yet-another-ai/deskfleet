@@ -127,8 +127,8 @@ pub(crate) fn status(ui: &UiState) -> String {
 }
 
 /// The same Lucide paths used by DesktopView.vue; see ../LICENSE-lucide.
-pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + use<> {
-    let paths = match name {
+fn icon_paths(name: &str) -> &'static str {
+    match name {
         "grip" => {
             r#"<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>"#
         }
@@ -157,8 +157,8 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
             r#"<rect x="2" y="3" width="20" height="18" rx="2"/><path d="m6 8 4 4-4 4m7 0h5"/>"#
         }
         "close" => r#"<path d="m6 6 12 12M6 18 18 6"/>"#,
-        "collapse" => r#"<path d="M5 12h14"/>"#,
-        "expand" => r#"<path d="M5 12h14m-7-7v14"/>"#,
+        "collapse" => r#"<path d="m15 18-6-6 6-6"/>"#,
+        "expand" => r#"<path d="m9 18 6-6-6-6"/>"#,
         "chevron" => r#"<path d="m6 9 6 6 6-6"/>"#,
         "check" => r#"<path d="m9 12 2 2 4-4"/>"#,
         "activity" => {
@@ -181,7 +181,12 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
         _ => {
             r#"<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4m-4 0h8m-5-14 5 3-5 3z"/>"#
         }
-    };
+    }
+}
+
+/// The same Lucide paths used by DesktopView.vue; see ../LICENSE-lucide.
+pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + use<> {
+    let paths = icon_paths(name);
     let markup = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#{color:06x}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>"##
     );
@@ -243,6 +248,12 @@ mod tests {
                 if drawing.ops.iter().any(|op| matches!(op, CanvasOp::Stroke(_))))
         });
         assert_eq!(drawn.count(), CONTROL_ICONS.len());
+    }
+
+    #[test]
+    fn collapse_and_expand_use_chevron_arrows() {
+        assert_eq!(icon_paths("collapse"), r#"<path d="m15 18-6-6 6-6"/>"#);
+        assert_eq!(icon_paths("expand"), r#"<path d="m9 18 6-6-6-6"/>"#);
     }
 
     #[test]

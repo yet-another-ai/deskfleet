@@ -3,7 +3,7 @@
 use nsh_base::{button, switch, tooltip};
 use nsh_core::prelude::*;
 
-use super::{Panel, ToolbarAction, ToolbarState, control_extent, emit};
+use super::{BAR_CONTROL_HEIGHT, Panel, ToolbarAction, ToolbarState, control_extent, emit};
 use crate::nsh_ui::{Palette, icon};
 
 pub(crate) const PANEL_WIDTH: f32 = 288.;
@@ -70,7 +70,7 @@ pub(super) fn icon_button(
     palette: Palette,
     disabled: bool,
 ) -> impl IntoElement {
-    let extent = control_extent(28.);
+    let extent = BAR_CONTROL_HEIGHT;
     view()
         .w(px(extent))
         .h(px(extent))
@@ -101,9 +101,9 @@ pub(super) fn trigger<C: IntoElement>(
 ) -> impl IntoElement + use<C> {
     let open = state.panel == Some(panel);
     let mut trigger = button()
-        .h(px(control_extent(28.)))
-        .min_w(px(control_extent(28.)))
-        .px(px(if state.mobile { 8. } else { 6. }))
+        .h(px(BAR_CONTROL_HEIGHT))
+        .min_w(px(BAR_CONTROL_HEIGHT))
+        .px(px(6.))
         .flex_row()
         .items_center()
         .justify_center()

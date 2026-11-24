@@ -315,3 +315,40 @@ fn panel_contract_and_bitrate_formatting() {
     assert_eq!(monitor::bitrate(4_240_000), ("4.2".into(), "Mbps"));
     assert_eq!(monitor::bitrate(812_400), ("812".into(), "kbps"));
 }
+
+#[test]
+fn toolbar_toggles_between_expanded_and_collapsed_controls() {
+    for mobile in [false, true] {
+        let mut state = connected(mobile);
+        let expanded = labels(&mount(state.clone()).1);
+        assert!(expanded.contains(&"Collapse controls".to_string()));
+        assert!(!expanded.contains(&"Expand controls".to_string()));
+        for wanted in ["Control", "Config", "Monitor · Waiting for video · —"] {
+            assert!(
+                expanded.contains(&wanted.to_string()),
+                "{wanted} in {expanded:?}"
+            );
+        }
+        assert_eq!(expanded.contains(&"Full screen".to_string()), !mobile);
+
+        state.collapsed = true;
+        state.panel = Some(Panel::Config);
+        state.fullscreen = true;
+        let collapsed = labels(&mount(state).1);
+        assert!(collapsed.contains(&"Expand controls".to_string()));
+        assert!(!collapsed.contains(&"Collapse controls".to_string()));
+        for hidden in [
+            "Control",
+            "Config",
+            "Monitor · Waiting for video · —",
+            "Full screen",
+            "Exit full screen",
+            "Close panel",
+        ] {
+            assert!(
+                !collapsed.contains(&hidden.to_string()),
+                "{hidden} hidden in {collapsed:?}"
+            );
+        }
+    }
+}

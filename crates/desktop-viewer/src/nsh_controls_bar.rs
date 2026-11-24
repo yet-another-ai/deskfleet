@@ -8,8 +8,7 @@ use nsh_core::prelude::*;
 
 use super::widgets::{hint, icon_button, trigger};
 use super::{
-    GRIP_WIDTH, Live, MOBILE_CONTROL_HEIGHT, MOBILE_GRIP_WIDTH, PADDING, Panel, ToolbarAction,
-    ToolbarState, emit,
+    BAR_CONTROL_HEIGHT, GRIP_WIDTH, Live, PADDING, Panel, ToolbarAction, ToolbarState, emit,
 };
 use crate::nsh_ui::{Palette, icon, label};
 use crate::protocol::Status;
@@ -93,16 +92,8 @@ fn grip(state: &ToolbarState, p: Palette) -> impl IntoElement {
     view()
         .role(AccessibilityRole::Button)
         .on_press(|| emit(ToolbarAction::FocusHandle))
-        .w(px(if state.mobile {
-            MOBILE_GRIP_WIDTH
-        } else {
-            GRIP_WIDTH
-        }))
-        .h(px(if state.mobile {
-            MOBILE_CONTROL_HEIGHT
-        } else {
-            28.
-        }))
+        .w(px(GRIP_WIDTH))
+        .h(px(BAR_CONTROL_HEIGHT))
         .flex_shrink_0()
         .rounded(px(6.))
         .items_center()
@@ -130,36 +121,29 @@ fn control_trigger(state: &ToolbarState, p: Palette) -> impl IntoElement {
     } else {
         p.muted
     };
-    let mut content =
-        view()
-            .flex_row()
-            .items_center()
-            .gap(px(6.))
-            .child(icon(mode.icon(state), color, 16.));
-    if !state.mobile {
-        content = content
-            .child(text(current).text_size(px(13.)).text_color(rgb(color)))
-            .child(icon("chevron", p.faint, 12.));
-    }
+    let content = view()
+        .flex_row()
+        .items_center()
+        .gap(px(6.))
+        .child(icon(mode.icon(state), color, 16.))
+        .child(text(current).text_size(px(13.)).text_color(rgb(color)))
+        .child(icon("chevron", p.faint, 12.));
     trigger(state, Panel::Control, accessible, content, p)
 }
 
 fn config_trigger(state: &ToolbarState, p: Palette) -> impl IntoElement {
     let title = label(state.ui.locale.as_deref(), "panelConfig");
-    let mut content = view()
+    let content = view()
         .flex_row()
         .items_center()
         .gap(px(6.))
-        .child(icon("settings", p.muted, 16.));
-    if !state.mobile {
-        content = content
-            .child(
-                text(title.clone())
-                    .text_size(px(13.))
-                    .text_color(rgb(p.text)),
-            )
-            .child(icon("chevron", p.faint, 12.));
-    }
+        .child(icon("settings", p.muted, 16.))
+        .child(
+            text(title.clone())
+                .text_size(px(13.))
+                .text_color(rgb(p.text)),
+        )
+        .child(icon("chevron", p.faint, 12.));
     trigger(state, Panel::Config, title, content, p)
 }
 
@@ -228,24 +212,7 @@ pub(super) fn bar(state: &ToolbarState, live: Live, p: Palette) -> impl IntoElem
             ))
         })
         .child(grip(state, p));
-    if state.mobile && connected {
-        let (key, name) = if state.collapsed {
-            ("expandControls", "expand")
-        } else {
-            ("collapseControls", "collapse")
-        };
-        bar = bar.child(icon_button(
-            label(locale, key),
-            name,
-            ToolbarAction::ToggleCollapsed,
-            p,
-            false,
-        ));
-        if state.collapsed {
-            return bar;
-        }
-    }
-    if connected {
+    if connected && !state.collapsed {
         let snapshot = state.clone();
         bar = bar
             .child(control_trigger(state, p))
@@ -254,7 +221,7 @@ pub(super) fn bar(state: &ToolbarState, live: Live, p: Palette) -> impl IntoElem
                 monitor_trigger(&snapshot, &live.stats.get(), p)
             }));
     }
-    if !state.mobile && (connected || state.fullscreen) {
+    if !state.mobile && ((connected && !state.collapsed) || (!connected && state.fullscreen)) {
         let (key, name) = if state.fullscreen {
             ("exitFullscreen", "minimize")
         } else {
@@ -267,6 +234,20 @@ pub(super) fn bar(state: &ToolbarState, live: Live, p: Palette) -> impl IntoElem
             label(locale, key),
             name,
             ToolbarAction::ToggleFullscreen,
+            p,
+            false,
+        ));
+    }
+    if connected {
+        let (key, name) = if state.collapsed {
+            ("expandControls", "expand")
+        } else {
+            ("collapseControls", "collapse")
+        };
+        bar = bar.child(icon_button(
+            label(locale, key),
+            name,
+            ToolbarAction::ToggleCollapsed,
             p,
             false,
         ));

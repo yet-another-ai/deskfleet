@@ -3,10 +3,10 @@
 use nsh_platform_gpui::{App, AppOptions, AppView, gpui};
 use tokio::sync::watch;
 
-use crate::nsh_controls::{ControlsBridge, controls_root};
 pub(crate) use crate::nsh_controls::{
-    GRIP_WIDTH, PADDING, PANEL_WIDTH, ToolbarAction, ToolbarState,
+    BAR_CONTROL_HEIGHT, GRIP_WIDTH, PADDING, PANEL_WIDTH, ToolbarAction, ToolbarState,
 };
+use crate::nsh_controls::{ControlsBridge, controls_root};
 
 pub(crate) struct Toolbar {
     pub(crate) view: gpui::Entity<AppView>,

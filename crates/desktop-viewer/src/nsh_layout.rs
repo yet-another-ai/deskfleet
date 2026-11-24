@@ -6,9 +6,13 @@ use gpui::{Bounds, Pixels, Point, point, px, size};
 pub(crate) const MARGIN: f32 = 12.;
 
 pub(crate) fn grip_bounds(toolbar: Bounds<Pixels>) -> Bounds<Pixels> {
+    let inset = nsh_toolbar::PADDING + 1.;
     Bounds::new(
-        toolbar.origin + point(px(nsh_toolbar::PADDING + 1.), px(5.)),
-        size(px(nsh_toolbar::GRIP_WIDTH), px(28.)),
+        toolbar.origin + point(px(inset), px(inset)),
+        size(
+            px(nsh_toolbar::GRIP_WIDTH),
+            px(nsh_toolbar::BAR_CONTROL_HEIGHT),
+        ),
     )
 }
 

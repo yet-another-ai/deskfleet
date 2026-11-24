@@ -1,8 +1,6 @@
 //! Geometry shared by the NSH mobile viewer and its native event hit tests.
 
-use crate::nsh_controls::{
-    MOBILE_CONTROL_HEIGHT, MOBILE_GRIP_WIDTH, PADDING, PANEL_WIDTH, ToolbarState,
-};
+use crate::nsh_controls::{BAR_CONTROL_HEIGHT, GRIP_WIDTH, PADDING, PANEL_WIDTH, ToolbarState};
 use crate::protocol::Status;
 
 type Point = (f32, f32);
@@ -158,12 +156,13 @@ impl MobileLayout {
     }
 
     pub(crate) fn hit_grip(&self, x: f32, y: f32) -> bool {
-        // NSH places the mobile grip inside the bar's border and padding.
+        // Cover the grip's outer edge while stopping before the next button.
         let (left, top) = self.position();
+        let inset = PADDING + 1.;
         !self.select_open
             && Rect {
-                origin: (left + PADDING + 1., top + PADDING + 1.),
-                size: (MOBILE_GRIP_WIDTH, MOBILE_CONTROL_HEIGHT),
+                origin: (left, top),
+                size: (inset + GRIP_WIDTH, BAR_CONTROL_HEIGHT + inset * 2.),
             }
             .contains(x, y)
     }
@@ -196,6 +195,11 @@ mod tests {
         state.panel = None;
         state.viewport = (500., 600.);
         layout.layout(&mut state, [0.; 4], false);
+        assert!(layout.hit_grip(state.position.0 + 2., state.position.1 + 2.));
+        assert!(!layout.hit_grip(
+            state.position.0 + PADDING + 1. + GRIP_WIDTH + 1.,
+            state.position.1 + 10.,
+        ));
         assert!(!layout.hit_test(400., 500.));
         state.viewport = (500., 600.);
         layout.layout(&mut state, [0.; 4], true);
