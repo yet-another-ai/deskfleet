@@ -318,8 +318,7 @@ class ControlConnection {
       case "terminalDial": {
         let params = request.params
         if (params.mode === "create" && params.worktreeId !== undefined) {
-          const { worktreeId } = params
-          const worktree = (await this.#catalog.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(value => value.id === worktreeId)
+          const worktree = await this.#catalog.sessionWorktreeById(params.worktreeId)
           if (!worktree?.sessionId || !worktree.directories[0]) throw new Error("Session worktree is unavailable")
           params = { ...params, cwd: params.cwd ?? worktree.directories[0].path }
         }
