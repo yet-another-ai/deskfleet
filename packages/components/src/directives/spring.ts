@@ -152,7 +152,8 @@ export const vSpringHover = motionDirective<number>(
       motion.spring.jump(0)
       element.style.translate = "0px 0px"
     })
-    const over = () => {
+    const over = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return
       if (!element.closest(":disabled, [data-disabled], [aria-disabled=true]") && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) motion.setTarget(value)
     }
     const out = () => motion.setTarget(0)

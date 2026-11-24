@@ -35,7 +35,7 @@ export default defineComponent({
       <button
         v-if="closable"
         type="button"
-        class="ml-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-current op-0 pointer-events-none ui-motion hover:bg-current/15 active:scale-90 group-hover:op-100 group-hover:pointer-events-auto group-focus-within:op-100 group-focus-within:pointer-events-auto"
+        class="ml-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-current ui-motion hover:bg-current/15 active:scale-90 can-hover:op-0 can-hover:pointer-events-none group-hover:op-100 group-hover:pointer-events-auto group-focus-within:op-100 group-focus-within:pointer-events-auto"
         :aria-label="closeLabel"
         @click="overflow ? $event.preventDefault() : $event.stopPropagation(); $emit('close')"
       >

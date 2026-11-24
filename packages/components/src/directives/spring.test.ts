@@ -155,11 +155,15 @@ test("changing the motion preference settles active styles, entrances and hover 
   expect(frames.size).toBe(0)
 })
 
-test("hover starts without a jump and unmount removes its pointer listeners", async () => {
+test("hover starts without a jump, ignores touch pointers, and unmount removes its pointer listeners", async () => {
   wrapper = mount(defineComponent({
     setup: () => () => withDirectives(h("button"), [[vSpringHover, -2]]),
   }))
   const element = wrapper.element as HTMLElement
+  element.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "touch" }))
+  await tick(64)
+  expect(element.style.translate).toBe("0px 0px")
+  expect(frames.size).toBe(0)
   element.dispatchEvent(new PointerEvent("pointerenter"))
   expect(element.style.translate).toBe("0px 0px")
   await tick(64)

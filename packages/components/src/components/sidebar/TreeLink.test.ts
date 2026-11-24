@@ -35,3 +35,20 @@ test("equal Session IDs highlight only their owning Machine and navigate with th
   await links[0]!.trigger("click", { ctrlKey: true })
   expect(openMachineRoute).toHaveBeenCalledTimes(1)
 })
+
+test("action slots hide on touchscreens and do not block pointer events while hidden", async () => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/sessions/:sessionId", name: "session", component: { render: () => null } }] })
+  await router.push("/sessions/1")
+  view = mount(TreeLink, {
+    props: { to: { name: "session", params: { sessionId: "2" } }, label: "Chat", depth: 0 },
+    slots: { trailing: () => h("span", { "data-trailing": "" }), actions: () => h("button", { type: "button", "data-action": "" }, "Archive") },
+    global: { plugins: [router] },
+  })
+  const trailingWrapper = view.get("[data-trailing]").element.parentElement!
+  const actionsWrapper = view.get("[data-action]").element.parentElement!
+  expect(trailingWrapper.className).toContain("can-hover:group-focus-within:op-0")
+  expect(actionsWrapper.className).toContain("hidden")
+  expect(actionsWrapper.className).toContain("can-hover:flex")
+  expect(actionsWrapper.className).toContain("pointer-events-none")
+  expect(actionsWrapper.className).toContain("group-hover:pointer-events-auto")
+})

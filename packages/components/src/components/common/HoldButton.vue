@@ -56,7 +56,7 @@ onBeforeUnmount(() => clearHold(false))
     :disabled="disabled"
     class="relative overflow-hidden"
     :aria-label="text"
-    @pointerenter="!disabled && updateWidth(true)"
+    @pointerenter="$event.pointerType !== 'touch' && !disabled && updateWidth(true)"
     @pointerdown="startHold"
     @pointerup="clearHold()"
     @pointerleave="clearHold(false)"

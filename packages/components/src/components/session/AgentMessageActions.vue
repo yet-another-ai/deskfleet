@@ -23,7 +23,7 @@ async function copy(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="text || canFork" class="-my-1 flex opacity-0 ui-motion group-hover:opacity-100 focus-within:opacity-100">
+  <div v-if="text || canFork" class="-my-1 flex ui-motion can-hover:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
     <UiButton v-if="text" variant="ghost" size="icon" :label="t(copied ? 'agent.copied' : 'agent.copy')" @click="copy"><component :is="copied ? CircleCheck : Copy" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     <UiButton v-if="canFork" variant="ghost" size="icon" :label="t('agent.fork')" :disabled="forkDisabled" @click="emit('fork')"><GitFork :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
   </div>

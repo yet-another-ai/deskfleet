@@ -40,6 +40,25 @@ const button =
 export default defineConfig({
   presets: [presetWind4()],
   transformers: [transformerDirectives()],
+  variants: [
+    {
+      // Progressive enhancement: only devices whose primary pointer can hover hide-until-hover.
+      name: "can-hover",
+      match(matcher) {
+        if (!matcher.startsWith("can-hover:")) return
+        return { matcher: matcher.slice("can-hover:".length), parent: "@media (hover: hover)" }
+      },
+    },
+  ],
+  postprocess: [
+    // Keep `:hover` utilities behind `@media (hover: hover)` so touch taps never stick in hover
+    // or get swallowed by WebKit when a hover rule reveals hidden controls.
+    util => {
+      if (util.selector && /(?<!\\):hover\b/.test(util.selector) && !util.parent?.includes("hover:")) {
+        util.parent = util.parent ? `${util.parent} $$ @media (hover: hover)` : "@media (hover: hover)"
+      }
+    },
+  ],
   content: {
     pipeline: {
       include: [/\.(vue|[jt]sx|mdx?|html)($|\?)/, /\.stories\.ts($|\?)/],
