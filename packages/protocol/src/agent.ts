@@ -1,5 +1,5 @@
 import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse, RequestPermissionRequest, SessionNotification, Usage } from "@agentclientprotocol/sdk/unstable"
-import type { GitBranchesSnapshot, GitDiffRequest, GitFileDiff, GitPreparationSnapshot, GitPreparedRevision, GitStatusSnapshot } from "./git.ts"
+import type { GitBranchesSnapshot, GitChangesMode, GitDiffRequest, GitFileDiff, GitPreparationSnapshot, GitPreparedRevision, GitStatusSnapshot } from "./git.ts"
 import type { ComposerReferenceResolve, ComposerReferenceResult, ComposerReferenceSearch } from "./composer-reference.ts"
 
 import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities, AgentQuotaItem } from "./agent-configuration.ts"
@@ -223,7 +223,7 @@ export interface AgentMethods {
   "_deskfleet/session/unread": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/git/branches": { params: { workspaceId: string }; result: GitBranchesSnapshot }
   "_deskfleet/git/prepare": { params: { workspaceId: string; context: AgentSessionContext; confirmationToken?: string }; result: GitPreparationSnapshot }
-  "_deskfleet/git/status": { params: { sessionId: string; force?: boolean }; result: GitStatusSnapshot }
+  "_deskfleet/git/status": { params: { sessionId: string; force?: boolean; mode?: GitChangesMode }; result: GitStatusSnapshot }
   "_deskfleet/git/diff": { params: GitDiffRequest; result: GitFileDiff }
   /** Viewer-owned, transient subscriptions; never written to the Session journal. */
   "_deskfleet/git/subscribe": { params: { sessionId: string; subscriptionId: string }; result: null }

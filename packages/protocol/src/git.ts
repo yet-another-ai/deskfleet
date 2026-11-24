@@ -1,5 +1,6 @@
 /** Live Git inspection is transient and scoped to a Session's captured directories. */
-export type GitChangeKind = "staged" | "unstaged" | "untracked"
+export type GitChangesMode = "base" | "uncommitted"
+export type GitChangeKind = "branch" | "staged" | "unstaged" | "untracked"
 export type GitFileStatus = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "conflicted" | "typeChanged"
 
 export interface GitFileChange {
@@ -17,6 +18,8 @@ export interface GitRepositoryStatus {
   root: string
   branch: string | null
   head: string | null
+  /** Resolved base branch when inspecting in `base` mode; null when unavailable. */
+  baseBranch?: string | null
   changes: GitFileChange[]
   error?: string
 }
@@ -57,6 +60,7 @@ export interface GitDiffRequest {
   repositoryId: string
   path: string
   kind: GitChangeKind
+  mode?: GitChangesMode
 }
 
 export interface GitFileDiff extends GitDiffRequest {

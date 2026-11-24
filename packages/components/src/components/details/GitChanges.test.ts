@@ -1,18 +1,24 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { computed, ref, shallowRef } from "vue"
+import { computed, ref, shallowRef, toValue, type MaybeRefOrGetter } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
+import type { GitChangesMode, GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { gitDiffCardKey, type GitDiffCard } from "./git-diff-card.ts"
 import { i18n } from "../../i18n/index.ts"
 import GitChanges from "./GitChanges.vue"
 
 const connected = ref(true)
+let activeMode: MaybeRefOrGetter<GitChangesMode> | undefined
 const state = {
   snapshot: shallowRef<GitStatusSnapshot | null>(null), loading: ref(false), error: ref<string | null>(null), connected: computed(() => connected.value),
   cards: shallowRef(new Map<string, GitDiffCard>()),
   refresh: vi.fn(async () => {}), expand: vi.fn(), collapse: vi.fn(),
 }
-vi.mock("../../composables/useSessionGit.ts", () => ({ useSessionGit: () => state }))
+vi.mock("../../composables/useSessionGit.ts", () => ({
+  useSessionGit: (_sessionId: MaybeRefOrGetter<string>, _enabled: MaybeRefOrGetter<boolean>, mode?: MaybeRefOrGetter<GitChangesMode>) => {
+    activeMode = mode
+    return state
+  },
+}))
 const wrappers: VueWrapper[] = []
 const global = { plugins: [i18n], stubs: { teleport: { inheritAttrs: false, template: "<slot />" } } }
 const change = (options: Partial<GitFileChange> = {}): GitFileChange => ({ path: "src/app.ts", kind: "unstaged", status: "modified", additions: 2, deletions: 1, ...options })
@@ -45,6 +51,7 @@ async function inlineDiff(options: { diff?: GitFileDiff | null; loading?: boolea
 }
 beforeEach(() => {
   connected.value = true
+  activeMode = undefined
   state.snapshot.value = null; state.loading.value = false; state.error.value = null
   state.cards.value = new Map()
   state.refresh.mockClear(); state.expand.mockClear(); state.collapse.mockClear()
@@ -211,4 +218,22 @@ test("keeps the file tree collapsed until toggled, then jumps to that file's dif
   expect(state.collapse).toHaveBeenCalledWith("repo", "src/lib/util.ts", "unstaged")
   expect(cards.get('article[data-git-path="src/lib/util.ts"] button').attributes("aria-expanded")).toBe("false")
   expect(cards.get('[data-kind="staged"] button').attributes("aria-expanded")).toBe("true")
+})
+
+test("defaults to base branch mode without live-updating copy and toggles to uncommitted changes", async () => {
+  const branchChange = change({ kind: "branch", additions: 5, deletions: 2 })
+  state.snapshot.value = { sessionId: "11", repositories: [{ id: "repo", root: "/code/repo", branch: "feat/demo", head: "abcdef123456", baseBranch: "origin/main", changes: [branchChange] }], directories: [] }
+  const view = panel()
+  expect(toValue(activeMode)).toBe("base")
+  expect(view.text()).not.toContain("Updating live")
+  expect(view.text()).toContain("vs origin/main")
+  expect(view.get('[data-git-mode="base"]').attributes("aria-pressed")).toBe("true")
+  expect(view.get('[data-git-mode="uncommitted"]').attributes("aria-pressed")).toBe("false")
+  await view.get('[data-kind="branch"] button[aria-label="Show diff for src/app.ts"]').trigger("click")
+  expect(state.expand).toHaveBeenLastCalledWith("repo", branchChange)
+  expect(view.get('[data-kind="branch"] button').attributes("aria-expanded")).toBe("true")
+  await view.get('[data-git-mode="uncommitted"]').trigger("click")
+  expect(toValue(activeMode)).toBe("uncommitted")
+  expect(view.get('[data-git-mode="uncommitted"]').attributes("aria-pressed")).toBe("true")
+  expect(view.get('[data-kind="branch"] button').attributes("aria-expanded")).toBe("false")
 })

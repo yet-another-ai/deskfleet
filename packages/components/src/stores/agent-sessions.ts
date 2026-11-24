@@ -19,7 +19,7 @@ import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration
 import { isSnapshotReference } from "@deskfleet/protocol/agent-command-results"
 import type { AgentConfiguration, AgentQuotaItem } from "@deskfleet/client/agent-configuration"
 import { RelayConnectionError, type RelayDeniedReason } from "@deskfleet/client/relay"
-import type { GitChangedNotification, GitDiffRequest } from "@deskfleet/protocol/git"
+import type { GitChangedNotification, GitChangesMode, GitDiffRequest } from "@deskfleet/protocol/git"
 import { useProvidersStore } from "./providers.ts"
 import { AgentClient, type AgentConnectionState, type AgentNotification } from "../services/agent-client.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
@@ -1057,7 +1057,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const prepareGit = (workspaceId: string, context: AgentSessionContext, confirmationToken?: string) => call("_deskfleet/git/prepare", { workspaceId, context, ...(confirmationToken ? { confirmationToken } : {}) })
-  const gitStatus = (sessionId: string, force = false) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}) })
+  const gitStatus = (sessionId: string, force = false, mode?: GitChangesMode) => call("_deskfleet/git/status", { sessionId, ...(force ? { force } : {}), ...(mode ? { mode } : {}) })
   const composerReferences = (params: ComposerReferenceSearch) => call("_deskfleet/composer/references", params)
   const resolveComposerReferences = (sessionId: string, references: ComposerReference[]) => call("_deskfleet/composer/resolve", { sessionId, references })
   const gitDiff = (request: GitDiffRequest) => call("_deskfleet/git/diff", request)

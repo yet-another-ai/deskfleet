@@ -1,14 +1,14 @@
 import { flushPromises } from "@vue/test-utils"
 import { effectScope, nextTick, reactive, ref } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
+import type { GitChangesMode, GitDiffRequest, GitFileChange, GitFileDiff, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { deferred } from "../test/desktop-media.ts"
 import { gitDiffCardKey } from "../components/details/git-diff-card.ts"
 import { useSessionGit } from "./useSessionGit.ts"
 
 const service = reactive({
   state: "connected",
-  gitStatus: vi.fn<(sessionId: string, force?: boolean) => Promise<GitStatusSnapshot>>(),
+  gitStatus: vi.fn<(sessionId: string, force?: boolean, mode?: GitChangesMode) => Promise<GitStatusSnapshot>>(),
   gitDiff: vi.fn<(request: GitDiffRequest) => Promise<GitFileDiff>>(),
   watchGit: vi.fn<(sessionId: string, notify: (error?: string) => void) => Promise<() => void>>(),
 })
@@ -21,13 +21,14 @@ const status = (sessionId = "30", changes = [change]): GitStatusSnapshot => ({
   repositories: [{ id: "repo", root: "/repo", branch: "main", head: "abc123", changes }],
 })
 const scopes: ReturnType<typeof effectScope>[] = []
-function setup() {
+function setup(initialMode: GitChangesMode = "base") {
   const scope = effectScope()
   scopes.push(scope)
   const sessionId = ref("30")
   const enabled = ref(true)
-  const git = scope.run(() => useSessionGit(sessionId, enabled))!
-  return { scope, sessionId, enabled, git }
+  const mode = ref<GitChangesMode>(initialMode)
+  const git = scope.run(() => useSessionGit(sessionId, enabled, mode))!
+  return { scope, sessionId, enabled, mode, git }
 }
 beforeEach(() => {
   vi.useFakeTimers()
@@ -140,7 +141,7 @@ test("retains the last snapshot with an error and recovers on the next refresh",
   await git.refresh()
   expect(git.error.value).toBeNull()
   expect(git.loading.value).toBe(false)
-  expect(service.gitStatus).toHaveBeenLastCalledWith("30", true)
+  expect(service.gitStatus).toHaveBeenLastCalledWith("30", true, "base")
 })
 
 test("disabling a target stops reads and reconnecting refreshes the active target immediately", async () => {
@@ -281,4 +282,30 @@ test("an invalidation rereads a selected diff that was already in flight", async
   await flushPromises()
   expect(service.gitDiff).toHaveBeenCalledTimes(2)
   expect(git.cards.value.get(gitDiffCardKey("repo", change.path, change.kind))?.diff?.patch).toBe("+latest")
+})
+
+test("switching comparison mode reuses the watcher, clears open cards, and ignores stale previous-mode reads", async () => {
+  const { mode, git } = setup()
+  await flushPromises()
+  expect(service.gitStatus).toHaveBeenLastCalledWith("30", false, "base")
+  git.expand("repo", change)
+  await flushPromises()
+  expect(service.gitDiff).toHaveBeenLastCalledWith({ sessionId: "30", repositoryId: "repo", path: change.path, kind: change.kind, mode: "base" })
+  const stale = deferred<GitStatusSnapshot>()
+  service.gitStatus.mockReturnValueOnce(stale.promise)
+  mode.value = "uncommitted"
+  await nextTick()
+  expect(git.cards.value.size).toBe(0)
+  expect(service.gitStatus).toHaveBeenLastCalledWith("30", false, "uncommitted")
+  git.expand("repo", change)
+  await flushPromises()
+  expect(service.gitDiff).toHaveBeenLastCalledWith({ sessionId: "30", repositoryId: "repo", path: change.path, kind: change.kind, mode: "uncommitted" })
+  const fresh = status("30", [{ ...change, path: "branch.txt", kind: "branch" }])
+  service.gitStatus.mockResolvedValueOnce(fresh)
+  mode.value = "base"
+  await flushPromises()
+  stale.resolve(status("30", [{ ...change, path: "stale.txt" }]))
+  await flushPromises()
+  expect(git.snapshot.value).toEqual(fresh)
+  expect(service.watchGit).toHaveBeenCalledOnce()
 })

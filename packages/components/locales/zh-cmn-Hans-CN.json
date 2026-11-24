@@ -1351,11 +1351,16 @@
     "notGit": "不是 Git 检出",
     "clean": "没有变更",
     "gitUnavailable": "可查看在线本机上会话的 Git 变更。",
-    "gitLive": "实时更新中",
     "gitPaused": "实时更新已暂停",
     "gitStale": "正在显示上次加载的变更。",
     "gitLoading": "正在加载 Git 变更…",
     "refreshGit": "刷新 Git 变更",
+    "changeScope": "对比范围",
+    "changeMode": {
+      "base": "基线分支",
+      "uncommitted": "未提交"
+    },
+    "comparingTo": "对比 {branch}",
     "detachedHead": "分离的 HEAD",
     "noCommits": "尚无提交",
     "openDiff": "查看 {path} 的{kind}差异",
@@ -1375,6 +1380,7 @@
     "truncatedDiff": "差异内容较大，仅显示开头部分。",
     "addLineComment": "评论第 {line} 行",
     "changeKind": {
+      "branch": "分支变更",
       "staged": "已暂存",
       "unstaged": "未暂存",
       "untracked": "未跟踪"

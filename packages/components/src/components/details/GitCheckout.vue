@@ -2,7 +2,7 @@
 import { GitBranch } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 
-defineProps<{ root: string; branch: string | null; head: string | null }>()
+defineProps<{ root: string; branch: string | null; head: string | null; baseBranch?: string | null }>()
 const { t } = useI18n()
 </script>
 
@@ -14,6 +14,7 @@ const { t } = useI18n()
       <span class="truncate font-mono" :title="head ?? undefined">{{ branch ?? t('panel.detachedHead') }}</span>
       <span v-if="!head" class="shrink-0">· {{ t('panel.noCommits') }}</span>
       <span v-else-if="!branch" class="shrink-0 font-mono">{{ head.slice(0, 8) }}</span>
+      <span v-if="baseBranch" class="min-w-0 truncate text-ui-text-faint" :title="baseBranch">· {{ t('panel.comparingTo', { branch: baseBranch }) }}</span>
     </div>
   </div>
 </template>

@@ -1,6 +1,6 @@
 import { useDebounceFn, useDocumentVisibility, watchImmediate } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from "vue"
-import type { GitChangeKind, GitDiffRequest, GitFileChange, GitStatusSnapshot } from "@deskfleet/protocol/git"
+import type { GitChangeKind, GitChangesMode, GitDiffRequest, GitFileChange, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { gitDiffCardKey, type GitDiffCard } from "../components/details/git-diff-card.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 
@@ -9,7 +9,7 @@ const message = (reason: unknown) => reason instanceof Error ? reason.message : 
 export { gitDiffCardKey, type GitDiffCard }
 
 /** Inspect only the visible Session context; filesystem changes need no agent events. */
-export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: MaybeRefOrGetter<boolean>) {
+export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: MaybeRefOrGetter<boolean>, mode: MaybeRefOrGetter<GitChangesMode> = "base") {
   const agents = useAgentSessionsStore()
   const snapshot = shallowRef<GitStatusSnapshot | null>(null)
   const loading = ref(false)
@@ -92,7 +92,7 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
   function expand(repositoryId: string, change: GitFileChange): void {
     const key = gitDiffCardKey(repositoryId, change.path, change.kind)
     if (cards.value.has(key)) return
-    const request: GitDiffRequest = { sessionId: toValue(sessionId), repositoryId, path: change.path, kind: change.kind }
+    const request: GitDiffRequest = { sessionId: toValue(sessionId), repositoryId, path: change.path, kind: change.kind, mode: toValue(mode) }
     putCard(key, { request, diff: null, loading: true, error: null })
     void readCard(key)
   }
@@ -110,13 +110,14 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     force ||= forceNext
     forceNext = false
     dirty = false
-    const current = generation
     const id = toValue(sessionId)
+    const currentMode = toValue(mode)
     loading.value = !snapshot.value
-    const request = (async () => {
+    let request!: Promise<void>
+    request = (async () => {
       try {
-        const result = await agents.gitStatus(id, force)
-        if (disposed || current !== generation) return
+        const result = await agents.gitStatus(id, force, currentMode)
+        if (disposed || pending !== request) return
         snapshot.value = result
         error.value = watchError
         for (const card of [...cards.value.values()]) {
@@ -126,9 +127,9 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
           else await readCard(key, true)
         }
       } catch (reason) {
-        if (!disposed && current === generation) error.value = message(reason)
+        if (!disposed && pending === request) error.value = message(reason)
       } finally {
-        if (!disposed && current === generation) {
+        if (!disposed && pending === request) {
           loading.value = false
           pending = undefined
           if (dirty && active() && !scheduleRefresh.isPending.value) void readStatus()
@@ -201,6 +202,16 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     error.value = null
     watchError = null
     void attach()
+  })
+  watch(() => toValue(mode), () => {
+    pending = undefined
+    dirty = false
+    forceNext = false
+    scheduleRefresh.cancel()
+    clearCards()
+    snapshot.value = null
+    error.value = watchError
+    if (!attaching) void readStatus()
   })
   watch(connected, value => {
     if (!value) detach()

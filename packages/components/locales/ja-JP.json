@@ -1093,9 +1093,15 @@
   "panel": {
     "chat": "チャット", "changes": "変更", "noWorktree": "Git の変更はセッション内で確認できます。",
     "notGit": "Git チェックアウトではありません", "clean": "変更はありません",
-    "gitUnavailable": "Git の状態はオンラインのローカルマシン上にあるセッションで確認できます。", "gitLive": "リアルタイム更新中",
+    "gitUnavailable": "Git の状態はオンラインのローカルマシン上にあるセッションで確認できます。",
     "gitPaused": "リアルタイム更新を一時停止中", "gitStale": "最後に読み込んだ変更を表示しています。",
     "gitLoading": "Git の変更を読み込み中…", "refreshGit": "Git の変更を更新",
+    "changeScope": "比較対象",
+    "changeMode": {
+      "base": "ベースブランチ",
+      "uncommitted": "未コミット"
+    },
+    "comparingTo": "{branch} と比較",
     "detachedHead": "HEAD がブランチから切り離されています", "noCommits": "コミットはまだありません",
     "openDiff": "{path} の差分を表示 ({kind})", "expandFileDiff": "{path} の差分を表示",
     "collapseFileDiff": "{path} の差分を非表示", "showFileTree": "ファイルツリーを表示",
@@ -1107,6 +1113,7 @@
     "truncatedDiff": "差分が大きいため、先頭部分のみ表示しています。",
     "addLineComment": "{line} 行目にコメント",
     "changeKind": {
+      "branch": "ブランチ変更",
       "staged": "ステージ済み", "unstaged": "未ステージ",
       "untracked": "未追跡"
     },

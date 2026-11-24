@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ChevronRight, ListTree, LoaderCircle, RefreshCw } from "@lucide/vue"
-import { computed, reactive, ref } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { GitChangeKind, GitFileChange } from "@deskfleet/protocol/git"
+import type { GitChangeKind, GitChangesMode, GitFileChange } from "@deskfleet/protocol/git"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { gitDiffCardKey } from "./git-diff-card.ts"
 import UiButton from "../common/UiButton.vue"
@@ -14,11 +14,16 @@ import { buildChangeTree, flattenChangeTree, type ChangeTree, type ChangeTreeRow
 
 const props = defineProps<{ sessionId: string; enabled: boolean }>()
 const { t } = useI18n()
-const { snapshot, loading, error, connected, cards, expand, collapse, refresh } = useSessionGit(() => props.sessionId, () => props.enabled)
-const groups: GitChangeKind[] = ["staged", "unstaged", "untracked"]
+const modes: GitChangesMode[] = ["base", "uncommitted"]
+const mode = ref<GitChangesMode>("base")
+const { snapshot, loading, error, connected, cards, expand, collapse, refresh } = useSessionGit(() => props.sessionId, () => props.enabled, mode)
+const groups: GitChangeKind[] = ["branch", "staged", "unstaged", "untracked"]
 const treeOpen = ref(false)
 const collapsedDirectories = reactive<Record<string, true>>({})
 const expanded = reactive<Record<string, true>>({})
+watch(mode, () => {
+  for (const key of Object.keys(expanded)) delete expanded[key]
+})
 const cardElements = new Map<string, HTMLElement>()
 const repositories = computed(() => snapshot.value?.repositories.map(repository => ({
   ...repository,
@@ -79,15 +84,18 @@ function reveal(repositoryId: string, change: GitFileChange): void {
     <p v-if="!enabled" class="m-0 px-4 pt-3 text-[13px] text-ui-text-muted" role="status">{{ t('panel.gitUnavailable') }}</p>
     <template v-else>
       <div class="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 pt-2">
-        <span class="text-xs text-ui-text-muted" role="status">{{ t(connected && !error ? 'panel.gitLive' : 'panel.gitPaused') }}</span>
+        <div role="group" :aria-label="t('panel.changeScope')" class="inline-flex min-w-0 items-center gap-0.5 rounded-md bg-ui-hover/60 p-0.5" data-git-mode-toggle>
+          <button v-for="option in modes" :key="option" type="button" :aria-pressed="mode === option" :data-git-mode="option" :class="mode === option ? 'bg-ui-surface text-ui-text shadow-xs' : 'text-ui-text-muted hover:text-ui-text'" class="min-h-6 cursor-pointer truncate rounded px-2 py-0.5 text-xs font-medium ui-motion focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ui-accent" @click="mode = option">{{ t(`panel.changeMode.${option}`) }}</button>
+        </div>
         <div class="flex shrink-0">
           <UiButton variant="ghost" size="icon" :class="treeOpen && 'ui-nav-active'" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton variant="ghost" size="icon" :label="t('panel.refreshGit')" :disabled="loading" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>
       <p v-if="loading && !snapshot" class="m-0 flex shrink-0 items-center gap-2 px-3 text-[13px] text-ui-text-muted" role="status"><LoaderCircle :size="14" class="animate-spin" aria-hidden="true" />{{ t('panel.gitLoading') }}</p>
-      <div v-if="error" class="flex shrink-0 flex-col gap-1 px-3 text-[13px]">
-        <p class="m-0 break-words text-ui-danger" role="alert">{{ error }}</p>
+      <div v-if="error || !connected" class="flex shrink-0 flex-col gap-1 px-3 text-[13px]">
+        <p v-if="error" class="m-0 break-words text-ui-danger" role="alert">{{ error }}</p>
+        <p v-if="!connected" class="m-0 text-ui-warning" role="status">{{ t('panel.gitPaused') }}</p>
         <p v-if="snapshot" class="m-0 text-ui-text-muted">{{ t('panel.gitStale') }}</p>
       </div>
       <div
@@ -106,7 +114,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
           data-git-tree
         >
           <section v-for="repository in repositories" :key="repository.id" class="min-w-0">
-            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" />
+            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" :base-branch="repository.baseBranch" />
             <p v-if="repository.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ repository.error }}</p>
             <p v-else-if="!repository.changes.length" class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.clean') }}</p>
             <div v-for="group in repository.groups" :key="group.kind" class="mt-3" :data-kind="group.kind">
@@ -148,7 +156,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
         </UiScrollArea>
         <UiScrollArea data-git-cards class="min-h-0 min-w-0 flex-1" viewport-class="px-3 pb-4">
           <section v-for="repository in repositories" :key="repository.id" :data-repository="repository.id" class="min-w-0">
-            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" />
+            <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" :base-branch="repository.baseBranch" />
             <p v-if="repository.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ repository.error }}</p>
             <p v-else-if="!repository.changes.length" class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.clean') }}</p>
             <div v-for="group in repository.groups" :key="group.kind" class="mt-3" :data-kind="group.kind">
