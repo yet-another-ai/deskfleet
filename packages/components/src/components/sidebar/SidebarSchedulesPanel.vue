@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <UiScrollArea class="min-h-0 min-w-0 flex-1" content-class="px-2 pt-1 pb-3">
+    <UiScrollArea class="min-h-0 min-w-0 flex-1" viewport-class="overscroll-contain" content-class="px-2 pt-1 pb-3">
       <div class="mb-1 flex items-center justify-between gap-2 pl-2.5 pr-1 text-xs text-ui-text-faint">
         <span>{{ t("schedules.title") }}</span>
         <div class="flex shrink-0 items-center gap-0.5">

@@ -80,7 +80,7 @@ onBeforeUnmount(() => {
     <MobileWindowManager v-else-if="compact && route.name === 'session'" :key="`mobile:${route.params.sessionId}`" :session-id="String(route.params.sessionId)" />
     <AppMainWindow v-else />
     <BottomSheet v-if="compact && !route.meta.fullWindow && !standaloneSession" :open="sidebarOpen" :title="t('catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
-      <AppSidebar class="h-full" />
+      <AppSidebar />
     </BottomSheet>
   </div>
 </template>

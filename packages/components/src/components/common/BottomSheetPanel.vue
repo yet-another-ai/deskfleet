@@ -5,7 +5,6 @@ import { DrawerClose, DrawerContent, DrawerHandle, DrawerOverlay, DrawerPortal, 
 import { ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useSpring } from "../../composables/useSpring.ts"
-import UiScrollArea from "./UiScrollArea.vue"
 
 defineProps<{ title: string; background?: "canvas" | "sidebar"; opener: HTMLElement | null }>()
 const { t } = useI18n()
@@ -79,9 +78,9 @@ function focusPanel(event: Event): void {
           <X :size="18" aria-hidden="true" />
         </DrawerClose>
       </header>
-      <UiScrollArea class="min-h-0 flex-1" viewport-class="overscroll-contain" content-class="flex min-h-full flex-col">
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <slot />
-      </UiScrollArea>
+      </div>
     </DrawerContent>
   </DrawerPortal>
 </template>

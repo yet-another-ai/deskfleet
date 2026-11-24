@@ -109,7 +109,8 @@ function refresh(): void {
 
 <template>
   <aside
-    class="relative flex shrink-0 flex-col overflow-y-clip border-r border-ui-border bg-ui-sidebar"
+    class="relative flex min-h-0 flex-col overflow-y-clip bg-ui-sidebar"
+    :class="compact ? 'flex-1' : 'shrink-0 border-r border-ui-border'"
     :style="{ width: compact ? '100%' : `${width}px` }"
   >
     <!-- On macOS the traffic lights sit at the start of this row. -->
@@ -146,6 +147,7 @@ function refresh(): void {
       <UiScrollArea
         ref="scrollArea"
         class="min-h-0 min-w-0 flex-1"
+        viewport-class="overscroll-contain"
         content-class="px-2 pt-3 pb-3"
         data-sidebar-scroll-area
         :viewport-attrs="{ 'data-sidebar-scroll-viewport': '' }"

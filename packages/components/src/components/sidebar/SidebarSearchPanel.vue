@@ -83,7 +83,7 @@ function open(result: SearchResult): void {
       </div>
     </div>
 
-    <UiScrollArea class="min-h-0 min-w-0 flex-1" content-class="px-2 pb-3">
+    <UiScrollArea class="min-h-0 min-w-0 flex-1" viewport-class="overscroll-contain" content-class="px-2 pb-3">
       <p v-if="!available" class="mx-2 text-xs text-ui-text-muted">{{ t("search.signIn") }}</p>
       <div v-else-if="error" class="mx-2 flex flex-col items-start gap-2 rounded-lg border border-ui-danger/30 bg-ui-danger/8 p-2.5 text-xs text-ui-danger">
         <p class="m-0 break-words" role="alert">{{ error }}</p>
