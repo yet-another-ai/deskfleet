@@ -131,7 +131,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   const directory = await mkdtemp(join(tmpdir(), "df-agent-session-"))
   const repository = join(directory, "repository")
   await mkdir(repository)
-  await execute("git", ["init", repository])
+  await execute("git", ["init", "--initial-branch=main", repository])
   await execute("git", ["-C", repository, "config", "core.autocrlf", "false"])
   await writeFile(join(repository, "README.md"), "fixture\n")
   await execute("git", ["-C", repository, "add", "."])
