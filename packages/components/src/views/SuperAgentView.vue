@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
-import { Check, Cloud, Cpu, History, Layers3, ListTree, LoaderCircle, Settings2, SquarePen, UsersRound } from "@lucide/vue"
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { computed, nextTick, ref, useTemplateRef } from "vue"
+import { Cloud, Cpu, Layers3, ListTree, LoaderCircle, Settings2, SquarePen, UsersRound } from "@lucide/vue"
+import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import type { SuperAgentSession } from "@deskfleet/client/super-agent"
+import { useRoute, useRouter } from "vue-router"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import SpringSurface from "../components/common/SpringSurface.ts"
 import UiButton from "../components/common/UiButton.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import AgentConversation from "../components/session/AgentConversation.vue"
@@ -21,10 +18,11 @@ import SuperAgentConfigDialog from "../components/super-agent/SuperAgentConfigDi
 import { useAccountSession } from "../composables/account-session-context.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { superAgentSessionKey, useSuperAgent } from "../composables/useSuperAgent.ts"
-import { formatMessageTime } from "../services/agent-format.ts"
 import { projectSuperAgentConversation } from "../services/super-agent-conversation.ts"
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const account = useAccountSession()
 const platform = usePlatformClient()
 const {
@@ -40,7 +38,6 @@ const switchingCloud = ref(false)
 
 const projection = computed(() => projectSuperAgentConversation(messages.value, pending.value, turns.value, previews.value))
 const readingId = computed(() => JSON.stringify(["super-agent", account?.account.value.serverUrl, account?.account.value.user?.id, account?.teamId.value, selectedKey.value]))
-const displayLocale = computed(() => intlLocale(locale.value as AppLocale))
 const loading = computed(() => loadingList.value || loadingHistory.value || (!selected.value && loadingConfig.value))
 const startupStatus = computed(() => {
   if (status.value === "failed" || status.value === "ended") return undefined
@@ -80,18 +77,38 @@ const headerSegments = computed(() => {
   return [t("superAgent.title")]
 })
 
-function sessionSubtitle(session: SuperAgentSession): string {
-  if (session.engine === "byoa") {
-    const parts = [session.machineName, session.providerName || session.providerId].filter(Boolean)
-    return parts.join(" · ") || t("superAgent.byoaBadge")
-  }
-  return t("superAgent.cloudBadge")
-}
-
 function newConversation(): void {
   select()
+  if (route.name === "super-agent" && (route.query.session || route.query.new)) {
+    void router.replace({ name: "super-agent", query: {} })
+  }
   void nextTick(() => composer.value?.focus())
 }
+
+// Sync sidebar SuperAgentSection clicks (?session=key or ?new=1) with the view's active session.
+watch(
+  () => [route.name, route.query.session, route.query.new, sessions.value] as const,
+  ([name, sessionParam, newParam, list]) => {
+    if (name !== "super-agent") return
+    if (newParam === "1") {
+      select()
+      void router.replace({ name: "super-agent", query: {} })
+      void nextTick(() => composer.value?.focus())
+      return
+    }
+    if (typeof sessionParam === "string" && sessionParam && sessionParam !== selectedKey.value) {
+      const matched = list.find(item => superAgentSessionKey(item) === sessionParam || item.sessionId === sessionParam)
+      if (matched) select(matched)
+    }
+  },
+  { immediate: true },
+)
+
+watch(selectedKey, key => {
+  if (route.name !== "super-agent" || route.query.new === "1") return
+  const current = typeof route.query.session === "string" ? route.query.session : undefined
+  if (key && key !== current) void router.replace({ name: "super-agent", query: { session: key } })
+})
 function suggest(prompt: string): void {
   draft.value = prompt
   composer.value?.focus()
@@ -132,36 +149,6 @@ async function switchToCloud(): Promise<void> {
           <span class="hidden max-w-28 truncate sm:inline">{{ config.mode === "byoa" ? (config.byoa?.machineName || t("superAgent.byoaBadge")) : t("superAgent.cloudBadge") }}</span>
           <Settings2 :size="13" aria-hidden="true" />
         </UiButton>
-        <DropdownMenuRoot :modal="false">
-          <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('superAgent.history')" :disabled="loadingList || sending">
-            <History :size="16" :stroke-width="1.75" aria-hidden="true" />
-          </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuContent id="super-agent-history" :as="SpringSurface" align="end" :side-offset="4" :collision-padding="8" :aria-label="t('superAgent.history')" class="ui-menu z-50 max-h-[min(24rem,75dvh)] w-72 overflow-y-auto" loop>
-              <p v-if="!sessions.length" class="m-2 text-xs text-ui-text-muted">{{ t("superAgent.historyEmpty") }}</p>
-              <DropdownMenuItem
-                v-for="session in sessions"
-                :key="superAgentSessionKey(session)"
-                as="button"
-                type="button"
-                class="ui-menu-item w-full items-start py-2"
-                :aria-current="selectedKey === superAgentSessionKey(session) ? 'true' : undefined"
-                @select="select(session)"
-              >
-                <Check v-if="selectedKey === superAgentSessionKey(session)" :size="14" class="mt-0.5 shrink-0" aria-hidden="true" />
-                <span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-                  <span class="truncate">{{ session.title || t("superAgent.untitled") }}</span>
-                  <span class="flex items-center gap-1 truncate text-[11px] text-ui-text-faint">
-                    <Cpu v-if="session.engine === 'byoa'" :size="11" class="shrink-0" aria-hidden="true" />
-                    <Cloud v-else :size="11" class="shrink-0" aria-hidden="true" />
-                    <span class="truncate">{{ sessionSubtitle(session) }}</span>
-                  </span>
-                </span>
-                <time v-if="session.lastActiveAt > 0" class="shrink-0 text-[11px] text-ui-text-faint" :datetime="new Date(session.lastActiveAt).toISOString()">{{ formatMessageTime(new Date(session.lastActiveAt).toISOString(), displayLocale) }}</time>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
         <UiButton v-if="selected" variant="ghost" size="icon" :label="t('superAgent.new')" :disabled="sending" @click="newConversation"><SquarePen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </template>

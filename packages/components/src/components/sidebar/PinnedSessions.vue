@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
+import { useSidebarFilter } from "../../composables/useSidebarFilter.ts"
 import { pinnedSessionOrderGroup, useSidebarOrder } from "../../composables/useSidebarOrder.ts"
 import { sessionIsUnread } from "../../services/agent-conversation.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
@@ -24,8 +25,17 @@ const route = useRoute()
 const router = useRouter()
 const sessionLabel = useSessionLabel()
 const visiblePins = useArrayFilter(() => pins.items, item => item.archiveState !== "archived")
+const sidebarFilter = useSidebarFilter()
 const sidebarOrder = useSidebarOrder()
-const orderedPins = computed(() => sidebarOrder.ordered(pinnedSessionOrderGroup, visiblePins.value.map(item => ({
+const filteredPins = computed(() => {
+  const mode = sidebarFilter.filter.value
+  if (mode === "all") return visiblePins.value
+  return visiblePins.value.filter(item => {
+    const busy = item.archiveState === "archiving" || Boolean(item.working)
+    return mode === "working" ? busy : !busy && sessionIsUnread(item)
+  })
+})
+const orderedPins = computed(() => sidebarOrder.ordered(pinnedSessionOrderGroup, filteredPins.value.map(item => ({
   ...item, id: JSON.stringify([item.machineId, item.sessionId]),
 }))))
 const pinLabel = (item: { sessionId: string; title: string }) => sessionLabel({ id: item.sessionId, title: item.title })

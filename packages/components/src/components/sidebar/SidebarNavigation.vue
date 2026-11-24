@@ -1,67 +1,84 @@
 <script setup lang="ts">
-import { CalendarClock, MessagesSquare, MonitorPlay, Orbit, Search, SquarePen } from "@lucide/vue"
+import { CalendarClock, MessagesSquare, MonitorPlay, Search } from "@lucide/vue"
 import { vSpring } from "../../directives/spring.ts"
-import { storeToRefs } from "pinia"
-import { computed, ref, watch } from "vue"
+import { computed, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { RouterLink, useRoute } from "vue-router"
-import { useLayoutStore } from "../../stores/layout.ts"
-import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { useRoute } from "vue-router"
+import { useSidebarPanel, type SidebarPanel } from "../../composables/useSidebarPanel.ts"
 import UiTooltip from "../common/UiTooltip.vue"
-import SidebarLink from "./SidebarLink.vue"
 
 const { t } = useI18n()
 const route = useRoute()
-const { conversationPath } = storeToRefs(useLayoutStore())
-const account = useAccountSession()
-const searchPath = account?.searchPath ?? ref("/search")
-// Only the active section reveals its label, leaving room for more destinations.
-const sections = [
-  { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
-  { routeName: "schedules", label: "schedules.title", icon: CalendarClock },
-  { routeName: "remote-desktops", label: "nav.remoteDesktop", icon: MonitorPlay },
-  { routeName: "search", label: "search.title", icon: Search },
-] as const
-type Section = typeof sections[number]
-/** Machine-local resource routes that belong under Conversations. */
-const conversationRouteNames = new Set(["new-session", "session", "worktree", "machine-control", "terminal"])
-const activeSection = computed(() => sections.find(section => section.routeName === route.name)
-  ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
+const sidebarPanel = useSidebarPanel()
+const tablist = useTemplateRef<HTMLElement>("tablist")
 
-watch(() => route.fullPath, () => {
-  // Skip transient unmatched routes during remount (name is briefly undefined at "/").
-  if (typeof route.name === "string" && conversationRouteNames.has(route.name)) conversationPath.value = route.fullPath
-  if (route.name === "search") searchPath.value = route.fullPath
+const sections: readonly { id: SidebarPanel; label: string; icon: typeof MessagesSquare }[] = [
+  { id: "conversations", label: "nav.conversations", icon: MessagesSquare },
+  { id: "schedules", label: "schedules.title", icon: CalendarClock },
+  { id: "desktops", label: "nav.remoteDesktop", icon: MonitorPlay },
+  { id: "search", label: "search.title", icon: Search },
+] as const
+
+const activePanel = computed(() => sidebarPanel.panel.value)
+
+// Keep deep links and browser Back/Forward synced with the sidebar panel without snapping away
+// when the user opens a session or schedule from inside the Search or Remote desktop panels.
+watch(() => route.name, (name, prev) => {
+  if (name === "remote-desktops") {
+    sidebarPanel.panel.value = "desktops"
+  } else if (name === "search") {
+    sidebarPanel.panel.value = "search"
+  } else if (name === "schedules" && sidebarPanel.panel.value !== "search") {
+    sidebarPanel.panel.value = "schedules"
+  } else if (
+    prev === undefined
+    && (name === "new-session" || name === "session" || name === "worktree" || name === "terminal" || name === "super-agent")
+  ) {
+    sidebarPanel.panel.value = "conversations"
+  }
 }, { immediate: true })
 
-function destination(section: Section) {
-  // Clicking the current capsule keeps the selected session or task open.
-  if (section === activeSection.value) return route.fullPath
-  if (section.routeName === "search") return searchPath.value
-  return section.routeName === "new-session" ? conversationPath.value : { name: section.routeName }
+function selectPanel(id: SidebarPanel): void {
+  sidebarPanel.panel.value = id
+}
+
+function onTabKeydown(event: KeyboardEvent, index: number): void {
+  const buttons = [...(tablist.value?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])]
+  if (!buttons.length) return
+  let nextIndex = -1
+  if (event.key === "ArrowRight") nextIndex = (index + 1) % buttons.length
+  else if (event.key === "ArrowLeft") nextIndex = (index - 1 + buttons.length) % buttons.length
+  else if (event.key === "Home") nextIndex = 0
+  else if (event.key === "End") nextIndex = buttons.length - 1
+  if (nextIndex >= 0) {
+    event.preventDefault()
+    buttons[nextIndex]?.focus()
+  }
 }
 </script>
 
 <template>
-  <nav :aria-label="t('nav.label')" class="app-no-drag flex shrink-0 flex-col gap-1.5 px-2">
-    <div class="flex min-w-0 items-center gap-1">
-      <RouterLink v-for="section in sections" :key="section.routeName" v-slot="{ href, navigate }" :to="destination(section)" custom>
-        <UiTooltip :text="t(section.label)">
-          <a
-            :href="href" :aria-label="t(section.label)"
-            :aria-current="section === activeSection ? 'page' : undefined"
-            class="section-link ui-nav-item h-9 min-w-9 justify-center rounded-full px-2.5 text-[13px]"
-            :class="section === activeSection && 'ui-nav-active'"
-            @click="navigate"
-          >
-            <component :is="section.icon" :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-            <span v-spring="{ maxWidth: section === activeSection ? '12rem' : '0rem', marginInlineStart: section === activeSection ? '0.5rem' : '0rem' }" class="section-label truncate" aria-hidden="true">{{ t(section.label) }}</span>
-          </a>
-        </UiTooltip>
-      </RouterLink>
+  <nav :aria-label="t('nav.label')" class="app-no-drag shrink-0 px-2 pb-1.5">
+    <div ref="tablist" role="tablist" :aria-label="t('nav.label')" class="flex min-w-0 flex-nowrap items-center gap-1">
+      <UiTooltip v-for="(section, index) in sections" :key="section.id" :text="t(section.label)">
+        <button
+          :id="`sidebar-tab-${section.id}`"
+          type="button"
+          role="tab"
+          :aria-label="t(section.label)"
+          :aria-selected="activePanel === section.id"
+          :tabindex="activePanel === section.id ? 0 : -1"
+          :data-sidebar-tab="section.id"
+          class="section-link ui-nav-item h-9 min-w-9 justify-center rounded-full px-2.5 text-[13px]"
+          :class="activePanel === section.id && 'ui-nav-active'"
+          @click="selectPanel(section.id)"
+          @keydown="onTabKeydown($event, index)"
+        >
+          <component :is="section.icon" :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
+          <span v-spring="{ maxWidth: activePanel === section.id ? '12rem' : '0rem', marginInlineStart: activePanel === section.id ? '0.5rem' : '0rem' }" class="section-label truncate" aria-hidden="true">{{ t(section.label) }}</span>
+        </button>
+      </UiTooltip>
     </div>
-    <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
-    <SidebarLink v-if="account?.superAgentEnabled.value" :to="{ name: 'super-agent' }" :icon="Orbit" :label="t('superAgent.title')" />
   </nav>
 </template>
 
@@ -71,14 +88,14 @@ function destination(section: Section) {
   flex-shrink: 0;
   gap: 0;
 }
-.section-link[aria-current="page"] { flex-shrink: 1; }
+.section-link[aria-selected="true"] { flex-shrink: 1; }
 .section-label {
   max-width: 0;
   margin-inline-start: 0;
   opacity: 0;
   transition: opacity var(--ui-duration-fast) var(--ui-ease-out);
 }
-.section-link[aria-current="page"] .section-label {
+.section-link[aria-selected="true"] .section-label {
   max-width: 12rem;
   margin-inline-start: 0.5rem;
   opacity: 1;

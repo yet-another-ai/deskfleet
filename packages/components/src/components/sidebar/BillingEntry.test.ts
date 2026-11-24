@@ -12,6 +12,7 @@ import BillingEntry from "./BillingEntry.vue"
 vi.mock("../../services/analytics.ts", () => ({ trackEvent: vi.fn() }))
 let wrapper: VueWrapper
 const free = { ...billingFixture(), plan: "free" as const, paymentsAvailable: true, canManageBilling: true }
+
 function setup(value: TeamBilling = free) {
   const { central } = fakeCentral()
   central.billing.mockResolvedValue(value)
@@ -23,10 +24,12 @@ function setup(value: TeamBilling = free) {
 }
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
-test("free owner reaches plans without a machine", async () => {
+test("free owner sees compact borderless upgrade CTA without a machine", async () => {
   const { account } = setup()
   await flushPromises()
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(true)
   expect(wrapper.text()).toContain("Upgrade plan")
+  expect(wrapper.text()).not.toContain("Design")
   expect(trackEvent).not.toHaveBeenCalled()
   await wrapper.get("button").trigger("click")
   expect(account.openSettings).toHaveBeenCalledWith("plans")
@@ -34,17 +37,16 @@ test("free owner reaches plans without a machine", async () => {
 })
 
 test.each([
-  { plan: "go" as const }, { plan: "selfHosted" as const }, { canManageBilling: false },
+  { plan: "go" as const }, { plan: "pro" as const }, { plan: "selfHosted" as const }, { canManageBilling: false },
   { paymentsAvailable: false }, { manualGrant: { plan: "free" as const, expiresAt: null } },
   { subscription: { plan: "go" as const, status: "past_due", paidThrough: null, cancelAtPeriodEnd: false } },
-])("offers neutral billing navigation for %j", async override => {
+])("hides sidebar billing entry for %j", async override => {
   setup({ ...free, ...override })
   await flushPromises()
-  expect(wrapper.text()).toContain("Plans & billing")
-  expect(wrapper.text()).not.toContain("Upgrade plan")
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(false)
 })
 
-test("a late previous-Team response cannot advertise its plan on the next Team", async () => {
+test("a late previous-Team response cannot advertise upgrade on the next Team", async () => {
   const { central, team } = setup()
   await flushPromises()
   const old = Promise.withResolvers<TeamBilling>()
@@ -56,28 +58,24 @@ test("a late previous-Team response cannot advertise its plan on the next Team",
   await flushPromises()
   old.resolve(free)
   await flushPromises()
-  expect(wrapper.text()).not.toContain("Upgrade plan")
-  expect(wrapper.text()).not.toContain("Free")
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(false)
   next.resolve({ ...free, plan: "pro" })
   await flushPromises()
-  expect(wrapper.text()).toContain("Pro")
-  expect(wrapper.text()).not.toContain("Upgrade plan")
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(false)
 })
 
-test("billing lookup failure retains a working neutral entry without reporting an unhandled global error", async () => {
+test("billing lookup failure hides the sidebar CTA without reporting an unhandled global error", async () => {
   const reportError = vi.fn()
   vi.stubGlobal("reportError", reportError)
-  const { central, account } = setup()
+  const { central } = setup()
   central.billing.mockRejectedValue(new HttpError(401, "Unauthorized", undefined, "unauthorized"))
   window.dispatchEvent(new Event("focus"))
   await flushPromises()
   expect(reportError).not.toHaveBeenCalled()
-  await wrapper.get("button").trigger("click")
-  expect(account.openSettings).toHaveBeenCalledWith("plans")
-  expect(wrapper.text()).toContain("Plans & billing")
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(false)
 })
 
-test.each(["success", "failure"] as const)("focus refresh preserves the current plan and CTA until %s", async outcome => {
+test.each(["success", "failure"] as const)("focus refresh preserves upgrade CTA until %s resolves", async outcome => {
   const { central } = setup()
   await flushPromises()
   const refreshed = Promise.withResolvers<TeamBilling>()
@@ -85,10 +83,8 @@ test.each(["success", "failure"] as const)("focus refresh preserves the current 
   window.dispatchEvent(new Event("focus"))
   await flushPromises()
   expect(wrapper.get("button").text()).toContain("Upgrade plan")
-  expect(wrapper.get("[data-billing-entry] span:last-child").text()).toBe("Free")
   if (outcome === "success") refreshed.resolve({ ...free, plan: "pro" })
   else refreshed.reject(new Error("offline"))
   await flushPromises()
-  expect(wrapper.get("button").text()).toContain(outcome === "success" ? "Plans & billing" : "Upgrade plan")
-  expect(wrapper.get("[data-billing-entry] span:last-child").text()).toBe(outcome === "success" ? "Pro" : "Free")
+  expect(wrapper.find("[data-billing-entry]").exists()).toBe(outcome === "failure")
 })

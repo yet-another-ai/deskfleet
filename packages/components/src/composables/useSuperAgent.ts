@@ -6,10 +6,13 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { ComposerAttachment } from "../services/composer-attachments.ts"
 import { buildSuperAgentMessage } from "../services/super-agent-message.ts"
 import { useAccountSession } from "./account-session-context.ts"
+import {
+  setSharedSuperAgentSessions,
+  superAgentSessionKey,
+  upsertSharedSuperAgentSession,
+} from "./useSuperAgentSessionsList.ts"
 
-export function superAgentSessionKey(session: Pick<SuperAgentSession, "sessionId" | "engine" | "machineId">): string {
-  return session.engine === "byoa" ? `byoa:${session.machineId ?? ""}:${session.sessionId}` : `hosted:${session.sessionId}`
-}
+export { superAgentSessionKey }
 
 export function useSuperAgent() {
   const account = useAccountSession()
@@ -226,24 +229,38 @@ export function useSuperAgent() {
     if (hosted) void readHistory()
   }
 
+  const sharedScope = computed(() => JSON.stringify([
+    account?.account.value.serverUrl,
+    account?.account.value.user?.id,
+    account?.teamId.value,
+  ]))
+
   function upsertSession(session: SuperAgentSession, selectIt = false): void {
     const key = superAgentSessionKey(session)
     sessions.value = [session, ...sessions.value.filter(item => superAgentSessionKey(item) !== key)]
       .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    upsertSharedSuperAgentSession(sharedScope.value, session)
     if (selectIt) selectedKey.value = key
   }
 
-  async function loadSessions(): Promise<void> {
+  async function loadSessions(preferredKey?: string): Promise<void> {
     const teamId = account?.teamId.value
     if (!teamId || !automatic) return
     const revision = scopeRevision
+    const scope = sharedScope.value
     loadingList.value = true
     try {
       const result = await automatic.superAgentSessions(teamId)
       if (revision !== scopeRevision) return
       sessions.value = result
+      setSharedSuperAgentSessions(scope, result)
       listError.value = undefined
-      if (!selectedKey.value && result[0]) select(result[0])
+      if (preferredKey) {
+        const matched = result.find(item => superAgentSessionKey(item) === preferredKey || item.sessionId === preferredKey)
+        if (matched) select(matched)
+      } else if (!selectedKey.value && result[0]) {
+        select(result[0])
+      }
     } catch (error) {
       if (revision !== scopeRevision) return
       checkGate(error)

@@ -1,9 +1,13 @@
 import { flushPromises, mount } from "@vue/test-utils"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
+import { defineComponent, h } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import type { SearchPage, SearchResult } from "@deskfleet/client/search"
+import SidebarSearchPanel from "../components/sidebar/SidebarSearchPanel.vue"
 import { createAccountSession, accountSessionKey } from "../composables/useAccountSession.ts"
 import { i18n } from "../i18n/index.ts"
+import { useLayoutStore } from "../stores/layout.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import SearchView from "./SearchView.vue"
 
@@ -16,6 +20,8 @@ const chat = (overrides: Partial<SearchResult> = {}): SearchResult => ({
 
 async function setup(path = "/search") {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  const pinia = createPinia()
+  setActivePinia(pinia)
   const fake = fakeCentral({ machines: [machineFixture("local", "team-1", "Local"), machineFixture("remote", "team-1", "Remote", false)] })
   const account = createAccountSession(fake.central)
   await flushPromises()
@@ -24,16 +30,19 @@ async function setup(path = "/search") {
     { path: "/search", name: "search", component: SearchView },
   ] })
   await router.push(path)
-  const wrapper = mount(SearchView, { attachTo: document.body, global: {
-    plugins: [router, i18n], provide: { [accountSessionKey as symbol]: account }, stubs: { PaneHeader: { template: "<header><slot /></header>" } },
+  const Host = defineComponent({
+    render: () => h("div", [h(SearchView), h(SidebarSearchPanel)]),
+  })
+  const wrapper = mount(Host, { attachTo: document.body, global: {
+    plugins: [pinia, router, i18n], provide: { [accountSessionKey as symbol]: account }, stubs: { PaneHeader: { template: "<header><slot /></header>" } },
   } })
-  cleanup.push(() => { wrapper.unmount(); account.dispose() })
+  cleanup.push(() => { wrapper.unmount(); disposePinia(pinia); account.dispose() })
   return { ...fake, account, router, wrapper }
 }
 async function settleSearch() { await vi.advanceTimersByTimeAsync(250); await flushPromises() }
 
-test("debounces Team-wide queries, preserves URL state, highlights literal text safely, and opens the exact remote message", async () => {
-  const { central, account, router, wrapper } = await setup()
+test("debounces Team-wide queries, highlights literal text safely, and opens the exact remote message", async () => {
+  const { central, account, wrapper } = await setup()
   central.search.mockResolvedValue({ results: [chat()] })
   const open = vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
   await wrapper.get("input").setValue("a")
@@ -42,13 +51,11 @@ test("debounces Team-wide queries, preserves URL state, highlights literal text 
   expect(central.search).not.toHaveBeenCalled()
   await settleSearch()
   expect(central.search).toHaveBeenCalledExactlyOnceWith("team-1", { q: "a+b", kind: "all", limit: 30 })
-  expect(router.currentRoute.value.query).toEqual({ q: "a+b" })
-  expect(account.searchPath.value).toBe("/search?q=a%2Bb")
   expect(wrapper.findAll("mark").map(mark => mark.text())).toEqual(["a+b", "A+B"])
   expect(wrapper.find("img").exists()).toBe(false)
   expect(wrapper.text()).toContain("<img src=x onerror=alert(1)>")
   expect(wrapper.text()).toContain("Build machine · DeskFleet")
-  await wrapper.get("[data-search-result]").trigger("click")
+  await wrapper.get("[data-sidebar-search-result]").trigger("click")
   expect(open).toHaveBeenCalledExactlyOnceWith("remote", { name: "session", params: { sessionId: "30" }, query: { entry: "message-8" } })
 })
 
@@ -65,23 +72,24 @@ test("ignores a stale response as soon as the query changes, before its next deb
   expect(wrapper.text()).toContain("New result")
 })
 
-test("restores filters from the URL, loads another page, and opens a schedule on its owning machine", async () => {
+test("restores filters from a deep link, loads another page, and opens a schedule on its owning machine", async () => {
   const { central, account, wrapper } = await setup("/search?q=review&kind=schedule")
   const task: SearchResult = { kind: "schedule", machineId: "remote", machineName: "Remote", resourceId: "task-1", title: "Review", snippet: "Review the repository", updatedAt: "now" }
   central.search.mockResolvedValueOnce({ results: [task], nextCursor: "page-2" }).mockResolvedValueOnce({ results: [{ ...task, resourceId: "task-2", title: "Second review" }] })
   const open = vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
   await settleSearch()
+  expect(useLayoutStore().sidebarPanel.panel.value).toBe("search")
   expect(central.search).toHaveBeenLastCalledWith("team-1", { q: "review", kind: "schedule", limit: 30 })
   await wrapper.findAll("button").find(button => button.text() === "Load more")!.trigger("click")
   await flushPromises()
   expect(central.search).toHaveBeenLastCalledWith("team-1", { q: "review", kind: "schedule", cursor: "page-2", limit: 30 })
-  expect(wrapper.findAll("[data-search-result]")).toHaveLength(2)
-  await wrapper.get("[data-search-result]").trigger("click")
+  expect(wrapper.findAll("[data-sidebar-search-result]")).toHaveLength(2)
+  await wrapper.get("[data-sidebar-search-result]").trigger("click")
   expect(open).toHaveBeenCalledWith("remote", { name: "schedules", params: { scheduleId: "task-1" } })
 })
 
 test("clears a previous Team's query and ignores its in-flight results", async () => {
-  const { central, account, wrapper, router } = await setup("/search?q=private")
+  const { central, account, wrapper } = await setup("/search?q=private")
   const page = Promise.withResolvers<SearchPage>()
   central.search.mockReturnValue(page.promise)
   await settleSearch()
@@ -90,8 +98,7 @@ test("clears a previous Team's query and ignores its in-flight results", async (
   page.resolve({ results: [chat()] })
   await flushPromises()
   expect(wrapper.get<HTMLInputElement>("input").element.value).toBe("")
-  expect(wrapper.findAll("[data-search-result]")).toHaveLength(0)
-  expect(router.currentRoute.value.query).toEqual({})
+  expect(wrapper.findAll("[data-sidebar-search-result]")).toHaveLength(0)
   await settleSearch()
   expect(central.search).toHaveBeenCalledOnce()
 })
@@ -103,7 +110,7 @@ test("shows a query error and retries without losing the query", async () => {
   expect(wrapper.get('[role="alert"]').text()).toBe("Search unavailable")
   await wrapper.findAll("button").find(button => button.text() === "Retry")!.trigger("click")
   await flushPromises()
-  expect(wrapper.findAll("[data-search-result]")).toHaveLength(1)
+  expect(wrapper.findAll("[data-sidebar-search-result]")).toHaveLength(1)
 })
 
 test("Enter refreshes unchanged text and cancels an outstanding debounce", async () => {

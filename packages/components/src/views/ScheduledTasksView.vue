@@ -4,8 +4,7 @@ import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import MachineTabs from "../components/account/MachineTabs.vue"
-import { CalendarClock, Plus, RefreshCw } from "@lucide/vue"
+import { CalendarClock, Plus } from "@lucide/vue"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
@@ -14,12 +13,11 @@ import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ConfirmDialog from "../components/common/ConfirmDialog.vue"
 import ScheduleDetail from "../components/schedules/ScheduleDetail.vue"
 import ScheduleEditor from "../components/schedules/ScheduleEditor.vue"
-import ScheduleList from "../components/schedules/ScheduleList.vue"
 import { useScheduledTasks } from "../composables/useScheduledTasks.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { absoluteTime } from "../components/schedules/schedule-format.ts"
 
-// `/schedules` lists the machine's tasks, `/schedules/new` creates one, and `/schedules/:id` shows one.
+// `/schedules` prompts to select or create a task, `/schedules/new` creates one, and `/schedules/:id` shows one.
 const props = defineProps<{ scheduleId?: string }>()
 const { t, locale } = useI18n()
 const motion = useNavigationMotion()
@@ -34,12 +32,12 @@ const blocked = computed(() => !online.value || pending.value)
 const removing = ref<ScheduledTask>()
 
 const list = () => router.replace({ name: "schedules" })
-// A deleted task, or a link to another machine's task, returns to the list.
+// A deleted task, or a link to another machine's task, returns to the schedules root.
 watch([loaded, () => props.scheduleId, selected], () => {
   if (loaded.value && props.scheduleId && !creating.value && !selected.value) void list()
 }, { immediate: true })
 const save = (input: ScheduleInput) => schedules.save(selected.value?.id, input)
-// Replacing the creation page lets Back return to the list rather than an empty form.
+// Replacing the creation page lets Back return to the root rather than an empty form.
 function created(task: ScheduledTask): void { void router.replace({ name: "schedules", params: { scheduleId: task.id } }) }
 async function remove(): Promise<void> {
   const task = removing.value
@@ -58,20 +56,6 @@ async function remove(): Promise<void> {
   </PaneHeader>
   <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
     <div v-navigation-motion="motion" class="mx-auto flex flex-col gap-5" :class="selected ? 'max-w-6xl' : 'max-w-4xl'">
-      <template v-if="!scheduleId">
-        <div class="flex flex-wrap items-end justify-between gap-4">
-          <div class="min-w-0">
-            <h1 class="ui-page-title">{{ t('schedules.title') }}</h1>
-            <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('schedules.description', { machine: machineName }) }}</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <UiButton type="button" class="px-2" :aria-label="t('catalog.refresh')" :title="t('catalog.refresh')" :disabled="!schedules.available || loading || pending" @click="schedules.refresh"><RefreshCw :size="14" aria-hidden="true" /></UiButton>
-            <RouterLink v-if="online && loaded" :to="{ name: 'schedules', params: { scheduleId: 'new' } }" data-schedule-new class="ui-button-primary no-underline"><Plus :size="15" aria-hidden="true" />{{ t('schedules.create') }}</RouterLink>
-          </div>
-        </div>
-        <MachineTabs :label="t('schedules.machine')" :disabled="pending" />
-      </template>
-
       <p v-if="!online" role="status" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(schedules.available ? 'schedules.offline' : 'schedules.signIn') }}</p>
       <p v-if="!online && lastObservedAt" class="m-0 text-xs text-ui-text-muted">{{ t('schedules.lastObserved', { time: absoluteTime(lastObservedAt, locale) }) }}</p>
       <ErrorNotice v-if="error" :error="error">
@@ -85,14 +69,14 @@ async function remove(): Promise<void> {
           <ScheduleEditor :disabled="blocked" :save="save" @saved="created" @cancel="list" />
         </template>
         <ScheduleDetail v-else-if="selected" :key="selected.id" :task="selected" :disabled="blocked" :save="save" @run="schedules.run(selected)" @toggle="schedules.toggle(selected)" @delete="removing = selected" />
-        <template v-else-if="!scheduleId">
-          <div v-if="!tasks.length" class="ui-empty">
-            <CalendarClock :size="25" class="mb-2 text-ui-text-muted" aria-hidden="true" />
-            <p class="m-0 text-sm font-medium">{{ t('schedules.empty') }}</p>
-            <p class="m-0 max-w-sm text-[13px] leading-5 text-ui-text-muted">{{ t('schedules.emptyHint') }}</p>
-          </div>
-          <ScheduleList v-else :tasks="tasks" :disabled="blocked" @run="schedules.run" @toggle="schedules.toggle" />
-        </template>
+        <div v-else class="ui-empty">
+          <CalendarClock :size="25" class="mb-2 text-ui-text-muted" aria-hidden="true" />
+          <p class="m-0 text-sm font-medium">{{ t('schedules.title') }}</p>
+          <p class="m-0 max-w-sm text-[13px] leading-5 text-ui-text-muted">{{ t('schedules.description', { machine: machineName }) }}</p>
+          <RouterLink v-if="online" :to="{ name: 'schedules', params: { scheduleId: 'new' } }" data-schedule-new class="ui-button-primary mt-3 no-underline">
+            <Plus :size="15" aria-hidden="true" />{{ t('schedules.create') }}
+          </RouterLink>
+        </div>
       </template>
     </div>
   </UiScrollArea>

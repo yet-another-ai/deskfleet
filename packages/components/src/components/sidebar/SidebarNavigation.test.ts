@@ -1,19 +1,18 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { createPinia, disposePinia } from "pinia"
+import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, expect, test } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import SidebarNavigation from "./SidebarNavigation.vue"
-import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
-import { fakeCentral } from "../../test/central.ts"
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia> | undefined
-const sectionLink = (label: string) => wrapper!.get<HTMLAnchorElement>(`a[aria-label="${label}"]`)
-const newSessionLink = () => wrapper!.findAll("a").find(link => link.text() === i18n.global.t("nav.newSession"))!
+const tabButton = (label: string) => wrapper!.get<HTMLButtonElement>(`button[role="tab"][aria-label="${label}"]`)
 
 async function setup(path = "/") {
   pinia = createPinia()
+  setActivePinia(pinia)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -26,20 +25,13 @@ async function setup(path = "/") {
       { path: "/terminals/:terminalId", name: "terminal", component: {} },
       { path: "/worktrees/:worktreeId", name: "worktree", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
-      {
-        path: "/settings",
-        meta: { fullWindow: true },
-        children: [
-          { path: "", name: "settings", redirect: { name: "settings-preferences" } },
-          { path: "preferences", name: "settings-preferences", component: {} },
-        ],
-      },
+      { path: "/super-agent", name: "super-agent", component: {} },
     ],
   })
   await router.push(path)
   wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia, router, i18n] } })
   await flushPromises()
-  return router
+  return { router, layout: useLayoutStore() }
 }
 
 afterEach(async () => {
@@ -54,184 +46,69 @@ afterEach(async () => {
   i18n.global.locale.value = "en-US"
 })
 
-test("keeps New session available alongside the section capsules", async () => {
-  const router = await setup("/schedules/daily-review")
+test("renders accessible tablist capsules that switch sidebar panels without changing the main route", async () => {
+  const { router, layout } = await setup("/sessions/session-42?tab=changes")
   expect(wrapper!.get("nav").attributes("aria-label")).toBe("Navigation")
-  const newSession = newSessionLink()
-  expect(newSession.text()).toBe("New session")
-  expect(newSession.attributes("href")).toBe("/")
-  await newSession.trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.name).toBe("new-session")
-  expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Schedules").attributes("aria-current")).toBeUndefined()
+  expect(wrapper!.get('[role="tablist"]').attributes("aria-label")).toBe("Navigation")
+  expect(tabButton("Conversations").attributes("aria-selected")).toBe("true")
+  expect(tabButton("Conversations").attributes("tabindex")).toBe("0")
+  expect(tabButton("Schedules").attributes("aria-selected")).toBe("false")
+  expect(tabButton("Schedules").attributes("tabindex")).toBe("-1")
+
+  await tabButton("Schedules").trigger("click")
+  expect(layout.sidebarPanel.panel.value).toBe("schedules")
+  expect(tabButton("Schedules").attributes("aria-selected")).toBe("true")
+  expect(router.currentRoute.value.fullPath).toBe("/sessions/session-42?tab=changes")
+
+  await tabButton("Search").trigger("click")
+  expect(layout.sidebarPanel.panel.value).toBe("search")
+  expect(router.currentRoute.value.fullPath).toBe("/sessions/session-42?tab=changes")
+
+  await tabButton("Remote desktop").trigger("click")
+  expect(layout.sidebarPanel.panel.value).toBe("desktops")
+  expect(router.currentRoute.value.fullPath).toBe("/sessions/session-42?tab=changes")
 })
 
-test.each(["/schedules", "/schedules/new", "/schedules/daily-review"])("recognizes %s as the Schedules section", async path => {
-  await setup(path)
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Schedules").attributes("href")).toBe(path)
-  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
-})
+test("supports roving arrow-key focus with manual activation", async () => {
+  const { layout } = await setup("/sessions/session-42")
+  const conversations = tabButton("Conversations")
+  const schedules = tabButton("Schedules")
+  const search = tabButton("Search")
 
-test("switches sections and restores the previous conversation route including query and hash", async () => {
-  const conversation = "/sessions/session-42?tab=changes#reply-7"
-  const router = await setup(conversation)
-  expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Schedules").attributes("href")).toBe("/schedules")
-  await sectionLink("Schedules").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe("/schedules")
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  await router.push("/schedules/daily-review")
-  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
-  await sectionLink("Conversations").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(conversation)
-  expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Schedules").attributes("aria-current")).toBeUndefined()
-})
+  conversations.element.focus()
+  await conversations.trigger("keydown", { key: "ArrowRight" })
+  expect(document.activeElement).toBe(schedules.element)
+  expect(layout.sidebarPanel.panel.value).toBe("conversations")
 
-test("falls back to New session when opened directly on a schedule", async () => {
-  const router = await setup("/schedules/daily-review")
-  expect(sectionLink("Conversations").attributes("href")).toBe("/")
-  await sectionLink("Conversations").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe("/")
-})
+  await schedules.trigger("keydown", { key: "End" })
+  expect(document.activeElement).toBe(search.element)
+  expect(layout.sidebarPanel.panel.value).toBe("conversations")
 
-test("Archived sessions has no active capsule and preserves the previous conversation destination", async () => {
-  const conversation = "/sessions/session-42?tab=changes#reply-7"
-  const router = await setup(conversation)
-  await router.push("/sessions/archived"); await flushPromises()
-  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
-  expect(sectionLink("Schedules").attributes("aria-current")).toBeUndefined()
-  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
-  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
-  await sectionLink("Conversations").trigger("click"); await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(conversation)
-})
-
-test("opening Archived sessions directly returns Conversations to New session", async () => {
-  const router = await setup("/sessions/archived")
-  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
-  expect(sectionLink("Conversations").attributes("href")).toBe("/")
-  await sectionLink("Conversations").trigger("click"); await flushPromises()
-  expect(router.currentRoute.value.name).toBe("new-session")
+  await search.trigger("keydown", { key: "Home" })
+  expect(document.activeElement).toBe(conversations.element)
 })
 
 test.each([
-  { path: "/sessions/session-42?tab=changes", section: "Conversations" },
-  { path: "/schedules/new", section: "Schedules" },
-  { path: "/search?q=hello&kind=chat", section: "Search" },
-  { path: "/desktops", section: "Remote desktop" },
-])("selecting the active $section section keeps $path", async ({ path, section }) => {
-  const router = await setup(path)
-  expect(sectionLink(section).attributes("href")).toBe(path)
-  await sectionLink(section).trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(path)
-  expect(sectionLink(section).attributes("aria-current")).toBe("page")
+  { path: "/schedules", panel: "schedules", label: "Schedules" },
+  { path: "/schedules/daily-review", panel: "schedules", label: "Schedules" },
+  { path: "/desktops", panel: "desktops", label: "Remote desktop" },
+  { path: "/search?q=review&kind=chat", panel: "search", label: "Search" },
+])("syncs initial deep link $path to the $panel sidebar panel", async ({ path, panel, label }) => {
+  const { layout } = await setup(path)
+  expect(layout.sidebarPanel.panel.value).toBe(panel)
+  expect(tabButton(label).attributes("aria-selected")).toBe("true")
 })
 
-test("external navigation updates the active capsule and conversation return route", async () => {
-  const router = await setup("/sessions/session-42")
-  await router.push("/terminals/shell-7")
+test("keeps the Search sidebar panel open when navigating to a session or schedule result", async () => {
+  const { router, layout } = await setup("/sessions/session-42")
+  await tabButton("Search").trigger("click")
+  expect(layout.sidebarPanel.panel.value).toBe("search")
+
+  await router.push("/sessions/session-99")
   await flushPromises()
-  expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("href")).toBe("/terminals/shell-7")
+  expect(layout.sidebarPanel.panel.value).toBe("search")
+
   await router.push("/schedules/daily-review")
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
-  await sectionLink("Conversations").trigger("click")
   await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe("/terminals/shell-7")
-})
-
-test("remounting while on Schedules keeps the last conversation path", async () => {
-  const conversation = "/sessions/session-42?tab=changes#reply-7"
-  const router = await setup(conversation)
-  await sectionLink("Schedules").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe("/schedules")
-  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
-  // AppSidebar remounts on hide/show and Settings; the layout store outlives it.
-  wrapper!.unmount()
-  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia!, router, i18n] } })
-  await flushPromises()
-  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
-  await sectionLink("Conversations").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(conversation)
-})
-
-test("Search returns to the Team's previous query after a result switches machine scopes", async () => {
-  const router = await setup("/search?q=review&kind=chat")
-  const account = createAccountSession(fakeCentral().central)
-  await flushPromises()
-  account.searchPath.value = router.currentRoute.value.fullPath
-  wrapper!.unmount()
-  await router.push("/sessions/30?entry=message-8")
-  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia!, router, i18n], provide: { [accountSessionKey as symbol]: account } } })
-  expect(sectionLink("Search").attributes("href")).toBe("/search?q=review&kind=chat")
-  await sectionLink("Search").trigger("click")
-  await flushPromises()
-  expect(sectionLink("Search").attributes("aria-current")).toBe("page")
-  expect(router.currentRoute.value.query).toEqual({ q: "review", kind: "chat" })
-  account.dispose()
-})
-
-test("Search is always available alongside the existing capsules", async () => {
-  await setup("/schedules")
-  expect(sectionLink("Search").attributes("href")).toBe("/search")
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("href")).toBe("/")
-})
-
-test("Remote desktop opens its own overview and preserves the conversation destination", async () => {
-  const conversation = "/sessions/session-42?tab=changes#reply-7"
-  const router = await setup(conversation)
-  expect(sectionLink("Remote desktop").attributes("href")).toBe("/desktops")
-  await sectionLink("Remote desktop").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.name).toBe("remote-desktops")
-  expect(sectionLink("Remote desktop").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
-  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
-  await sectionLink("Conversations").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(conversation)
-})
-
-test("Settings does not overwrite the Conversations return path", async () => {
-  const conversation = "/terminals/shell-7"
-  const router = await setup(conversation)
-  await router.push("/settings/preferences")
-  await flushPromises()
-  expect(router.currentRoute.value.name).toBe("settings-preferences")
-  expect(window.localStorage.getItem("deskfleet.conversation-path")).toBe(conversation)
-  // fullWindow unmounts the sidebar; returning to Schedules remounts it.
-  wrapper!.unmount()
-  await router.push("/schedules")
-  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia!, router, i18n] } })
-  await flushPromises()
-  expect(sectionLink("Schedules").attributes("aria-current")).toBe("page")
-  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
-  await sectionLink("Conversations").trigger("click")
-  await flushPromises()
-  expect(router.currentRoute.value.fullPath).toBe(conversation)
-  expect(router.currentRoute.value.name).not.toBe("settings-preferences")
-})
-
-test("localizes both section links and the New session action", async () => {
-  i18n.global.locale.value = "zh-cmn-Hans-CN"
-  await setup("/schedules")
-  expect(wrapper!.get("nav").attributes("aria-label")).toBe("导航")
-  expect(newSessionLink().text()).toBe("新会话")
-  expect(sectionLink("计划任务").attributes("aria-current")).toBe("page")
-  expect(sectionLink("对话").attributes("aria-current")).toBeUndefined()
-  expect(sectionLink("对话").attributes("href")).toBe("/")
-  expect(sectionLink("远程桌面").attributes("href")).toBe("/desktops")
+  expect(layout.sidebarPanel.panel.value).toBe("search")
 })

@@ -8,6 +8,7 @@ import { accountSessionKey, type AccountSession } from "./useAccountSession.ts"
 import { platformClientKey } from "./usePlatformClient.ts"
 import { createSidebarFilter, type SidebarFilterState } from "./useSidebarFilter.ts"
 import { createSidebarOrder, type SidebarOrder } from "./useSidebarOrder.ts"
+import { createSidebarPanel, panelForRouteName, type SidebarPanelState } from "./useSidebarPanel.ts"
 import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearance.ts"
@@ -30,6 +31,7 @@ export interface MachineRuntimes {
   sidebarScrollTop: number
   sidebarFilter: SidebarFilterState
   sidebarOrder: SidebarOrder
+  sidebarPanel: SidebarPanelState
   open(machine: Machine): MachineRuntime
 }
 
@@ -46,6 +48,7 @@ export function createMachineRuntimes(
 ): MachineRuntimes {
   const opened = shallowReactive(new Map<string, MachineRuntime>())
   const sidebarFilter = createSidebarFilter()
+  const sidebarPanel = createSidebarPanel(panelForRouteName(router.currentRoute.value.name) ?? "conversations")
   function release(id: string): void {
     const runtime = opened.get(id)
     opened.delete(id)
@@ -61,6 +64,7 @@ export function createMachineRuntimes(
     runtimes.sidebarScrollTop = 0
     sidebarFilter.filter.value = "all"
     sidebarFilter.counts.clear()
+    sidebarPanel.reset()
   }, { flush: "sync" })
   watch(() => [session.machines.value.map(machine => ({ ...machine })), session.machineRosterVersion.value] as const, ([machines, version], [, previousVersion]) => {
     for (const [id, runtime] of opened) {
@@ -76,6 +80,7 @@ export function createMachineRuntimes(
     sidebarScrollTop: 0,
     sidebarFilter,
     sidebarOrder,
+    sidebarPanel,
     open(machine) {
       const existing = opened.get(machine.id)
       if (existing) return existing

@@ -1398,6 +1398,7 @@
   },
   "catalog": {
     "local": "本地",
+    "machines": "机器",
     "workspaces": "工作区",
     "loading": "正在加载工作区…",
     "refresh": "刷新",
@@ -2353,6 +2354,7 @@
     }
   },
   "sidebar": {
+    "chat": "聊天",
     "filterLabel": "筛选会话",
     "filterAll": "全部",
     "filterUnread": "未读",

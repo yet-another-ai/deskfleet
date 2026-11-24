@@ -110,7 +110,7 @@ test("Escape closes a compact drawer and returns focus to its visible opener", a
 test("compact navigation closes on both a new destination and the current destination", async () => {
   const view = await mountApp()
   await view.get('main [aria-label="Show sidebar"]').trigger("click")
-  await view.get('[role="dialog"] a[aria-label="Conversations"]').trigger("click")
+  await view.get('[role="dialog"] a[href="#/"]').trigger("click")
   await flushPromises()
   expect(view.find('[role="dialog"]').exists()).toBe(false)
   await view.get('main [aria-label="Show sidebar"]').trigger("click")

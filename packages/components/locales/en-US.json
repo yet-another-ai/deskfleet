@@ -1398,6 +1398,7 @@
   },
   "catalog": {
     "local": "Local",
+    "machines": "Machines",
     "workspaces": "Workspaces",
     "loading": "Loading workspaces…",
     "refresh": "Refresh",
@@ -2353,6 +2354,7 @@
     }
   },
   "sidebar": {
+    "chat": "Chat",
     "filterLabel": "Filter sessions",
     "filterAll": "All",
     "filterUnread": "Unread",

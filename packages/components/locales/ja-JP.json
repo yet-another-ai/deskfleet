@@ -1123,7 +1123,7 @@
     "quitAndUpdate": "終了して更新 (v{version})"
   },
   "catalog": {
-    "local": "ローカル", "workspaces": "ワークスペース",
+    "local": "ローカル", "machines": "マシン", "workspaces": "ワークスペース",
     "loading": "ワークスペースを読み込み中…", "refresh": "更新",
     "offline": "ローカルデーモンを利用できません。更新して再接続してください。", "workspaceName": "名前",
     "directoryPath": "ディレクトリ {number}", "removeDirectory": "ディレクトリ {number} を削除",
@@ -1764,6 +1764,7 @@
     }
   },
   "sidebar": {
+    "chat": "チャット",
     "filterLabel": "セッションを絞り込む",
     "filterAll": "すべて",
     "filterUnread": "未読",
