@@ -94,7 +94,7 @@ export default defineConfig({
     "ui-switch":
       "relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-ui-border-strong ui-motion [&[aria-checked=true]]:bg-ui-accent disabled:op-50",
     "ui-switch-thumb":
-      "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ui-switch-thumb shadow-ui-card",
+      "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ui-switch-thumb",
     // A radio's ring; the checked item's ring tints, and its `ui-radio-dot` indicator springs in.
     "ui-radio":
       "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong bg-ui-control ui-motion",
