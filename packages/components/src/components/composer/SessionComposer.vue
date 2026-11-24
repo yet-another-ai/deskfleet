@@ -646,10 +646,10 @@ onBeforeUnmount(() => {
         </div>
         <UiButton variant="ghost" size="icon" type="button" class="absolute right-2 h-7 w-7" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
       </div>
-      <div class="flex items-center gap-2 px-3 pb-2.5">
+      <div class="flex items-center gap-1 px-3 pb-2.5">
         <DropdownMenuRoot v-if="canCompose" :modal="false">
-          <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
-            <Plus :size="16" :stroke-width="2" aria-hidden="true" />
+          <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 p-0" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
+            <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
             <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
@@ -668,8 +668,7 @@ onBeforeUnmount(() => {
         <button
           v-if="location"
           type="button"
-          class="ui-text-button shrink-0 cursor-pointer leading-5 disabled:cursor-default disabled:opacity-50"
-          :class="yoloEnabled && 'ui-nav-active'"
+          class="ui-button-ghost h-7 w-7 shrink-0 p-0"
           :aria-pressed="yoloEnabled"
           :aria-label="t('composer.yoloHint')"
           :title="t('composer.yoloHint')"
@@ -677,17 +676,17 @@ onBeforeUnmount(() => {
           data-composer-yolo
           @click="toggleYolo"
         >
-          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" aria-hidden="true" />
+          <Zap :size="16" :stroke-width="1.75" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
         </button>
         <slot name="context" />
-        <div class="ml-auto flex shrink-0 items-center gap-2">
+        <div class="ml-auto flex shrink-0 items-center gap-1">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'ui-nav-active' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !canCompose || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
-            <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
-            <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" :class="dictation.active ? 'ui-nav-active' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !canCompose || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+            <Square v-if="dictation.active" :size="11" :stroke-width="0" fill="currentColor" aria-hidden="true" />
+            <Mic v-else :size="16" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
-          <UiButton v-if="canCancel && (empty || (hosted && disabled))" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !canCompose || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="2" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-if="canCancel && (empty || (hosted && disabled))" variant="primary" size="icon" class="ml-1 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="11" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send ml-1 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !canCompose || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="1.75" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="16" :stroke-width="1.75" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
@@ -720,7 +719,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.session-composer { container-type: inline-size; }
+.session-composer { container: session-composer / inline-size; }
 
 /* Send springs forward when it becomes available; its arrow nudges up on hover. */
 .composer-send:enabled { animation: composer-send-ready var(--ui-duration-slow) var(--ui-ease-spring); }

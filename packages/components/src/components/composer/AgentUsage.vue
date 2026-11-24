@@ -31,12 +31,19 @@ const cost = computed(() => {
 
 <template>
   <PopoverRoot>
-    <PopoverTrigger type="button" data-agent-usage class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs tabular-nums ui-motion hover:bg-ui-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent" :class="tone" :aria-label="summary" :title="summary">
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" opacity="0.2" />
-        <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" pathLength="100" :stroke-dasharray="`${fill} 100`" transform="rotate(-90 10 10)" />
+    <PopoverTrigger
+      type="button"
+      data-agent-usage
+      class="agent-usage-trigger ui-text-button shrink-0 gap-1.5 px-1.5 text-xs tabular-nums"
+      :class="ratio !== undefined && ratio >= 0.9 ? 'text-ui-warning hover:text-ui-warning' : undefined"
+      :aria-label="summary"
+      :title="summary"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="shrink-0" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75" opacity="0.2" />
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75" pathLength="100" :stroke-dasharray="`${fill} 100`" transform="rotate(-90 12 12)" />
       </svg>
-      <span>{{ percent }}</span>
+      <span class="agent-usage-percent">{{ percent }}</span>
     </PopoverTrigger>
     <PopoverPortal>
       <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4">
@@ -56,3 +63,16 @@ const cost = computed(() => {
     </PopoverPortal>
   </PopoverRoot>
 </template>
+
+<style scoped>
+@container session-composer (max-width: 32rem) {
+  .agent-usage-trigger {
+    width: 1.75rem;
+    padding-inline: 0;
+  }
+
+  .agent-usage-percent {
+    display: none;
+  }
+}
+</style>
