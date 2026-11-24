@@ -387,7 +387,7 @@ test("a session links to its own read-only worktree", async () => {
     repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [] }],
   })
   const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
-  expect(status).toHaveBeenCalledWith(sessionId, false)
+  expect(status).toHaveBeenCalledWith(sessionId, false, "base")
   expect(panel(wrapper).text()).toContain("session-branch")
   expect(wrapper.find("main header").exists()).toBe(false)
   expect(wrapper.get('[data-window-tab-id="chat"]').text()).toContain(`Session ${sessionId}`)

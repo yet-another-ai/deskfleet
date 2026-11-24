@@ -1540,6 +1540,17 @@ test("Git reads use the captured Session checkout after Workspace edits and do n
   }, f.bob) as GitFileDiff
   assert.match(diff.patch, /\+Session edit/u)
   assert.doesNotMatch(diff.patch, /Source checkout edit/u)
+  const baseStatus = await f.service.handle("_deskfleet/git/status", { sessionId: f.sessionId, mode: "base" }, f.actor) as GitStatusSnapshot
+  assert.equal(baseStatus.repositories[0]!.baseBranch, "main")
+  assert.ok(baseStatus.repositories[0]!.changes.some(change => change.path === "README.md" && change.kind === "branch"))
+  const baseDiff = await f.service.handle("_deskfleet/git/diff", {
+    sessionId: f.sessionId, repositoryId: repository.id, path: "README.md", kind: "branch", mode: "base",
+  }, f.bob) as GitFileDiff
+  assert.match(baseDiff.patch, /\+Session edit/u)
+  await assert.rejects(f.service.handle("_deskfleet/git/status", { sessionId: f.sessionId, mode: "invalid" }, f.actor), /Invalid Git mode/u)
+  await assert.rejects(f.service.handle("_deskfleet/git/diff", {
+    sessionId: f.sessionId, repositoryId: repository.id, path: "README.md", kind: "branch",
+  }, f.bob), /Invalid Git diff kind/u)
   assert.equal((await f.read()).session.lastEventSeq, before.session.lastEventSeq)
   assert.deepEqual(await f.service.journal.history(f.sessionId, before.session.lastEventSeq), [])
 })

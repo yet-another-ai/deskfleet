@@ -6,7 +6,7 @@ import { join } from "node:path"
 import test, { type TestContext } from "node:test"
 import { promisify } from "node:util"
 import { GitInspection } from "./inspection.ts"
-import type { GitChangeKind, GitStatusSnapshot } from "@deskfleet/protocol/git"
+import type { GitChangeKind, GitChangesMode, GitStatusSnapshot } from "@deskfleet/protocol/git"
 
 const execute = promisify(execFile)
 const git = async (root: string, ...args: string[]) => (await execute("git", ["-C", root, ...args], { encoding: "utf8" })).stdout.trimEnd()
@@ -31,8 +31,8 @@ async function repository(root: string, initial = true): Promise<void> {
   }
 }
 
-function request(snapshot: GitStatusSnapshot, path: string, kind: GitChangeKind, index = 0) {
-  return { sessionId: snapshot.sessionId, repositoryId: snapshot.repositories[index]!.id, path, kind }
+function request(snapshot: GitStatusSnapshot, path: string, kind: GitChangeKind, index = 0, mode?: GitChangesMode) {
+  return { sessionId: snapshot.sessionId, repositoryId: snapshot.repositories[index]!.id, path, kind, ...(mode ? { mode } : {}) }
 }
 
 test("live inspection separates index and worktree changes and rereads selected file content", async context => {
@@ -371,4 +371,68 @@ test("home directory is refused as a Git repository while child repositories ins
       else process.env[key] = value
     }
   }
+})
+
+test("base mode diffs merge-base to working tree, handles renames and untracked, and resolves base priority with fallback", async context => {
+  const base = await fixture(context)
+  const root = join(base, "repo")
+  await repository(root)
+  const commit = async (dir: string, msg: string) => { await git(dir, "add", "-A"); await git(dir, "commit", "--no-gpg-sign", "-m", msg) }
+  await writeFile(join(root, "rename-me.txt"), "keep\n")
+  await commit(root, "second base")
+  const mainTip = await git(root, "rev-parse", "HEAD")
+
+  await git(root, "checkout", "-b", "release/1")
+  await writeFile(join(root, "release.txt"), "release\n")
+  await commit(root, "release")
+  await git(root, "checkout", "-b", "feat/work")
+  await writeFile(join(root, "source.txt"), "first\ncommitted\n")
+  await rename(join(root, "rename-me.txt"), join(root, "renamed.txt"))
+  await commit(root, "feature")
+
+  // Advance main after branching; merge-base excludes main's unrelated commit.
+  await git(root, "checkout", "main")
+  await writeFile(join(root, "upstream-only.txt"), "other\n")
+  await commit(root, "upstream")
+  await git(root, "checkout", "feat/work")
+  await writeFile(join(root, "source.txt"), "first\ncommitted\nworking-edit\n")
+  await writeFile(join(root, "staged-new.txt"), "staged\n")
+  await git(root, "add", "staged-new.txt")
+  await writeFile(join(root, "untracked.txt"), "brand new\n")
+
+  // Default resolves local main; ignores later main commit, merges committed+staged+unstaged+untracked.
+  const snapshot = await inspection.status("1", [root], false, "base")
+  const checkout = snapshot.repositories[0]!
+  assert.equal(checkout.baseBranch, "main")
+  assert.equal(checkout.changes.some(file => file.path === "upstream-only.txt"), false)
+  assert.deepEqual(checkout.changes.find(file => file.path === "source.txt"), { path: "source.txt", kind: "branch", status: "modified", additions: 2, deletions: 1 })
+  assert.deepEqual(checkout.changes.find(file => file.path === "renamed.txt"), { path: "renamed.txt", previousPath: "rename-me.txt", kind: "branch", status: "renamed", additions: 0, deletions: 0 })
+  assert.deepEqual(checkout.changes.find(file => file.path === "staged-new.txt"), { path: "staged-new.txt", kind: "branch", status: "added", additions: 1, deletions: 0 })
+  assert.deepEqual(checkout.changes.find(file => file.path === "untracked.txt"), { path: "untracked.txt", kind: "untracked", status: "untracked", additions: 1, deletions: 0 })
+  assert.match((await inspection.diff(request(snapshot, "source.txt", "branch", 0, "base"), [root])).patch, /-second\n\+committed\n\+working-edit/u)
+  assert.match((await inspection.diff(request(snapshot, "renamed.txt", "branch", 0, "base"), [root])).patch, /rename from rename-me.txt\nrename to renamed.txt/u)
+  assert.match((await inspection.diff(request(snapshot, "untracked.txt", "untracked", 0, "base"), [root])).patch, /\+brand new/u)
+  await assert.rejects(inspection.diff(request(snapshot, "upstream-only.txt", "branch", 0, "base"), [root]), /no longer present/u)
+  await assert.rejects(inspection.diff(request(snapshot, "source.txt", "branch"), [root]), /Invalid Git diff kind/u)
+
+  // Remote HEAD takes priority over local main, and explicit baseBranch overrides remote HEAD.
+  await git(root, "remote", "add", "origin", "https://example.invalid/org/repo.git")
+  await git(root, "update-ref", "refs/remotes/origin/main", mainTip)
+  await git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+  assert.equal((await inspection.status("1", [root], false, "base")).repositories[0]!.baseBranch, "origin/main")
+  const hinted = await inspection.status("1", [root], false, "base", "release/1")
+  assert.equal(hinted.repositories[0]!.baseBranch, "release/1")
+  assert.equal(hinted.repositories[0]!.changes.some(file => file.path === "release.txt"), false)
+  assert.match((await inspection.diff(request(hinted, "source.txt", "branch", 0, "base"), [root], "release/1")).patch, /\+working-edit/u)
+
+  // Uncommitted mode stays separate; unborn repo falls back to uncommitted with null baseBranch.
+  const uncommitted = await inspection.status("1", [root], false, "uncommitted")
+  assert.equal(uncommitted.repositories[0]!.baseBranch, undefined)
+  assert.equal(uncommitted.repositories[0]!.changes.some(file => file.path === "renamed.txt"), false)
+  const unborn = join(base, "unborn")
+  await repository(unborn, false)
+  await writeFile(join(unborn, "draft.txt"), "hello\n")
+  const fallback = await inspection.status("1", [unborn], false, "base")
+  assert.equal(fallback.repositories[0]!.baseBranch, null)
+  assert.deepEqual(fallback.repositories[0]!.changes.map(file => [file.path, file.kind]), [["draft.txt", "untracked"]])
 })

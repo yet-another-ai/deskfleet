@@ -315,18 +315,24 @@ export class AgentSessions {
     }
     const sessionId = recordId(params.sessionId, "Session ID")
     const directories = await this.#worktreeDirectories(sessionId)
+    const mode = params.mode
+    if (mode !== undefined && mode !== "base" && mode !== "uncommitted") throw new Error("Invalid Git mode")
+    const effectiveMode = mode ?? "uncommitted"
+    const baseBranch = effectiveMode === "base" ? await this.#sessionBaseBranch(sessionId) : undefined
     if (method === "_deskfleet/git/status") {
       if (params.force !== undefined && typeof params.force !== "boolean") throw new Error("Invalid Git refresh flag")
-      return this.#git.status(sessionId, directories, params.force === true)
+      return this.#git.status(sessionId, directories, params.force === true, effectiveMode, baseBranch)
     }
     const kind = params.kind
-    if (kind !== "staged" && kind !== "unstaged" && kind !== "untracked") throw new Error("Invalid Git diff kind")
+    if (kind !== "branch" && kind !== "staged" && kind !== "unstaged" && kind !== "untracked") throw new Error("Invalid Git diff kind")
+    if (kind === "branch" && effectiveMode !== "base") throw new Error("Invalid Git diff kind")
     return this.#git.diff({
       sessionId,
       repositoryId: requiredString(params.repositoryId, "repository ID"),
       path: requiredString(params.path, "file path"),
       kind,
-    }, directories)
+      ...(mode ? { mode } : {}),
+    }, directories, baseBranch)
   }
 
   async #command(method: AgentMethod, params: Record<string, unknown>, actor: AgentActor, operationId: string): Promise<unknown> {
@@ -453,6 +459,13 @@ export class AgentSessions {
   async #workspaceDirectories(workspaceId: string) {
     const workspace = (await this.#catalog.native.snapshot()).workspaces.find(value => value.id === workspaceId)
     return workspace?.worktrees.find(worktree => !worktree.sessionId)?.directories ?? []
+  }
+
+  async #sessionBaseBranch(sessionId: string): Promise<string | undefined> {
+    const creation = (await this.journal.commands(sessionId))
+      .find(command => command.isCanonical && command.method === "_deskfleet/session/create")
+    const baseBranch = creation?.params.baseBranch
+    return typeof baseBranch === "string" && baseBranch.trim() ? baseBranch.trim() : undefined
   }
 
   /** Waits for provisioning; only a ready Session has directories to work in. */

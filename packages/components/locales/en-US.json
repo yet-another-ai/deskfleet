@@ -1351,11 +1351,16 @@
     "notGit": "Not a Git checkout",
     "clean": "No changes",
     "gitUnavailable": "Git inspection is available for sessions on an online local machine.",
-    "gitLive": "Updating live",
     "gitPaused": "Live updates paused",
     "gitStale": "Showing the last loaded changes.",
     "gitLoading": "Loading Git changes…",
     "refreshGit": "Refresh Git changes",
+    "changeScope": "Comparison mode",
+    "changeMode": {
+      "base": "Base branch",
+      "uncommitted": "Uncommitted"
+    },
+    "comparingTo": "vs {branch}",
     "detachedHead": "Detached HEAD",
     "noCommits": "No commits yet",
     "openDiff": "View {kind} diff for {path}",
@@ -1375,6 +1380,7 @@
     "truncatedDiff": "This diff is large. Only the first part is shown.",
     "addLineComment": "Comment on line {line}",
     "changeKind": {
+      "branch": "Branch",
       "staged": "Staged",
       "unstaged": "Unstaged",
       "untracked": "Untracked"

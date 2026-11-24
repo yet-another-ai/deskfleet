@@ -1038,6 +1038,8 @@ test("manual Git reads can bypass the daemon snapshot cache", async () => {
   const store = useAgentSessionsStore()
   await store.gitStatus("30", true)
   expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/git/status", { sessionId: "30", force: true })
+  await store.gitStatus("30", false, "base")
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/git/status", { sessionId: "30", mode: "base" })
 })
 
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { lstat, open, readlink, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
-import type { GitBranchesSnapshot, GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "@deskfleet/protocol/git"
+import type { GitBranchesSnapshot, GitChangesMode, GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "@deskfleet/protocol/git"
 import { GitWatch } from "./watch.ts"
 
 const STATUS_BYTES = 2 * 1024 * 1024
@@ -42,6 +42,44 @@ const repositoryId = (root: string) => createHash("sha256").update(root).digest(
 const within = (root: string, path: string) => { const rel = relative(root, path); return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) }
 const conflicts = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"])
 const statuses: Record<string, GitFileStatus> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "copied", T: "typeChanged", U: "conflicted" }
+const isValidBranchName = (branch: string) => Boolean(branch) && !branch.startsWith("-") && branch !== "HEAD" && !branch.endsWith("/HEAD")
+  && !branch.includes("..") && !branch.includes("@{") && !/[\0-\x20\x7f~^:?*[\\]/u.test(branch)
+const optionalGit = (root: string, args: string[]) => git(root, args).then(v => v.text.replace(/\r?\n$/u, ""), () => undefined)
+
+async function resolveBase(root: string, head: string | null, baseBranch?: string): Promise<{ branch: string; revision: string } | null> {
+  if (!head) return null
+  const candidates: [string, string][] = baseBranch && isValidBranchName(baseBranch)
+    ? [[baseBranch, `refs/heads/${baseBranch}`], [baseBranch, `refs/remotes/${baseBranch}`]] : []
+  const remotes = (await optionalGit(root, ["remote"]))?.split(/\r?\n/u).filter(Boolean) ?? []
+  const remote = remotes.includes("origin") ? "origin" : remotes.length === 1 ? remotes[0] : undefined
+  if (remote && !remote.startsWith("-")) {
+    const symbolic = await optionalGit(root, ["symbolic-ref", "--quiet", `refs/remotes/${remote}/HEAD`])
+    if (symbolic?.startsWith("refs/remotes/")) candidates.push([symbolic.slice("refs/remotes/".length), symbolic])
+    candidates.push([`${remote}/main`, `refs/remotes/${remote}/main`], [`${remote}/master`, `refs/remotes/${remote}/master`])
+  }
+  candidates.push(["main", "refs/heads/main"], ["master", "refs/heads/master"])
+  for (const [branch, ref] of candidates) {
+    const target = await optionalGit(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+    const revision = target && await optionalGit(root, ["merge-base", target, head])
+    if (revision) return { branch, revision }
+  }
+  return null
+}
+
+function parseNameStatus(text: string, truncated = false): GitFileChange[] {
+  const fields = text.split("\0")
+  if (truncated) fields.pop()
+  const result: GitFileChange[] = []
+  for (let index = 0; index < fields.length; index++) {
+    const code = fields[index]?.[0]
+    if (!code) continue
+    const previousPath = code === "R" || code === "C" ? fields[++index] : undefined
+    const path = fields[++index]
+    if (path === undefined) break
+    result.push({ path, ...(previousPath ? { previousPath } : {}), kind: "branch", status: statuses[code] ?? "modified", additions: null, deletions: null })
+  }
+  return result
+}
 
 function parseStatus(text: string, truncated = false): GitFileChange[] {
   const fields = text.split("\0")
@@ -92,6 +130,11 @@ function parseCounts(text: string, truncated = false): Map<string, { additions: 
 
 const diffOptions = ["--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "--ignore-submodules=none"]
 
+async function branchChanges(root: string, baseRevision: string, path?: string): Promise<{ files: GitFileChange[]; truncated: boolean }> {
+  const output = await git(root, ["diff", ...diffOptions, "--name-status", "-z", baseRevision, "--", ...(path ? [path] : [])], STATUS_BYTES, true)
+  return { files: parseNameStatus(output.text, output.truncated), truncated: output.truncated }
+}
+
 /** Read files as Git entries: a symlink's contents are its target name, never its target file. */
 async function untrackedContent(root: string, path: string, limit: number): Promise<{ data: Buffer; truncated: boolean; mode: string }> {
   const absolute = resolve(root, path)
@@ -114,26 +157,48 @@ const lineCount = (data: Buffer) => {
   return lines + (data.length && data.at(-1) !== 10 ? 1 : 0)
 }
 
-async function inspect(root: string): Promise<GitRepositoryStatus> {
+async function inspect(root: string, mode: GitChangesMode = "uncommitted", baseBranch?: string): Promise<GitRepositoryStatus> {
   const result: GitRepositoryStatus = { id: repositoryId(root), root, branch: null, head: null, changes: [] }
   try {
-    const [files, branch, head, staged, unstaged] = await Promise.all([
+    const [files, branch, head] = await Promise.all([
       changes(root),
-      git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(value => value.text.replace(/\n$/u, "")).catch(() => null),
-      git(root, ["rev-parse", "--verify", "HEAD"]).then(value => value.text.trim()).catch(() => null),
-      git(root, ["diff", ...diffOptions, "--cached", "--numstat", "-z", "--"], STATUS_BYTES, true),
-      git(root, ["diff", ...diffOptions, "--numstat", "-z", "--"], STATUS_BYTES, true),
+      optionalGit(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(v => v ?? null),
+      optionalGit(root, ["rev-parse", "--verify", "HEAD"]).then(v => v?.trim() ?? null),
     ])
     result.branch = branch
     result.head = head
-    result.changes = files.files.slice(0, MAX_FILES)
-    if (files.truncated || files.files.length > MAX_FILES) result.error = `Showing the first ${result.changes.length} changed entries; this checkout has too many changes to display at once`
-    else if (staged.truncated || unstaged.truncated) result.error = "Some change counts are unavailable because this checkout has too many changes"
-    const counts = { staged: parseCounts(staged.text, staged.truncated), unstaged: parseCounts(unstaged.text, unstaged.truncated) }
+    const base = mode === "base" ? await resolveBase(root, head, baseBranch) : undefined
+    if (mode === "base") result.baseBranch = base?.branch ?? null
+
+    let list: GitFileChange[]
+    let truncated = files.truncated
+    let countsTruncated = false
+    let counts: Record<string, Map<string, { additions: number | null; deletions: number | null }>>
+    if (base) {
+      const [diffFiles, numstat] = await Promise.all([
+        branchChanges(root, base.revision),
+        git(root, ["diff", ...diffOptions, "--numstat", "-z", base.revision, "--"], STATUS_BYTES, true),
+      ])
+      list = [...diffFiles.files, ...files.files.filter(file => file.kind === "untracked")]
+      truncated ||= diffFiles.truncated
+      countsTruncated = numstat.truncated
+      counts = { branch: parseCounts(numstat.text, numstat.truncated) }
+    } else {
+      const [staged, unstaged] = await Promise.all([
+        git(root, ["diff", ...diffOptions, "--cached", "--numstat", "-z", "--"], STATUS_BYTES, true),
+        git(root, ["diff", ...diffOptions, "--numstat", "-z", "--"], STATUS_BYTES, true),
+      ])
+      list = files.files
+      countsTruncated = staged.truncated || unstaged.truncated
+      counts = { staged: parseCounts(staged.text, staged.truncated), unstaged: parseCounts(unstaged.text, unstaged.truncated) }
+    }
+    result.changes = list.slice(0, MAX_FILES)
+    if (truncated || list.length > MAX_FILES) result.error = `Showing the first ${result.changes.length} changed entries; this checkout has too many changes to display at once`
+    else if (countsTruncated) result.error = "Some change counts are unavailable because this checkout has too many changes"
     let untrackedCounts = 0
     for (const change of result.changes) {
       if (change.kind !== "untracked") {
-        if (change.status !== "conflicted") Object.assign(change, counts[change.kind].get(change.path))
+        if (change.status !== "conflicted") Object.assign(change, counts[change.kind]?.get(change.path))
         continue
       }
       // Cap sequential file reads for line counts when a checkout has thousands
@@ -194,8 +259,8 @@ interface WatchedCheckout {
   ready: Promise<void>
   listeners: Set<(error?: string) => void>
   version: number
-  cached?: GitRepositoryStatus
-  pending?: { version: number; result: Promise<GitRepositoryStatus> }
+  cached: Map<string, GitRepositoryStatus>
+  pending: Map<string, { version: number; result: Promise<GitRepositoryStatus> }>
 }
 
 /** A watched checkout shares its transient status until an OS notification invalidates it. */
@@ -242,10 +307,10 @@ export class GitInspection {
         if (!entry) {
           const watcher = new GitWatch(root, error => {
             entry!.version++
-            entry!.cached = undefined
+            entry!.cached.clear()
             for (const changed of entry!.listeners) changed(error)
           }, this.#maxWatchedDirectories)
-          entry = { watcher, ready: Promise.resolve(), listeners: new Set([subscriber]), version: 0 }
+          entry = { watcher, ready: Promise.resolve(), listeners: new Set([subscriber]), version: 0, cached: new Map(), pending: new Map() }
           this.#watched.set(root, entry)
           entry.ready = watcher.start()
         }
@@ -271,29 +336,32 @@ export class GitInspection {
     this.#watched.clear()
   }
 
-  async #status(root: string, force: boolean): Promise<GitRepositoryStatus> {
+  async #status(root: string, force: boolean, mode: GitChangesMode, baseBranch?: string): Promise<GitRepositoryStatus> {
     const entry = this.#watched.get(root)
-    if (!entry || !entry.watcher.healthy) return inspect(root)
-    if (force) { entry.version++; entry.cached = undefined }
-    if (entry.cached) return entry.cached
-    if (entry.pending) {
-      if (entry.pending.version === entry.version) return entry.pending.result
-      await entry.pending.result
-      return this.#status(root, false)
+    if (!entry || !entry.watcher.healthy) return inspect(root, mode, baseBranch)
+    const key = mode === "base" ? `base:${baseBranch ?? ""}` : "uncommitted"
+    if (force) { entry.version++; entry.cached.clear() }
+    const cached = entry.cached.get(key)
+    if (cached) return cached
+    const pending = entry.pending.get(key)
+    if (pending) {
+      if (pending.version === entry.version) return pending.result
+      await pending.result
+      return this.#status(root, false, mode, baseBranch)
     }
     const version = entry.version
-    const result = inspect(root).then(snapshot => {
-      if (entry.version === version && entry.watcher.healthy && this.#watched.get(root) === entry && !snapshot.error) entry.cached = snapshot
+    const result = inspect(root, mode, baseBranch).then(snapshot => {
+      if (entry.version === version && entry.watcher.healthy && this.#watched.get(root) === entry && !snapshot.error) entry.cached.set(key, snapshot)
       return snapshot
     })
-    entry.pending = { version, result }
-    try { return await result } finally { if (entry.pending?.result === result) entry.pending = undefined }
+    entry.pending.set(key, { version, result })
+    try { return await result } finally { if (entry.pending.get(key)?.result === result) entry.pending.delete(key) }
   }
 
-  async status(sessionId: string, paths: string[], force = false): Promise<GitStatusSnapshot> {
+  async status(sessionId: string, paths: string[], force = false, mode: GitChangesMode = "uncommitted", baseBranch?: string): Promise<GitStatusSnapshot> {
     const { directories, roots } = await resolveDirectories(paths)
     const repositories: GitRepositoryStatus[] = []
-    for (const root of roots.values()) repositories.push(await this.#status(root, force))
+    for (const root of roots.values()) repositories.push(await this.#status(root, force, mode, baseBranch))
     return { sessionId, repositories, directories }
   }
 
@@ -333,18 +401,29 @@ export class GitInspection {
     }
   }
 
-  async diff(request: GitDiffRequest, paths: string[]): Promise<GitFileDiff> {
+  async diff(request: GitDiffRequest, paths: string[], baseBranch?: string): Promise<GitFileDiff> {
     const { roots } = await resolveDirectories(paths)
     const root = roots.get(request.repositoryId)
     if (!root) throw new Error("Repository does not belong to this Session")
     if (request.path.includes("\0") || isAbsolute(request.path) || !within(root, resolve(root, request.path))) throw new Error("Invalid Git file path")
-    const status = await changes(root)
-    let change = status.files.find(file => file.path === request.path && file.kind === request.kind)
-    if (!change && status.truncated) change = (await changes(root, request.path)).files.find(file => file.path === request.path && file.kind === request.kind)
+    let baseRevision: string | undefined
+    if (request.kind === "branch") {
+      if (request.mode !== "base") throw new Error("Invalid Git diff kind")
+      const base = await resolveBase(root, await optionalGit(root, ["rev-parse", "--verify", "HEAD"]) ?? null, baseBranch)
+      if (!base) throw new Error("Base branch is unavailable; refresh the changes list")
+      baseRevision = base.revision
+    }
+    const list = baseRevision ? await branchChanges(root, baseRevision) : await changes(root)
+    let change = list.files.find(file => file.path === request.path && file.kind === request.kind)
+    if (!change && list.truncated) {
+      const filtered = baseRevision ? await branchChanges(root, baseRevision, request.path) : await changes(root, request.path)
+      change = filtered.files.find(file => file.path === request.path && file.kind === request.kind)
+    }
     if (!change) throw new Error("This file change is no longer present; refresh the changes list")
     if (request.kind === "untracked") return { ...request, ...newFilePatch(request.path, await untrackedContent(root, request.path, PATCH_BYTES)) }
     const args = ["diff", ...diffOptions, "--unified=3", "--src-prefix=a/", "--dst-prefix=b/"]
-    if (request.kind === "staged") args.push("--cached")
+    if (baseRevision) args.push(baseRevision)
+    else if (request.kind === "staged") args.push("--cached")
     args.push("--", request.path, ...(change.previousPath ? [change.previousPath] : []))
     const output = await git(root, args, PATCH_BYTES, true)
     return { ...request, patch: output.text, binary: /^Binary files .* differ$/mu.test(output.text), truncated: output.truncated }
