@@ -46,7 +46,7 @@ const cost = computed(() => {
       <span class="agent-usage-percent">{{ percent }}</span>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4">
+      <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-card z-50 w-64 max-w-[calc(100vw-2rem)] p-4 shadow-ui-popover">
         <div class="mb-3 flex items-center justify-between gap-4">
           <h3 class="m-0 text-[13px] font-medium">{{ t('agent.usage.context') }}</h3>
           <span class="text-xs tabular-nums" :class="tone">{{ percent }}</span>
@@ -57,7 +57,7 @@ const cost = computed(() => {
         <dl class="m-0 flex flex-col gap-2 text-xs">
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.used') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-used>{{ t('agent.usage.tokens', { count: numbers.format(usage.used) }) }}</dd></div>
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.capacity') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-capacity>{{ usage.size > 0 ? t('agent.usage.tokens', { count: numbers.format(usage.size) }) : t('composer.unavailable') }}</dd></div>
-          <div v-if="cost !== undefined" class="mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
+          <div v-if="cost !== undefined" class="-mx-4 mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border-strong px-4 pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
         </dl>
       </PopoverContent>
     </PopoverPortal>
