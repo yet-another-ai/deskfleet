@@ -420,8 +420,8 @@ textarea {
     ui-attention 1.6s var(--ui-ease-out) var(--ui-duration-slow) 2;
 }
 @keyframes ui-attention {
-  from { box-shadow: var(--ui-shadow-card), 0 0 0 0 color-mix(in srgb, var(--ui-color-warning) 40%, transparent); }
-  to { box-shadow: var(--ui-shadow-card), 0 0 0 10px transparent; }
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-color-warning) 40%, transparent); }
+  to { box-shadow: 0 0 0 10px transparent; }
 }
 
 /* Ambient color behind hero content: two slow-drifting radial blooms. */
@@ -468,7 +468,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .ui-shimmer-text, .ui-aurora::before, .ui-aurora::after, .ui-attention, .ui-status-live::after { animation: none !important; }
-  .ui-attention { box-shadow: var(--ui-shadow-card); }
   .ui-status-live::after { display: none; }
   /* Without the sweep, indeterminate progress reads as a dimmed full track. */
   .ui-meter-fill.ui-meter-indeterminate { width: 100% !important; opacity: 0.6; animation: none !important; }
