@@ -69,6 +69,14 @@ export class DaemonCatalog {
       ?? snapshot.sessions.find(worktree => worktree.sessionId === sessionId)
   }
 
+  /** A Session-owned Worktree by its catalog ID, including machine-scoped Sessions without a Workspace. */
+  async sessionWorktreeById(worktreeId: string) {
+    const snapshot = await this.native.snapshot()
+    const worktree = snapshot.workspaces.flatMap(workspace => workspace.worktrees).find(value => value.id === worktreeId)
+      ?? snapshot.sessions.find(value => value.id === worktreeId)
+    return worktree?.sessionId ? worktree : undefined
+  }
+
   get native(): NativeCatalog {
     if (!this.#catalog) throw new Error("Local catalog is not available")
     return this.#catalog

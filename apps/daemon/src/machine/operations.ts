@@ -58,7 +58,7 @@ export class MachineOperations {
 
   async dial(params: TerminalDial): Promise<TerminalSummary> {
     if (params.mode !== "create" || params.worktreeId === undefined) return this.terminals.dial(params)
-    const worktree = (await this.catalog.native.snapshot()).workspaces.flatMap(workspace => workspace.worktrees).find(value => value.id === params.worktreeId)
+    const worktree = await this.catalog.sessionWorktreeById(params.worktreeId)
     if (!worktree?.sessionId || !worktree.directories[0]) throw new Error("Session worktree is unavailable")
     return this.agents.withActiveSession(worktree.sessionId, () => this.terminals.dial({ ...params, cwd: params.cwd ?? worktree.directories[0]!.path }))
   }

@@ -33,6 +33,7 @@ import {
   isWebPreviewSupported,
   normalizeWebPreviewUrl,
 } from "../../services/web-preview.ts"
+import ErrorNotice from "../common/ErrorNotice.vue"
 import UiButton from "../common/UiButton.vue"
 import GithubIcon from "../common/GithubIcon.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
@@ -65,6 +66,7 @@ const topRightGroupId = shallowRef<string>()
 const changesOpen = shallowRef(false)
 const desktopsOpen = shallowRef(false)
 const githubOpen = shallowRef(false)
+const terminalError = shallowRef<unknown>(null)
 const closingTerminals = new Set<string>()
 let syncing = false
 const disposables: { dispose(): void }[] = []
@@ -365,11 +367,12 @@ function closeTab(params: IDockviewPanelHeaderProps): void {
   if (terminalId) {
     if (closingTerminals.has(terminalId)) return
     closingTerminals.add(terminalId)
+    terminalError.value = null
     void terminals.hangup(terminalId).then(() => {
       api.value?.getPanel(params.api.id)?.api.close()
       saveLayout()
     }).catch(reason => {
-      terminals.error = reason instanceof Error ? reason.message : String(reason)
+      terminalError.value = reason
     }).finally(() => { closingTerminals.delete(terminalId) })
     return
   }
@@ -403,6 +406,7 @@ function shellTitle(terminalId: string): string {
 async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | "below" = "within"): Promise<void> {
   const worktreeId = sessionWorktreeId.value
   if (!worktreeId) return
+  terminalError.value = null
   try {
     const terminal = await terminals.create({ worktreeId })
     addTerminalPanel(terminal.id, shellTitle(terminal.id), group, true, direction)
@@ -411,7 +415,7 @@ async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | 
     panel?.api.setActive()
     saveLayout()
   } catch (reason) {
-    terminals.error = reason instanceof Error ? reason.message : String(reason)
+    terminalError.value = reason
   }
 }
 
@@ -507,9 +511,9 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <section class="deskfleet-windows min-h-0 min-w-0 flex-1 overflow-clip" :aria-label="t('toolbar.windows')">
+  <section class="deskfleet-windows flex min-h-0 min-w-0 flex-1 flex-col overflow-clip" :aria-label="t('toolbar.windows')">
     <DockviewVue
-      class="h-full w-full"
+      class="min-h-0 w-full flex-1"
       :theme="themeLight"
       :get-tab-context-menu-items="() => []"
       @ready="onReady"
@@ -595,6 +599,11 @@ onScopeDispose(() => {
         />
       </template>
     </DockviewVue>
+    <div v-if="terminalError" class="shrink-0 border-t border-ui-border p-2">
+      <ErrorNotice :error="terminalError">
+        <UiButton type="button" size="sm" @click="terminalError = null">{{ t("common.close") }}</UiButton>
+      </ErrorNotice>
+    </div>
   </section>
 </template>
 
