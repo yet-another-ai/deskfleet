@@ -19,6 +19,8 @@ import { createLocalAgentRuntime } from "../../src/main/local-agent-runtime.ts"
 import { installRendererPermissions, registerRendererScheme, resolveRendererResourcePath } from "../../src/main/renderer-protocol.ts"
 import { BUNDLED_RENDERER_URL, RENDERER_SCHEME } from "../../src/shared/renderer-security.ts"
 
+const accountMenuSelector = "[data-account-menu] button"
+
 export interface BackendClientsContext {
   mode: "web" | "electron"
   backend: string
@@ -176,13 +178,20 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
 type CaptureView = "session" | "workspace-edit" | "team-menu" | "account-menu" | "settings-team" | "create-team" | "invite" | "add-machine"
 
 /** Navigation stays within the disposable fixture's authenticated renderer. */
-async function prepareCapture(context: BackendClientsContext, view: CaptureView): Promise<void> {
+async function prepareCapture(context: BackendClientsContext, view: CaptureView, accountMenuSelector: string): Promise<void> {
   async function until(predicate: () => boolean, description: string): Promise<void> {
     const end = Date.now() + 15_000
     while (!predicate()) {
       if (Date.now() > end) throw new Error(`Screenshot ${description} timed out: ${document.body.innerText}`)
       await new Promise(resolve => setTimeout(resolve, 25))
     }
+  }
+  async function openAccountMenu(): Promise<HTMLElement> {
+    const trigger = document.querySelector<HTMLButtonElement>(accountMenuSelector)!
+    trigger.click()
+    const menu = () => document.getElementById(trigger.getAttribute("aria-controls") ?? "")
+    await until(() => menu()?.getAttribute("role") === "menu", "account menu")
+    return menu()!
   }
   while (document.querySelector('[role=dialog][data-state=open]')) {
     const dialogs = [...document.querySelectorAll<HTMLElement>('[role=dialog][data-state=open]')]
@@ -193,7 +202,7 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
   }
   for (const trigger of document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"][aria-expanded="true"]')) trigger.click()
   location.hash = `/sessions/${context.sessionId}`
-  await until(() => !!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('[data-window-tab-id="chat"]')?.textContent?.includes("Machine 0 conversation"), "session")
+  await until(() => !!document.querySelector(accountMenuSelector) && !!document.querySelector('[data-window-tab-id="chat"]')?.textContent?.includes("Machine 0 conversation"), "session")
   if (view === "workspace-edit") {
     const row = document.querySelector<HTMLButtonElement>(`aside section[data-machine-id="${context.machines[0]}"] .workspace-row button[aria-expanded]`)
     if (!row) throw new Error("Fixture workspace row is missing")
@@ -211,9 +220,8 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
     edit.click()
     await until(() => !!document.querySelector('[role="dialog"][data-state="open"] input[name="workspace-name"]'), "workspace editor")
   } else if (view === "settings-team" || view === "invite") {
-    document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
-    await until(() => !!document.querySelector('[role="menu"][aria-label="Team"]'), "team menu")
-    const manage = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Team settings")
+    const menu = await openAccountMenu()
+    const manage = [...menu.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Team settings")
     if (!manage) throw new Error("Team settings menu item is missing")
     manage.click()
     await until(() => location.hash === "#/team/settings" && !!document.querySelector("[data-member-id]"), "team settings")
@@ -224,9 +232,8 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
       await until(() => !!document.querySelector('[role=dialog][data-state=open] input[name="invite-email"]'), "invite dialog")
     }
   } else if (view === "create-team") {
-    document.querySelector<HTMLButtonElement>('button[aria-label="Team"]')!.click()
-    await until(() => !!document.querySelector('[role="menu"][aria-label="Team"]'), "team menu")
-    const create = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"] button')].find(button => button.textContent?.trim() === "Create a team")
+    const menu = await openAccountMenu()
+    const create = [...menu.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Create a team")
     if (!create) throw new Error("Create a team menu item is missing")
     create.click()
     await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Create a team"), "create team dialog")
@@ -235,12 +242,8 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
     if (!add) throw new Error("Add machine button is missing")
     add.click()
     await until(() => !!document.querySelector("[role=dialog][data-state=open]")?.textContent?.includes("Add a machine"), "add machine dialog")
-  } else if (view.endsWith("-menu")) {
-    const label = view === "team-menu" ? "Team" : "Client smoke"
-    const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!trigger) throw new Error(`Missing ${label} menu trigger`)
-    trigger.click()
-    await until(() => !!document.querySelector(`[role="menu"][aria-label="${label}"]`), label)
+  } else if (view === "account-menu" || view === "team-menu") {
+    await openAccountMenu()
   }
   await document.fonts.ready
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -249,17 +252,18 @@ async function prepareCapture(context: BackendClientsContext, view: CaptureView)
 async function captureScreenshots(window: BrowserWindow, context: BackendClientsContext): Promise<void> {
   if (!process.env.DESKFLEET_SMOKE_SCREENSHOTS) return
   const directory = resolve(process.env.DESKFLEET_SMOKE_SCREENSHOTS)
+  const prepare = (view: CaptureView) => window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)},${JSON.stringify(accountMenuSelector)})`)
   await mkdir(directory, { recursive: true })
   for (const [width, height] of [[1100, 740], [800, 600]] as const) {
     window.setContentSize(width, height)
     for (const view of ["session", "workspace-edit", "team-menu", "account-menu", "settings-team", "create-team", "invite", "add-machine"] as const) {
-      await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},${JSON.stringify(view)})`)
+      await prepare(view)
       const image = await window.webContents.capturePage()
       if (image.isEmpty()) throw new Error(`Empty screenshot for ${context.mode} ${view}`)
       await writeFile(join(directory, `${context.mode}-${width}x${height}-${view}.png`), image.toPNG())
     }
   }
-  await window.webContents.executeJavaScript(`(${prepareCapture.toString()})(${JSON.stringify(context)},"session")`)
+  await prepare("session")
   window.setContentSize(1440, 950)
   process.stderr.write(`${context.mode} UI screenshots saved to ${directory}\n`)
 }
@@ -303,7 +307,7 @@ async function authenticateWindow(window: BrowserWindow, context: BackendClients
   const deadline = Date.now() + 30_000
   let submitted = false
   while (Date.now() < deadline) {
-    const page = await window.webContents.executeJavaScript(`({email:!!document.querySelector('input[type="email"]'),form:!!document.querySelector('form'),app:!!document.querySelector('button[aria-label="Team"]')})`).catch(() => undefined) as { email: boolean; form: boolean; app: boolean } | undefined
+    const page = await window.webContents.executeJavaScript(`({email:!!document.querySelector('input[type="email"]'),form:!!document.querySelector('form'),app:!!document.querySelector(${JSON.stringify(accountMenuSelector)})})`).catch(() => undefined) as { email: boolean; form: boolean; app: boolean } | undefined
     if (page?.email && !submitted) {
       await window.webContents.executeJavaScript(`(()=>{const values=${JSON.stringify(context.credentials)};for(const type of ["email","password"]){const value=values[type];const input=document.querySelector('input[type="'+type+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('form').requestSubmit();})()`)
       submitted = true
@@ -382,7 +386,7 @@ void app.whenReady().then(async () => {
   if (context.mode === "web") await authenticateWindow(window, context, false)
   // Wait from the main process while authentication replaces the Web document.
   const deadline = Date.now() + 30_000
-  while (!await window.webContents.executeJavaScript(`!!document.querySelector('button[aria-label="Team"]') && !!document.querySelector('aside nav')`).catch(() => false)) {
+  while (!await window.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(accountMenuSelector)}) && !!document.querySelector('aside nav')`).catch(() => false)) {
     if (Date.now() > deadline) throw new Error(`Account login timed out: ${await window.webContents.executeJavaScript("document.body.innerText")}; authorization: ${await Promise.all(authorizations.map(browser => browser.webContents.executeJavaScript("location.href+' '+document.body.innerText")))}`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
