@@ -75,12 +75,14 @@ function resolveLayoutStore(): LayoutStore | undefined {
 }
 
 function cloneResourceWindowItem(item: ResourceWindowItem): ResourceWindowItem {
+  const request: ResourceWindowItem["request"] = {
+    target: { ...item.request.target },
+    sessionId: item.request.sessionId,
+    uri: item.request.uri,
+  }
+  if (item.request.basePath !== undefined) request.basePath = item.request.basePath
   return {
-    request: {
-      target: { ...item.request.target },
-      sessionId: item.request.sessionId,
-      uri: item.request.uri,
-    },
+    request,
     ...(item.title ? { title: item.title } : {}),
     ...(item.source ? { source: { ...item.source } } : {}),
   }

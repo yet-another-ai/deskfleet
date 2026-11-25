@@ -40,6 +40,7 @@ export function previewResourceRequestToQuery(request?: FileResourceRequest): Re
     fileMachineId: machine?.machineId,
     fileSessionId: machine ? request?.sessionId : undefined,
     fileUri: machine ? request?.uri : undefined,
+    fileBasePath: machine ? request?.basePath : undefined,
   }
 }
 
@@ -53,7 +54,14 @@ export function previewResourceRequestFromQuery(get: (key: string) => unknown): 
   const teamId = text("fileTeamId"), machineId = text("fileMachineId")
   const sessionId = text("fileSessionId"), uri = text("fileUri")
   if (!teamId || !machineId || !sessionId || !uri) return undefined
-  return { target: { kind: "machine", teamId, machineId }, sessionId, uri }
+  const request: FileResourceRequest = { target: { kind: "machine", teamId, machineId }, sessionId, uri }
+  const rawBasePath = get("fileBasePath")
+  if (rawBasePath !== undefined && rawBasePath !== null) {
+    const basePath = text("fileBasePath")
+    if (!basePath) return undefined
+    request.basePath = basePath
+  }
+  return request
 }
 
 export function isPannablePreview(kind: PreviewKind): boolean {

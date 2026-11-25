@@ -1473,7 +1473,7 @@
     "openResource": "開く", "previewUnavailableLocal": "このファイルはプレビューできません。別のアプリで開くことができます。",
     "showInFinder": "Finder で表示", "showInExplorer": "エクスプローラーで表示", "showInFileManager": "ファイルマネージャーで表示",
     "previewUnavailable": "このファイルはプレビューできません。ダウンロードして確認してください。", "downloadResource": "ダウンロード",
-    "previewHtml": "プレビュー", "viewSource": "ソース",
+    "preview": "プレビュー", "viewSource": "ソース",
     "csvEmpty": "この CSV ファイルは空です。",
     "csvPreviewLimit": "先頭の {rows} 行と {columns} 列を表示しています。",
     "resourceUnavailable": "このリソースは利用できません。対象のマシンに接続して、もう一度お試しください。", "notImage": "このファイルは画像として表示できません。",

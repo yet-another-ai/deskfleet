@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { vSpring } from "../../directives/spring.ts"
-import { Download, ExternalLink, FolderOpen, LocateFixed } from "@lucide/vue"
+import { Download, ExternalLink, Eye, FileCode, FolderOpen, LocateFixed } from "@lucide/vue"
 import { getActivePinia } from "pinia"
 import { DialogTitle } from "reka-ui"
 import { splitLines } from "shiki/core"
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue"
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, provide, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileResource, FileResourceRequest, FilesApi } from "@deskfleet/client/files"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
-import { fileResourceLines, revealResourceLabel } from "../../services/agent-resources.ts"
+import { agentResourceContextKey, fileResourceLines, revealResourceLabel } from "../../services/agent-resources.ts"
 import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
 import { previewKindFromMime, previewKindFromUri, type MediaPreviewKind, type PreviewSource } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
@@ -18,6 +18,8 @@ import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import FileBrowserPane from "../files/FileBrowserPane.vue"
 import PreviewViewer from "./PreviewViewer.vue"
+
+const AgentMarkdown = defineAsyncComponent(() => import("./AgentMarkdown.vue"))
 
 const props = withDefaults(defineProps<{
   api?: FilesApi
@@ -30,6 +32,10 @@ const props = withDefaults(defineProps<{
 })
 // Vue proxies cannot cross Electron's context bridge, including nested targets.
 const request: FileResourceRequest = { ...props.request, target: { ...props.request.target } }
+provide(agentResourceContextKey, computed(() => ({
+  target: { ...request.target },
+  sessionId: request.sessionId,
+})))
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const client = usePlatformClient()
@@ -42,19 +48,23 @@ const hasPrimaryAction = computed(() => hasFileActions.value && (canOpenResource
 const primaryActionLabel = computed(() => t(canOpenResource.value ? "files.openResource" : "files.downloadResource"))
 const revealLabel = computed(() => revealResourceLabel(client.platform, t))
 const content = ref<string>()
-const isHtmlContent = computed(() => content.value !== undefined && Boolean(entry.value && fileCodeLanguage(entry.value.name) === "html"))
-const renderingHtml = ref(false)
+const fileLanguage = computed(() => entry.value ? fileCodeLanguage(entry.value.name) : undefined)
+const documentPreviewKind = computed<"html" | "markdown" | undefined>(() =>
+  content.value !== undefined && (fileLanguage.value === "html" || fileLanguage.value === "markdown")
+    ? fileLanguage.value
+    : undefined,
+)
+const renderingPreview = ref(false)
 const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).filter(([text]) => text).map(([text]) => ({
   text,
   ending: text.match(/\r?\n$/u)?.[0] ?? "",
 })))
 const highlightedLines = computed(() => {
-  const language = entry.value && fileCodeLanguage(entry.value.name)
   // Local previews may be large; keep them out of synchronous tokenization.
-  if (!language || content.value === undefined || content.value.length > 200_000) return undefined
+  if (!fileLanguage.value || content.value === undefined || content.value.length > 200_000) return undefined
   try {
     return highlighter.codeToTokens(content.value, {
-      lang: language,
+      lang: fileLanguage.value,
       themes: { light: "github-light", dark: "github-dark" },
       defaultColor: false,
     }).tokens
@@ -147,10 +157,10 @@ function sendHtmlPreview(event: Event): void {
   htmlPreviewSent = true
   frame.contentWindow.postMessage({ html: content.value }, "*")
 }
-async function toggleHtmlPreview(): Promise<void> {
+async function toggleDocumentPreview(): Promise<void> {
   htmlPreviewSent = false
-  renderingHtml.value = !renderingHtml.value
-  if (!renderingHtml.value && requestedLines) {
+  renderingPreview.value = !renderingPreview.value
+  if (!renderingPreview.value && requestedLines) {
     await nextTick()
     lineElement.value?.scrollIntoView({ block: "center" })
   }
@@ -187,7 +197,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
           {{ entry?.name ?? title ?? request.uri }}
         </span>
         <div class="flex shrink-0 items-center gap-0.5">
-          <UiButton v-if="isHtmlContent" type="button" variant="ghost" size="sm" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
+          <UiButton v-if="documentPreviewKind" variant="ghost" size="icon" :label="t(renderingPreview ? 'files.viewSource' : 'files.preview')" :data-preview-action="renderingPreview ? 'source' : `preview-${documentPreviewKind}`" @click="toggleDocumentPreview"><component :is="renderingPreview ? FileCode : Eye" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton variant="ghost" size="icon" :label="t('mermaid.locateMessage')" data-preview-action="locate-message" @click="locateOriginal"><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="hasFileActions && canRevealResource" variant="ghost" size="icon" :label="revealLabel" data-preview-action="reveal" @click="revealResource"><FolderOpen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="hasPrimaryAction" variant="ghost" size="icon" :label="primaryActionLabel" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction"><component :is="canOpenResource ? ExternalLink : Download" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
@@ -206,7 +216,10 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </UiScrollArea>
-        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
+        <iframe v-else-if="renderingPreview && documentPreviewKind === 'html'" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
+        <UiScrollArea v-else-if="renderingPreview && documentPreviewKind === 'markdown' && content !== undefined" data-markdown-preview class="min-h-0 flex-1" viewport-class="p-4">
+          <AgentMarkdown :text="content" :api="filesApi" :base-path="entry?.path" class="min-w-0 text-sm" />
+        </UiScrollArea>
         <UiScrollArea v-else-if="content !== undefined" orientation="both" class="min-h-0 flex-1">
           <pre class="m-0 p-4 whitespace-pre text-xs select-text"><code><span
             v-for="(line, index) in lines"
@@ -252,7 +265,10 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       mode="inline"
       class="max-h-[60vh]"
     />
-    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
+    <iframe v-else-if="renderingPreview && documentPreviewKind === 'html'" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
+    <UiScrollArea v-else-if="renderingPreview && documentPreviewKind === 'markdown' && content !== undefined" data-markdown-preview fade-size="sm" class="max-h-[60vh]">
+      <AgentMarkdown :text="content" :api="filesApi" :base-path="entry?.path" class="min-w-0 text-sm" />
+    </UiScrollArea>
     <UiScrollArea v-else-if="content !== undefined" orientation="both" fade-size="sm" class="max-h-[60vh]">
       <pre class="m-0 whitespace-pre text-xs select-text"><code><span
         v-for="(line, index) in lines"
@@ -265,7 +281,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     </UiScrollArea>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
+      <UiButton v-if="documentPreviewKind" type="button" variant="ghost" :data-preview-action="renderingPreview ? 'source' : `preview-${documentPreviewKind}`" @click="toggleDocumentPreview"><component :is="renderingPreview ? FileCode : Eye" :size="15" aria-hidden="true" />{{ t(renderingPreview ? 'files.viewSource' : 'files.preview') }}</UiButton>
       <UiButton v-if="hasFileActions && canRevealResource" type="button" data-preview-action="reveal" @click="revealResource">{{ revealLabel }}</UiButton>
       <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ primaryActionLabel }}</UiButton>
       <UiButton type="button" @click="close">{{ t('files.close') }}</UiButton>

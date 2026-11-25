@@ -142,10 +142,11 @@ export class FileGrants {
     return path
   }
 
-  async resolve(target: FileTarget, sessionId: string, uri: string): Promise<string> {
+  async resolve(target: FileTarget, sessionId: string, uri: string, basePath?: string): Promise<string> {
     const grant = this.#get(target)
     if (!grant.sessionId || grant.sessionId !== sessionId) throw fileError("Session preview requires its own folder authorization", "file_grant_session")
-    const path = await sessionResourcePath(sessionId, uri, async () => grant.root)
+    const validatedBase = basePath === undefined ? undefined : await this.assert(target, "read", basePath)
+    const path = await sessionResourcePath(sessionId, uri, async () => grant.root, validatedBase)
     return this.assert(target, "read", path)
   }
 
@@ -238,7 +239,7 @@ class GrantedFilesEndpoint implements FileEndpoint {
       }
       case "resolve": {
         const request = params as FileMethods["resolve"]["params"]
-        const path = await this.#grants.resolve(this.#target, request.sessionId, request.uri)
+        const path = await this.#grants.resolve(this.#target, request.sessionId, request.uri, request.basePath)
         const reply = await this.#service.call("stat", { path })
         await this.#grants.assert(this.#target, "read", reply.value.path)
         return reply

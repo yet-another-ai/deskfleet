@@ -1,6 +1,6 @@
 import { lstat, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, isAbsolute, resolve } from "node:path"
+import { basename, dirname, isAbsolute, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { FileEntry, FileListing } from "@deskfleet/protocol/files"
 
@@ -64,11 +64,17 @@ export async function fileRoots(): Promise<FileListing["roots"]> {
   return roots.filter((root): root is { name: string; path: string } => root !== null)
 }
 
-export async function sessionResourcePath(sessionId: unknown, value: unknown, sessionDirectory?: (sessionId: string) => Promise<string>): Promise<string> {
+export async function sessionResourcePath(
+  sessionId: unknown,
+  value: unknown,
+  sessionDirectory?: (sessionId: string) => Promise<string>,
+  basePath?: unknown,
+): Promise<string> {
   const id = text(sessionId, "Session ID")
   if (!sessionDirectory) throw fileError("Session resources are unavailable", "unsupported")
   // Validate the Session even for absolute references; its context belongs to this machine.
   const cwd = await sessionDirectory(id)
+  const baseDirectory = basePath === undefined ? absolutePath(cwd) : dirname(absolutePath(basePath))
   // Strip editor locations before decoding so %23 and %3A remain filename bytes.
   // An absolute Windows drive path keeps its drive colon; only its final location is removed.
   const reference = text(value, "resource URI").split("#", 1)[0]!
@@ -83,7 +89,7 @@ export async function sessionResourcePath(sessionId: unknown, value: unknown, se
   if (!isAbsolute(uri) && /^[a-z][a-z0-9+.-]*:/iu.test(uri)) throw fileError("Only file references are supported", "unsupported")
   let path: string
   try { path = decodeURIComponent(uri) } catch { throw fileError("Invalid resource URI", "invalid") }
-  return resolve(absolutePath(cwd), text(path, "resource path"))
+  return resolve(baseDirectory, text(path, "resource path"))
 }
 
 export const defaultDirectory = homedir

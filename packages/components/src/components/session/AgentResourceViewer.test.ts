@@ -6,6 +6,7 @@ import type { FilesApi, FileResourceRequest } from "@deskfleet/client/files"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { highlighter } from "../../services/code-highlight.ts"
+import AgentMarkdown from "./AgentMarkdown.vue"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 
 const request: FileResourceRequest = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "src" }
@@ -408,6 +409,85 @@ test.each([
   expect(view.get("pre code").element.textContent).toBe(html)
   expect(scroll).toHaveBeenCalledTimes(2)
   view.unmount()
+})
+
+test.each([
+  ["README.md", "tab"],
+  ["notes.markdown", "dialog"],
+] as const)("defaults %s to highlighted source and toggles into Markdown preview (%s mode)", async (name, mode) => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const markdown = "# Heading\n\nBody\n"
+  const api = {
+    resolveResource: vi.fn().mockResolvedValue({ name, path: `/work/docs/${name}`, kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name, data: new TextEncoder().encode(markdown), mimeType: "text/markdown" }),
+  }
+  const view = render(api, { ...request, uri: `docs/${name}#L3` }, mode)
+  await flushPromises()
+
+  expect(view.get("pre code").element.textContent).toBe(markdown)
+  expect(view.find("pre code span[style]").exists()).toBe(true)
+  expect(view.find("[data-markdown-preview]").exists()).toBe(false)
+  expect(scroll).toHaveBeenCalledTimes(1)
+
+  const previewButton = view.get('[data-preview-action="preview-markdown"]')
+  if (mode === "tab") {
+    expect(previewButton.attributes("aria-label")).toBe("Preview")
+    expect(previewButton.text()).toBe("")
+  }
+  await previewButton.trigger("click")
+  await vi.waitFor(() => expect(view.findComponent(AgentMarkdown).exists()).toBe(true))
+
+  expect(view.find("pre code").exists()).toBe(false)
+  expect(view.getComponent(AgentMarkdown).props()).toMatchObject({
+    text: markdown,
+    api,
+    basePath: `/work/docs/${name}`,
+  })
+
+  const sourceButton = view.get('[data-preview-action="source"]')
+  if (mode === "tab") {
+    expect(sourceButton.attributes("aria-label")).toBe("Source")
+    expect(sourceButton.text()).toBe("")
+  }
+  await sourceButton.trigger("click")
+  await flushPromises()
+
+  expect(view.find("[data-markdown-preview]").exists()).toBe(false)
+  expect(view.get("pre code").element.textContent).toBe(markdown)
+  expect(scroll).toHaveBeenCalledTimes(2)
+  view.unmount()
+})
+
+test("passes the Markdown file path as basePath when loading relative images in preview mode", async () => {
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagram")
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  const markdown = "![Diagram](./diagram.png)\n"
+  const readResource = vi.fn().mockImplementation(async (req: FileResourceRequest) => {
+    if (req.uri === "docs/guide/intro.md") {
+      return { name: "intro.md", data: new TextEncoder().encode(markdown), mimeType: "text/markdown" }
+    }
+    return { name: "diagram.png", data: new Uint8Array([1, 2, 3]), mimeType: "image/png" }
+  })
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "intro.md", path: "/work/docs/guide/intro.md", kind: "file" }),
+    readResource,
+  }, { ...request, uri: "docs/guide/intro.md" }, "tab")
+  await flushPromises()
+
+  await view.get('[data-preview-action="preview-markdown"]').trigger("click")
+  await vi.waitFor(() => expect(view.find("[data-markdown-preview] img").exists()).toBe(true))
+
+  expect(readResource).toHaveBeenCalledWith({
+    target: request.target,
+    sessionId: request.sessionId,
+    uri: "./diagram.png",
+    basePath: "/work/docs/guide/intro.md",
+  })
+  expect(view.get("[data-markdown-preview] img").attributes("src")).toBe("blob:diagram")
+  view.unmount()
+  expect(revokeUrl).toHaveBeenCalledWith("blob:diagram")
+  createUrl.mockRestore()
+  revokeUrl.mockRestore()
 })
 
 

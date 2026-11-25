@@ -33,7 +33,8 @@ test("standalone preview query round-trips the original Team, Machine, Session a
   const request = {
     target: { kind: "machine" as const, teamId: "team-origin", machineId: "machine-origin" },
     sessionId: "session-origin",
-    uri: "/work/reports/项目 方案.pptx#L2",
+    uri: "./项目 方案.pptx#L2",
+    basePath: "/work/reports/README.md",
   }
   const params = new URLSearchParams({ kind: "pptx", content: request.uri })
   for (const [key, value] of Object.entries(previewResourceRequestToQuery(request))) {
@@ -50,6 +51,7 @@ test.each([
   { fileTarget: "machine", fileTeamId: "team" },
   { fileTarget: "machine", fileTeamId: ["team"], fileMachineId: "machine", fileSessionId: "session", fileUri: "/work/preview.docx" },
   { fileTarget: "machine", fileTeamId: "team", fileMachineId: "machine", fileSessionId: "session", fileUri: "\0/work/preview.docx" },
+  { fileTarget: "machine", fileTeamId: "team", fileMachineId: "machine", fileSessionId: "session", fileUri: "./diagram.png", fileBasePath: "\0/work/README.md" },
 ])("does not restore unsupported or incomplete resource scope from $fileTarget queries", query => {
   expect(previewResourceRequestFromQuery(key => (query as Record<string, unknown>)[key])).toBeUndefined()
 })
