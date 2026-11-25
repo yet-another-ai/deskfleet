@@ -24,7 +24,7 @@ function sanitize(event: Event): void {
 </script>
 
 <template>
-  <NumberFieldRoot :model-value="Number.isFinite(modelValue) ? modelValue : null" :min="min" :max="max" :disabled="disabled" :format-options="{ useGrouping: false, maximumFractionDigits: 0 }" disable-wheel-change class="ui-input flex w-auto items-center gap-1 px-1" @update:model-value="emit('update:modelValue', $event ?? Number.NaN)">
+  <NumberFieldRoot :model-value="Number.isFinite(modelValue) ? modelValue : null" :min="min" :max="max" :disabled="disabled" :format-options="{ useGrouping: false, maximumFractionDigits: 0 }" disable-wheel-change class="ui-input flex w-auto items-center gap-1 px-1 focus-within:border-ui-accent" @update:model-value="emit('update:modelValue', $event ?? Number.NaN)">
     <NumberFieldDecrement :aria-label="t('common.decrease')" class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ui-text-muted ui-motion hover:bg-ui-hover disabled:cursor-default disabled:op-40"><Minus :size="13" aria-hidden="true" /></NumberFieldDecrement>
     <label class="flex min-w-14 cursor-text items-baseline justify-center gap-0.5 px-1" @input.capture="sanitize" @compositionend.capture="sanitize">
       <NumberFieldInput v-bind="$attrs" :name="name" :required="required" class="field-sizing-content min-w-1ch bg-transparent text-center tabular-nums !outline-none" />

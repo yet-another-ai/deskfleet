@@ -15,7 +15,7 @@ watch(() => props.selected, () => root.value?.querySelector<HTMLElement>('[aria-
 </script>
 
 <template>
-  <div ref="root" class="absolute bottom-full left-0 z-50 mb-2 flex max-h-72 w-full flex-col overflow-hidden rounded-xl border border-ui-border bg-ui-surface shadow-ui-card" data-composer-completions>
+  <div ref="root" class="absolute bottom-full left-0 z-50 mb-2 flex max-h-72 w-full flex-col overflow-hidden squircle-xl border border-ui-border bg-ui-surface shadow-ui-card" data-composer-completions>
     <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1.5">
       <div :id="id" role="listbox" :aria-label="t('composer.completions.label')" :aria-busy="loading">
         <div v-for="group in groups" :key="group.kind" role="group" :aria-label="t(`composer.completions.${group.kind}`)">

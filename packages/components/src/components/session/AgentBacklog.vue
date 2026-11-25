@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import SpringCollapse from "../common/SpringCollapse.vue"
 import UiButton from "../common/UiButton.vue"
-import UiScrollArea from "../common/UiScrollArea.vue"
 import { ChevronDown, CircleAlert, CornerDownRight, ListEnd, RotateCw, X } from "@lucide/vue"
+import { CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "@deskfleet/protocol/agent"
@@ -26,46 +27,62 @@ watch(() => candidates.value.length, count => {
 </script>
 
 <template>
-  <section v-if="candidates.length" class="overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :aria-label="t('agent.backlog')">
-    <button
-      v-if="candidates.length > 1"
-      type="button"
-      data-backlog-toggle
-      :aria-expanded="expanded"
-      :title="t(expanded ? 'agent.backlogCollapse' : 'agent.backlogExpand')"
-      class="flex min-h-9 w-full cursor-pointer items-center gap-2 px-3 py-1 text-left text-[13px] transition-colors hover:bg-ui-hover/60"
-      @click="expanded = !expanded"
-    >
-      <span v-if="pendingCount" class="flex min-w-0 items-center gap-1.5 font-medium text-ui-text">
-        <ListEnd :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-        <span class="truncate">{{ t('agent.backlogQueued', pendingCount) }}</span>
-      </span>
-      <span v-if="pendingCount && failedCount" class="shrink-0 text-ui-text-muted" aria-hidden="true">·</span>
-      <span v-if="failedCount" class="flex shrink-0 items-center gap-1 text-xs font-medium text-ui-danger">
-        <CircleAlert :size="14" :stroke-width="2" class="shrink-0" aria-hidden="true" />
-        <span>{{ t('agent.backlogFailed', failedCount) }}</span>
-      </span>
-      <ChevronDown :size="14" :stroke-width="1.75" class="ml-auto shrink-0 text-ui-text-muted transition-transform duration-150" :class="expanded && 'rotate-180'" aria-hidden="true" />
-    </button>
-    <UiScrollArea v-if="candidates.length === 1 || expanded" fade-size="sm" class="max-h-36" :class="candidates.length > 1 && 'border-t border-ui-border'">
-      <ol :class="candidates.length > 1 ? 'py-1' : undefined">
-        <li
-          v-for="input in candidates"
-          :key="input.id"
-          :data-input-id="input.id"
-          class="group flex items-center gap-1.5 px-3 text-[13px]"
-          :class="candidates.length === 1 ? 'min-h-9 py-1' : 'py-0.5'"
-        >
-          <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
-          <ListEnd v-else-if="candidates.length === 1" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" :title="t('agent.backlog')" aria-hidden="true" />
-          <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
-          <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
-          <AgentActor v-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
-          <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
-          <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
-          <UiButton variant="ghost" size="icon" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-        </li>
-      </ol>
-    </UiScrollArea>
+  <section v-if="candidates.length" class="overflow-hidden squircle-xl border border-ui-border bg-ui-surface" :aria-label="t('agent.backlog')">
+    <CollapsibleRoot v-if="candidates.length > 1" v-model:open="expanded">
+      <CollapsibleTrigger
+        type="button"
+        data-backlog-toggle
+        :title="t(expanded ? 'agent.backlogCollapse' : 'agent.backlogExpand')"
+        class="flex min-h-9 w-full cursor-pointer items-center gap-2 px-3 py-1 text-left text-[13px] ui-motion hover:bg-ui-hover/60"
+      >
+        <span v-if="pendingCount" class="flex min-w-0 items-center gap-1.5 font-medium text-ui-text">
+          <ListEnd :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <span class="truncate">{{ t('agent.backlogQueued', pendingCount) }}</span>
+        </span>
+        <span v-if="pendingCount && failedCount" class="shrink-0 text-ui-text-muted" aria-hidden="true">·</span>
+        <span v-if="failedCount" class="flex shrink-0 items-center gap-1 text-xs font-medium text-ui-danger">
+          <CircleAlert :size="14" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+          <span>{{ t('agent.backlogFailed', failedCount) }}</span>
+        </span>
+        <ChevronDown :size="14" :stroke-width="1.75" class="ml-auto shrink-0 text-ui-text-muted transition-transform duration-[var(--ui-duration-base)]" :class="expanded && 'rotate-180'" aria-hidden="true" />
+      </CollapsibleTrigger>
+      <SpringCollapse :duration="0.28" :bounce="0">
+        <div class="max-h-36 overflow-y-auto border-t border-ui-border">
+          <ol class="py-1">
+            <li
+              v-for="input in candidates"
+              :key="input.id"
+              :data-input-id="input.id"
+              class="group flex items-center gap-1.5 px-3 py-0.5 text-[13px]"
+            >
+              <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
+              <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
+              <AgentActor v-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
+              <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+              <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
+              <UiButton variant="ghost" size="icon" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+            </li>
+          </ol>
+        </div>
+      </SpringCollapse>
+    </CollapsibleRoot>
+    <ol v-else>
+      <li
+        v-for="input in candidates"
+        :key="input.id"
+        :data-input-id="input.id"
+        class="group flex min-h-9 items-center gap-1.5 px-3 py-1 text-[13px]"
+      >
+        <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
+        <ListEnd v-else :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" :title="t('agent.backlog')" aria-hidden="true" />
+        <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
+        <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
+        <AgentActor v-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
+        <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+        <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
+        <UiButton variant="ghost" size="icon" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      </li>
+    </ol>
   </section>
 </template>

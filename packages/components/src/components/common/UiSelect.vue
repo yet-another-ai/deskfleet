@@ -31,7 +31,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
 
 <template>
   <ComboboxRoot v-if="searchable" :model-value="modelValue" :disabled="disabled" open-on-click @update:model-value="emit('update:modelValue', String($event ?? ''))">
-    <ComboboxAnchor v-bind="{ class: $attrs.class, style: $attrs.style }" :data-disabled="disabled ? '' : undefined" class="ui-input relative flex min-w-0 items-center pr-8 focus-within:border-ui-accent focus-within:ring-3 focus-within:ring-ui-accent/20 data-[disabled]:op-50">
+    <ComboboxAnchor v-bind="{ class: $attrs.class, style: $attrs.style }" :data-disabled="disabled ? '' : undefined" class="ui-input relative flex min-w-0 items-center pr-8 focus-within:border-ui-accent data-[disabled]:op-50">
       <ComboboxInput ref="input" v-bind="{ ...$attrs, class: undefined, style: undefined }" :display-value="label" :placeholder="placeholder" :aria-required="required || undefined" :data-control-name="name" class="w-full min-w-0 bg-transparent p-0 text-[13px] outline-none" />
       <ComboboxTrigger class="absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-ui-text-muted ui-motion hover:text-ui-text" :disabled="disabled" :aria-label="String($attrs['aria-label'] ?? placeholder ?? label(modelValue))" tabindex="-1"><ChevronDown :size="14" aria-hidden="true" /></ComboboxTrigger>
     </ComboboxAnchor>

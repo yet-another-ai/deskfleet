@@ -436,7 +436,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-[calc(1.25rem+var(--safe-area-bottom,0px))]">
-    <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-2.5 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
+    <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-2.5 squircle-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
       <DropdownMenuRoot v-if="showTarget" :modal="false">
         <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text ui-motion hover:bg-ui-hover" :disabled="preparing || submitting" :title="location.machine.local ? t('machine.local') : undefined" :aria-label="t('composer.machineChoice', { machine: location.machine.name })" data-composer-context data-composer-machine>
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
@@ -550,7 +550,7 @@ onBeforeUnmount(() => {
       <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :disabled="submitting" @busy="preparing = $event" />
       <button v-if="changes.additions || changes.deletions" type="button" class="ml-auto shrink-0 cursor-pointer rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5 ui-motion hover:bg-ui-hover" :title="t('panel.changes')" data-composer-changes @click="layout.requestDetailsOpen()"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></button>
     </div>
-    <div ref="dropZoneRef" class="composer-shell relative rounded-2xl border bg-ui-surface ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
+    <div ref="dropZoneRef" class="composer-shell relative squircle-2xl border bg-ui-surface ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
       <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
@@ -750,6 +750,7 @@ onBeforeUnmount(() => {
   inset: -1px;
   z-index: 1;
   border-radius: inherit;
+  corner-shape: inherit;
   /* Clip the decoration only: the composer's menus must remain free to overflow. */
   overflow: hidden;
   pointer-events: none;
@@ -774,6 +775,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  corner-shape: inherit;
   background: var(--beam-colors);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;

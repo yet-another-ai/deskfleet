@@ -5,11 +5,12 @@ import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useSpring } from "../../composables/useSpring.ts"
 
 defineOptions({ inheritAttrs: false })
+const props = defineProps<{ duration?: number; bounce?: number }>()
 const context = injectCollapsibleRootContext()
 const content = useTemplateRef<HTMLElement>("content")
 const mounted = ref(context.open.value)
 const initializeOpenHeight = ref(context.open.value)
-const height = useSpring(0, { min: 0 })
+const height = useSpring(0, { min: 0, duration: props.duration, bounce: props.bounce })
 const settledOpen = computed(() => context.open.value && (initializeOpenHeight.value || (!height.isActive.value && height.target.value > 0)))
 function measure(): void {
   if (!context.open.value || !content.value) return

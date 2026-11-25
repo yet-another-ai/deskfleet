@@ -109,7 +109,7 @@ function respond(optionId: string): void {
 
 <template>
   <section v-if="current && tool" class="flex flex-col gap-2" :aria-label="t('agent.permissions')">
-    <div :key="current.id" class="ui-attention relative z-1 rounded-xl border border-ui-warning/40 bg-ui-surface px-3 py-2" :data-permission-id="current.id">
+    <div :key="current.id" class="ui-attention relative z-1 squircle-xl border border-ui-warning/40 bg-ui-surface px-3 py-2" :data-permission-id="current.id">
       <div class="flex items-center gap-1.5 text-xs text-ui-text-muted">
         <ShieldAlert :size="14" :stroke-width="1.75" class="shrink-0 text-ui-warning" aria-hidden="true" />
         <span class="shrink-0 font-medium">{{ t('agent.permissionRequired') }}</span>

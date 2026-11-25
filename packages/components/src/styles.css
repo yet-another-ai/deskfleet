@@ -234,6 +234,13 @@ textarea {
   will-change: width, height, margin, translate, transform;
 }
 
+/* Keep input hover subtle without overriding focused or disabled borders. */
+@media (hover: hover) {
+  .ui-input:hover:not(:disabled, [data-disabled], :focus-visible, :focus-within) {
+    border-color: var(--ui-color-text-faint);
+  }
+}
+
 /* Switch thumb position is driven by the shared spring. */
 /* Radios: the checked ring tints and its dot springs in. */
 @media (hover: hover) { [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); } }
