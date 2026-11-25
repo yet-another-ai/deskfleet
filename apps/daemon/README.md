@@ -380,8 +380,10 @@ The ACP server does not advertise interactive authenticate methods.
 An explicit external executable uses its own credential configuration.
 `packages/dsh-runtime` owns DeskFleet Desktop's bundled runtime and smoke checks.
 
-Antigravity uses native ACP: the daemon runs `` `<binary> acp` `` with `agy` as
-the default executable. Settings installs the CLI through Google's official
+Antigravity uses native ACP: the daemon runs
+`` `<binary> acp --process-per-session` `` with `agy` as the default executable.
+The `--process-per-session` flag enables HTTP MCP servers in `agy acp`.
+Settings installs the CLI through Google's official
 installer and runs `agy acp --login` for interactive sign-in. For standalone CLI
 use without Settings, run `agy` or `agy acp --login` on the same machine first.
 Its default profile configuration is at `~/.gemini/antigravity-cli/settings.json`,
