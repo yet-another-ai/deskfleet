@@ -111,7 +111,7 @@ defineExpose({ items })
     </li>
     <li v-if="startupStatus" key="agent-startup-status" data-agent-startup-status class="scroll-mt-6">
       <div class="flex items-center gap-2 text-ui-text-muted" role="status">
-        <LoaderCircle :size="15" :stroke-width="2" class="animate-spin" aria-hidden="true" />
+        <LoaderCircle :size="16" :stroke-width="2" class="shrink-0 animate-spin" aria-hidden="true" />
         <span class="ui-shimmer-text">{{ startupStatus }}</span>
       </div>
     </li>
