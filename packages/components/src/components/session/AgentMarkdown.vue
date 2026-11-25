@@ -27,17 +27,17 @@ import { watchImmediate } from "@vueuse/core"
 import { MarkdownRender } from "markstream-vue"
 import { computed, inject, onBeforeUnmount, provide, reactive, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
-import { agentResourceContextKey } from "../../services/agent-resources.ts"
+import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import { agentMarkdownParseOptions, createAgentMarkdownParser } from "../../services/agent-markdown.ts"
 import { previewKindFromMime } from "../../services/preview.ts"
 import { usePreviewActions } from "../../stores/previews.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
-import type { FileResourceRequest } from "@deskfleet/client/files"
+import type { FileResourceRequest, FilesApi } from "@deskfleet/client/files"
 
 const client = usePlatformClient()
 
-const props = defineProps<{ text: string; final?: boolean }>()
+const props = defineProps<{ text: string; final?: boolean; api?: FilesApi; basePath?: string }>()
 const parseMarkdown = createAgentMarkdownParser(useId())
 const nodes = computed(() => parseMarkdown(props.text, props.final ?? true))
 const { t } = useI18n()
@@ -45,12 +45,13 @@ const { openResourceFromAction } = usePreviewActions()
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
 const resource = ref<FileResourceRequest>()
-const files = client.files
+const files = computed(() => props.api ?? client.files)
 
 const images = reactive(new Map<string, LoadedImage>())
 const diagramIds = new Map<string, string>()
 let nextDiagramId = 0
 let contextKey = ""
+let loadedFiles: FilesApi | undefined
 let disposed = false
 
 function release(uri: string): void {
@@ -59,18 +60,25 @@ function release(uri: string): void {
   images.delete(uri)
 }
 
+function resourceRequest(current: AgentResourceContext, uri: string): FileResourceRequest {
+  const request: FileResourceRequest = { ...current, target: { ...current.target }, uri }
+  if (props.basePath) request.basePath = props.basePath
+  return request
+}
+
 function load(uri: string, refCount = 1): void {
   const existing = images.get(uri)
   const value: LoadedImage = reactive({ refCount: existing?.refCount ?? refCount })
   images.set(uri, value)
   const current = context.value
-  if (!files || !current) {
+  const api = files.value
+  if (!api || !current) {
     value.error = t("files.resourceUnavailable")
     return
   }
-  const request = { ...current, target: { ...current.target }, uri }
+  const request = resourceRequest(current, uri)
   value.request = request
-  void files.readResource(request).then(result => {
+  void api.readResource(request).then(result => {
     if (disposed || images.get(uri) !== value) return
     // Markdown embeds share PreviewViewer's media, 3D model, and Office support.
     if (!previewKindFromMime(result.mimeType)) {
@@ -85,12 +93,13 @@ function load(uri: string, refCount = 1): void {
   })
 }
 
-watchImmediate(context, current => {
-  const key = JSON.stringify(current)
-  if (contextKey === key) return
+watchImmediate([context, files, () => props.basePath], ([current, currentFiles, basePath]) => {
+  const key = JSON.stringify([current, basePath])
+  if (contextKey === key && loadedFiles === currentFiles) return
   const retainedEntries = [...images.entries()].filter(([, img]) => img.refCount > 0)
   for (const uri of images.keys()) release(uri)
   contextKey = key
+  loadedFiles = currentFiles
   error.value = undefined
   resource.value = undefined
   for (const [uri, img] of retainedEntries) {
@@ -152,11 +161,11 @@ async function click(event: MouseEvent): Promise<void> {
   const link = target?.closest<HTMLAnchorElement>("a[data-resource-link]")
   if (!link) return
   event.preventDefault()
-  if (!files || !context.value) { error.value = t("files.resourceUnavailable"); return }
+  if (!files.value || !context.value) { error.value = t("files.resourceUnavailable"); return }
   error.value = undefined
   const uri = link.dataset.resourceLink!
   const entryId = link.closest<HTMLElement>("[data-conversation-entry]")?.dataset.conversationEntry
-  const nextResource: FileResourceRequest = { ...context.value, uri }
+  const nextResource = resourceRequest(context.value, uri)
   const rawName = uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1)
   let fileName = rawName
   if (rawName) {

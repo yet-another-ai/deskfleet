@@ -58,7 +58,7 @@ export class FilesService implements FileEndpoint {
       case "stat": return { value: await fileEntry(absolutePath((params as FileMethods["stat"]["params"]).path)) }
       case "resolve": {
         const request = params as FileMethods["resolve"]["params"]
-        return { value: await fileEntry(await sessionResourcePath(request.sessionId, request.uri, this.#sessionDirectory)) }
+        return { value: await fileEntry(await sessionResourcePath(request.sessionId, request.uri, this.#sessionDirectory, request.basePath)) }
       }
       case "openRead": return { value: await this.#reads.open(params as FileMethods["openRead"]["params"]) }
       case "read": return this.#reads.read(params as FileMethods["read"]["params"])

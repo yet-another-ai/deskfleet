@@ -58,6 +58,16 @@ test("Session resources use captured cwd and return bounded binary reads", async
   const literal = join(directory, "literal#L12")
   await writeFile(literal, "fragment is part of the name")
   assert.equal((await service.call("resolve", { sessionId: "12", uri: "literal%23L12" })).value.path, literal)
+  const guideDir = join(directory, "docs", "guide")
+  await mkdir(guideDir, { recursive: true })
+  const intro = join(guideDir, "intro.md")
+  const diagram = join(guideDir, "diagram.png")
+  const api = join(directory, "docs", "api.md")
+  await Promise.all([writeFile(intro, "# Intro\n"), writeFile(diagram, bytes), writeFile(api, "# API\n")])
+  assert.equal((await service.call("resolve", { sessionId: "12", uri: "./diagram.png", basePath: intro })).value.path, diagram)
+  assert.equal((await service.call("resolve", { sessionId: "12", uri: "../api.md#L2", basePath: intro })).value.path, api)
+  assert.equal((await service.call("resolve", { sessionId: "12", uri: pathToFileURL(path).href, basePath: intro })).value.path, path)
+  await assert.rejects(service.call("resolve", { sessionId: "12", uri: "./diagram.png", basePath: "docs/guide/intro.md" }), { code: "invalid" })
 })
 
 test("session attachment upload writes into the managed session-attachments directory", async context => {

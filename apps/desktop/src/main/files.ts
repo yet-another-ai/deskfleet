@@ -32,7 +32,13 @@ function conflict(value: unknown): FileConflict | undefined {
 }
 function resource(value: unknown): FileResourceRequest {
   const input = object(value)
-  return { target: target(input.target), sessionId: text(input.sessionId), uri: text(input.uri) }
+  const request: FileResourceRequest = {
+    target: target(input.target),
+    sessionId: text(input.sessionId),
+    uri: text(input.uri),
+  }
+  if (input.basePath !== undefined) request.basePath = text(input.basePath)
+  return request
 }
 function attachmentUpload(value: unknown): FileAttachmentUploadRequest {
   const input = object(value)

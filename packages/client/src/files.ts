@@ -10,7 +10,7 @@ export interface FileTransfer {
   state: "queued" | "preparing" | "transferring" | "completed" | "failed" | "cancelled" | "conflict"
   transferredBytes: number; totalBytes: number | null; bytesPerSecond: number; error?: string
 }
-export interface FileResourceRequest { target: FileTarget; sessionId: string; uri: string }
+export interface FileResourceRequest { target: FileTarget; sessionId: string; uri: string; basePath?: string }
 /** Native hosts may open a resolved resource on this physical machine. */
 export interface FileResource extends FileEntry { canOpen?: boolean }
 export interface FileAttachmentUploadRequest { target: FileTarget; sessionId?: string; draftId?: string; name: string; data: Uint8Array }

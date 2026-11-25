@@ -41,10 +41,11 @@ test("file bridge forwards opaque grants and rejects malformed grant identifiers
 test.each(["openResource", "revealResource"] as const)("native %s accepts only a validated scoped resource request", async method => {
   const handler = vi.fn(async () => {})
   const api = { [method]: handler } as unknown as FilesApi
-  const request = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "file:///work/report.docx" }
+  const request = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "file:///work/report.docx", basePath: "/work/docs/README.md" }
   await invokeFiles(api, method, [{ ...request, canOpen: true, path: "/untrusted" }])
   expect(handler).toHaveBeenCalledExactlyOnceWith(request)
   await expect(invokeFiles(api, method, [{ ...request, uri: "bad\0path" }])).rejects.toThrow("path")
+  await expect(invokeFiles(api, method, [{ ...request, basePath: "bad\0path" }])).rejects.toThrow("path")
   await expect(invokeFiles({} as FilesApi, method, [request])).rejects.toThrow("unavailable")
 })
 

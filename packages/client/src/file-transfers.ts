@@ -1,4 +1,4 @@
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry } from "@deskfleet/protocol/files"
+import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry, type FileMethods } from "@deskfleet/protocol/files"
 import { filePathToUri, type FileAttachmentUploadOptions, type FileAttachmentUploadRequest, type FileAttachmentUploadResult, type FileConflict, type FileListing, type FileReadResourceOptions, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer, type FileTransferRequest } from "./files.ts"
 import { copyFileChunks, writeBufferChunks } from "./file-pipeline.ts"
 
@@ -220,12 +220,17 @@ export class FileTransferManager implements FilesApi {
     }
   }
 
+  #resolveParams(request: FileResourceRequest): FileMethods["resolve"]["params"] {
+    const params: FileMethods["resolve"]["params"] = { sessionId: request.sessionId, uri: request.uri }
+    if (request.basePath !== undefined) params.basePath = request.basePath
+    return params
+  }
   async resolveResource(request: FileResourceRequest): Promise<FileEntry> {
-    return (await (await this.#endpoint(request.target)).call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
+    return (await (await this.#endpoint(request.target)).call("resolve", this.#resolveParams(request))).value
   }
   async readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string }> {
     const endpoint = await this.#endpoint(request.target)
-    const file = (await endpoint.call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
+    const file = (await endpoint.call("resolve", this.#resolveParams(request))).value
     if (file.kind !== "file") throw new Error("Select a file to preview")
     if (file.size > PREVIEW_BYTES && !await this.#unlimitedPreview?.(request.target)) throw new Error("This file is too large to preview. Download it instead.")
     options?.onProgress?.({ transferredBytes: 0, totalBytes: file.size })

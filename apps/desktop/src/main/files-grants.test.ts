@@ -70,6 +70,14 @@ test("preview grants bind a trusted Session root, reject absolute/file-URL escap
   await expect(endpoint.call("begin", { directory: root, name: "new.txt", kind: "file", conflict: "ask" })).rejects.toThrow("write access")
   const browse = grants.endpoint(await grants.issue(root, { read: true, write: true }))
   await expect(browse.call("resolve", { sessionId: "session", uri: "inside.txt" })).rejects.toThrow("Session")
+  const docs = join(root, "docs")
+  await mkdir(docs)
+  const readme = join(docs, "README.md"), sibling = join(docs, "diagram.png")
+  await Promise.all([writeFile(readme, "# Docs"), writeFile(sibling, "png")])
+  expect((await endpoint.call("resolve", { sessionId: "session", uri: "./diagram.png", basePath: readme })).value.path).toBe(sibling)
+  expect((await endpoint.call("resolve", { sessionId: "session", uri: "../inside.txt", basePath: readme })).value.path).toBe(join(root, "inside.txt"))
+  await expect(endpoint.call("resolve", { sessionId: "session", uri: "../../outside/secret.txt", basePath: readme })).rejects.toThrow("outside")
+  await expect(endpoint.call("resolve", { sessionId: "session", uri: "./secret.txt", basePath: join(outside, "secret.txt") })).rejects.toThrow("outside")
 })
 
 test("read-only folder grants authorize explicit read sessions and retain path checks for every chunk", async () => {

@@ -20,7 +20,7 @@ export interface FileListing {
 export interface FileMethods {
   list: { params: { path?: string; strict?: boolean }; result: FileListing }
   stat: { params: { path: string }; result: FileEntry }
-  resolve: { params: { sessionId: string; uri: string }; result: FileEntry }
+  resolve: { params: { sessionId: string; uri: string; basePath?: string }; result: FileEntry }
   openRead: { params: { path: string; modifiedAt?: number }; result: { readId: string } }
   read: { params: { path: string; offset: number; length: number; modifiedAt?: number; readId?: string }; result: { bytes: number } }
   closeRead: { params: { readId: string }; result: null }
