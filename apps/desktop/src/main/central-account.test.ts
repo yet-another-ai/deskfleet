@@ -20,7 +20,7 @@ vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
 import { app, BrowserWindow, ipcMain, net, powerMonitor, safeStorage } from "electron"
-import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
+import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount, receiveAuthCallback } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
 const serverUrl = "https://fleet.example"
@@ -252,6 +252,107 @@ test("the browser login callback submits its code as a same-origin form", async 
   expect(net.WebSocket).toHaveBeenCalledExactlyOnceWith("wss://fleet.example/api/client/ws", { useSessionCookies: false })
   expect(sentRequest(f.fetch).credentials).toBe("omit")
   expect(JSON.parse(await readFile(f.path, "utf8")).encryptedToken).toBe(Buffer.from("encrypted-new-token").toString("base64"))
+})
+
+test("the callback page reports a missing login code instead of waiting for the timeout", async () => {
+  const f = await setup()
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = (await request.json()).returnTo
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    throw new Error("exchange must not run without a login code")
+  })
+  const client = await installCentralAccount({ openAuthorization: async () => {
+    const page = await networkFetch(returnTo)
+    const html = await page.text()
+    expect(html).toContain('<form method="post" action="/auth/failed">')
+    const origin = new URL(returnTo).origin
+    const rejected = await networkFetch(`${origin}/auth/failed`, { method: "POST", headers: { Origin: "https://other.example" }, body: new URLSearchParams({ reason: "missing_code" }) })
+    expect(rejected.status).toBe(404)
+    const accepted = await networkFetch(`${origin}/auth/failed`, { method: "POST", headers: { Origin: origin }, body: new URLSearchParams({ reason: "missing_code" }) })
+    expect(accepted.status).toBe(200)
+    expect(await accepted.text()).toBe("Sign-in failed. Return to DeskFleet and try again.")
+  } })
+  clients.push(client)
+  await expect(client.login()).rejects.toThrow("did not return a login code")
+  expect(f.fetch).toHaveBeenCalledTimes(1)
+})
+
+test("the macOS desktop scheme delivers its code to the pending login", async () => {
+  const f = await setup()
+  const loginCode = "one-use+code&value"
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = (await request.json()).returnTo
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(await request.json()).toEqual({ code: loginCode, loginVerifier: "private-verifier" })
+    return Response.json({ token: "new-token", user })
+  })
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: async () => {
+      expect(returnTo).toBe("deskfleet://auth/callback")
+      receiveAuthCallback(`deskfleet://auth/callback?loginCode=${encodeURIComponent(loginCode)}`)
+    },
+  })
+  clients.push(client)
+  await client.login()
+  expect(f.fetch).toHaveBeenCalledTimes(2)
+})
+
+test("a desktop scheme callback without a code fails immediately", async () => {
+  const f = await setup()
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    throw new Error("exchange must not run without a login code")
+  })
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: async () => { receiveAuthCallback("deskfleet://auth/callback") },
+  })
+  clients.push(client)
+  await expect(client.login()).rejects.toThrow("did not return a login code")
+  expect(f.fetch).toHaveBeenCalledTimes(1)
+})
+
+test("a server that rejects the desktop scheme falls back to loopback", async () => {
+  const f = await setup()
+  const loginCode = "one-use+code&value"
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    const body = await request.json()
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = body.returnTo
+      if (returnTo.startsWith("deskfleet:")) return new Response(JSON.stringify({ message: "login return URL is not allowed" }), { status: 400 })
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(body).toEqual({ code: loginCode, loginVerifier: "private-verifier" })
+    return Response.json({ token: "new-token", user })
+  })
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: async () => {
+      expect(returnTo).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/)
+      const origin = new URL(returnTo).origin
+      const accepted = await networkFetch(`${origin}/auth/complete`, { method: "POST", headers: { Origin: origin }, body: new URLSearchParams({ code: loginCode }) })
+      expect(accepted.status).toBe(200)
+    },
+  })
+  clients.push(client)
+  await client.login()
+  expect(f.fetch).toHaveBeenCalledTimes(3)
 })
 
 test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {

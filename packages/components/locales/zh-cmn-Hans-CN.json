@@ -2163,6 +2163,8 @@
     "desktopDescription": "打开此页面的桌面应用将以此账号登录。",
     "desktopAttemptMissing": "请从桌面应用重新发起登录。",
     "continueDesktop": "继续登录桌面端",
+    "openDesktop": "打开 DeskFleet",
+    "openDesktopHint": "打开 DeskFleet 完成登录，之后可以关闭此标签页。",
     "differentAccount": "使用其他账号",
     "confirmEmailTitle": "确认新邮箱",
     "confirmEmailDescription": "当前登录账号为 {email}。确认后将替换为新的登录邮箱。",

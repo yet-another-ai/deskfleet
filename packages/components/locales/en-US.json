@@ -2163,6 +2163,8 @@
     "desktopDescription": "The desktop app that opened this page will be signed in as this account.",
     "desktopAttemptMissing": "Start signing in again from the desktop app.",
     "continueDesktop": "Continue to desktop app",
+    "openDesktop": "Open DeskFleet",
+    "openDesktopHint": "Open DeskFleet to finish signing in. You can close this tab afterwards.",
     "differentAccount": "Use a different account",
     "confirmEmailTitle": "Confirm your new email",
     "confirmEmailDescription": "Signed in as {email}. Confirming replaces it as your sign-in address.",

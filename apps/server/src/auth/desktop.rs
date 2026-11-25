@@ -22,6 +22,19 @@ pub(super) struct Exchange {
     login_verifier: String,
 }
 
+/// Loopback callbacks keep the code in the fragment. macOS delivers custom
+/// schemes through LaunchServices, so the desktop scheme uses the query string
+/// instead to avoid losing the one-use code on the way to the app.
+fn callback_url(return_to: &str, code: &str) -> Option<url::Url> {
+    let mut url = url::Url::parse(return_to).ok()?;
+    if url.scheme() == "deskfleet" {
+        url.query_pairs_mut().append_pair("loginCode", code);
+    } else {
+        url.set_fragment(Some(&format!("loginCode={code}")));
+    }
+    Some(url)
+}
+
 fn allowed_return_to(allowlist: &[String], value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else {
         return false;
@@ -85,9 +98,7 @@ pub(super) async fn complete(
             field(&attempt, "loginVerifierHash")?,
         )
         .await?;
-    let mut url =
-        url::Url::parse(field(&attempt, "returnTo")?).map_err(|_| ApiError::internal())?;
-    url.set_fragment(Some(&format!("loginCode={code}")));
+    let url = callback_url(field(&attempt, "returnTo")?, &code).ok_or_else(ApiError::internal)?;
     Ok(web::Json(json!({"returnTo":url.to_string()})))
 }
 pub(super) async fn exchange(
@@ -112,6 +123,7 @@ mod tests {
         let allowed = vec![
             "http://127.0.0.1:*/auth/callback".into(),
             "ai.yetanother.deskfleet://auth/callback".into(),
+            "deskfleet://auth/callback".into(),
         ];
         assert!(super::allowed_return_to(
             &allowed,
@@ -121,6 +133,10 @@ mod tests {
             &allowed,
             "ai.yetanother.deskfleet://auth/callback"
         ));
+        assert!(super::allowed_return_to(
+            &allowed,
+            "deskfleet://auth/callback"
+        ));
         for invalid in [
             "http://localhost:3456/auth/callback",
             "http://127.0.0.1:3456/evil",
@@ -128,8 +144,30 @@ mod tests {
             "http://user@127.0.0.1:3456/auth/callback",
             "ai.yetanother.deskfleet://auth/callback?evil",
             "ai.yetanother.deskfleet://auth/callback#frag",
+            "deskfleet://auth/callback?evil",
+            "deskfleet://auth/callback#frag",
+            "deskfleet://other/callback",
         ] {
             assert!(!super::allowed_return_to(&allowed, invalid));
+        }
+    }
+
+    #[test]
+    fn desktop_scheme_delivers_the_code_in_the_query() {
+        let url = super::callback_url("deskfleet://auth/callback", "df_code").unwrap();
+        assert_eq!(url.as_str(), "deskfleet://auth/callback?loginCode=df_code");
+        assert!(url.fragment().is_none());
+    }
+
+    #[test]
+    fn loopback_and_mobile_callbacks_keep_the_fragment() {
+        for return_to in [
+            "http://127.0.0.1:3456/auth/callback",
+            "ai.yetanother.deskfleet://auth/callback",
+        ] {
+            let url = super::callback_url(return_to, "df_code").unwrap();
+            assert_eq!(url.fragment(), Some("loginCode=df_code"));
+            assert!(url.query().is_none());
         }
     }
 }

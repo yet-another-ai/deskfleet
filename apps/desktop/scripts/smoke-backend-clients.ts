@@ -49,7 +49,7 @@ const web = createServer((request, response) => {
 }).listen(0, "127.0.0.1")
 await once(web, "listening")
 const webUrl = `http://localhost:${(web.address() as AddressInfo).port}/`
-const fixture = await startBackendFixture({ returnTo: [webUrl, "http://127.0.0.1:*/auth/callback"], allowedOrigins: [webUrl.slice(0, -1)] })
+const fixture = await startBackendFixture({ returnTo: [webUrl, "http://127.0.0.1:*/auth/callback", "deskfleet://auth/callback"], allowedOrigins: [webUrl.slice(0, -1)] })
 const identity = { subject: `client-${randomUUID()}`, name: "Client smoke", email: "client@example.invalid" }
 const login = await fixture.auth.login(fixture.backend, identity).catch(async error => {
   console.error(fixture.diagnostics())

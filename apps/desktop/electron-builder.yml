@@ -2,6 +2,12 @@ appId: io.github.yet-another-ai.deskfleet
 # Keep package.json's runtime name stable for Electron profiles and safeStorage.
 productName: DeskFleet
 executableName: deskfleet
+# Packaged macOS sign-in returns through this scheme instead of HTTP loopback,
+# which Safari's HTTPS-Only mode blocks.
+protocols:
+  - name: DeskFleet
+    schemes:
+      - deskfleet
 asar: true
 asarUnpack:
   - out/main/deskfleet.node

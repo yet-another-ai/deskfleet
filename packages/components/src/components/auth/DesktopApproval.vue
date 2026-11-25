@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link2Off, MonitorSmartphone } from "@lucide/vue"
-import { ref } from "vue"
+import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
 import type { AccountUser } from "@deskfleet/client/central"
@@ -19,6 +19,12 @@ const recent = useRecentAuthentication()
 const pending = ref(false)
 const error = ref<string>()
 const completedReturnTo = ref<string>()
+// Safari blocks custom-scheme navigations after async work, so the app link
+// must stay a real user gesture.
+const customScheme = computed(() => {
+  const value = completedReturnTo.value
+  return !!value && !/^https?:/i.test(value)
+})
 
 async function run(action: () => Promise<void>): Promise<void> {
   if (pending.value) return
@@ -29,7 +35,7 @@ async function run(action: () => Promise<void>): Promise<void> {
 }
 function approve(): void {
   if (completedReturnTo.value) {
-    location.assign(completedReturnTo.value)
+    if (!customScheme.value) location.assign(completedReturnTo.value)
     return
   }
   void run(async () => {
@@ -38,6 +44,7 @@ function approve(): void {
       : undefined
     const { returnTo } = await recent.confirmed(() => props.account.completeDesktop(props.attempt!, telemetryConsent))
     completedReturnTo.value = returnTo
+    if (!/^https?:/i.test(returnTo)) return
     location.assign(returnTo)
   })
 }
@@ -55,7 +62,9 @@ function approve(): void {
         </div>
       </div>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
-      <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending">{{ t("auth.continueDesktop") }}</UiButton>
+      <a v-if="customScheme" :href="completedReturnTo" class="ui-button-primary h-9 w-full text-sm no-underline">{{ t("auth.openDesktop") }}</a>
+      <p v-if="customScheme" class="m-0 text-center text-[13px] text-ui-text-muted">{{ t("auth.openDesktopHint") }}</p>
+      <UiButton v-else type="submit" variant="primary" class="h-9 text-sm" :loading="pending">{{ t("auth.continueDesktop") }}</UiButton>
       <UiButton variant="ghost" class="h-9 text-sm" :disabled="pending" @click="run(signOut)">{{ t("auth.differentAccount") }}</UiButton>
     </form>
   </AuthLayout>
