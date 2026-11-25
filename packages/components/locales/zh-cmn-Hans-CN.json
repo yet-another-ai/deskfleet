@@ -1553,6 +1553,9 @@
     "uncertainInput": "无法确认是否已投递。再次提交前请检查对话。",
     "permissions": "权限",
     "permissionRequired": "需要授权",
+    "permissionMoreOptions": "更多选项",
+    "permissionPrevious": "上一条权限请求",
+    "permissionNext": "下一条权限请求",
     "questions": {
       "title": "需要你的回答",
       "urlTitle": "在浏览器中继续",

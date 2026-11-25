@@ -72,9 +72,33 @@ test("queued commands and native skill commands remain withdrawable without a st
   expect(view.findAll('[aria-label="Withdraw"]')).toHaveLength(2)
 })
 test("only pending permissions are actionable and an answer is recorded on its tool call with the winning actor", async () => {
-  const view = mount(AgentPermissions, { props: { permissions: [agentPermission()], disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  const first = agentPermission()
+  const second = agentPermission({
+    id: "61",
+    request: {
+      ...first.request,
+      toolCall: { ...first.request.toolCall, toolCallId: "tool-2", kind: "execute", title: "Deploy staging", rawInput: { command: "wrangler deploy --env staging" } },
+      options: [
+        { optionId: "allow", name: "Allow once", kind: "allow_once" },
+        { optionId: "always", name: "Always allow deploy", kind: "allow_always" },
+        { optionId: "deny", name: "Reject", kind: "reject_once" },
+      ],
+    },
+  })
+  const view = mount(AgentPermissions, { attachTo: document.body, props: { permissions: [first, second], disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  expect(view.findAll("[data-permission-id]")).toHaveLength(1)
+  expect(view.get("[data-permission-queue]").text()).toBe("1 / 2")
+  await view.get("[data-permission-next]").trigger("click")
+  expect(view.get("[data-permission-queue]").text()).toBe("2 / 2")
+  expect(view.get('[data-permission-id="61"]').text()).toContain("wrangler deploy --env staging")
+  expect(view.find("[data-permission-more-allow]").exists()).toBe(true)
+  await view.get("[data-permission-prev]").trigger("click")
+  expect(view.get("[data-permission-queue]").text()).toBe("1 / 2")
   await button(view, "Allow once").trigger("click"); expect(view.emitted("respond")).toEqual([["60", "allow"]])
   const resolved = agentPermission({ state: "resolved", optionId: "deny", actor: { ...actor, userId: "Grace" } })
+  await view.setProps({ permissions: [resolved, second] })
+  expect(view.get('[data-permission-id="61"]').text()).toContain("wrangler deploy --env staging")
+  expect(view.find("[data-permission-queue]").exists()).toBe(false)
   await view.setProps({ permissions: [resolved] })
   expect(view.find("section").exists()).toBe(false)
   const snapshot = agentSnapshot(); snapshot.permissions = [resolved]

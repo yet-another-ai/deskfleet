@@ -1553,6 +1553,9 @@
     "uncertainInput": "Delivery could not be confirmed. Check the conversation before submitting again.",
     "permissions": "Permissions",
     "permissionRequired": "Permission required",
+    "permissionMoreOptions": "More options",
+    "permissionPrevious": "Previous permission",
+    "permissionNext": "Next permission",
     "questions": {
       "title": "Your input is needed",
       "urlTitle": "Continue in your browser",
