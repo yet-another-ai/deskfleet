@@ -234,6 +234,13 @@ textarea {
   will-change: width, height, margin, translate, transform;
 }
 
+/* Keep input hover subtle without overriding focused or disabled borders. */
+@media (hover: hover) {
+  .ui-input:hover:not(:disabled, [data-disabled], :focus-visible, :focus-within) {
+    border-color: var(--ui-color-text-faint);
+  }
+}
+
 /* Switch thumb position is driven by the shared spring. */
 /* Radios: the checked ring tints and its dot springs in. */
 @media (hover: hover) { [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); } }
@@ -258,9 +265,8 @@ textarea {
   60%, to { opacity: 0; scale: 3; }
 }
 
-/* Meter widths use v-spring; CSS supplies the sheen and continuous busy sweep. */
+/* Meter widths use v-spring; CSS supplies the color transition and continuous busy sweep. */
 .ui-meter-fill {
-  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 70%);
   transform-origin: left;
   transition: background-color var(--ui-duration-base) var(--ui-ease-out);
 }
@@ -421,8 +427,8 @@ textarea {
     ui-attention 1.6s var(--ui-ease-out) var(--ui-duration-slow) 2;
 }
 @keyframes ui-attention {
-  from { box-shadow: var(--ui-shadow-card), 0 0 0 0 color-mix(in srgb, var(--ui-color-warning) 40%, transparent); }
-  to { box-shadow: var(--ui-shadow-card), 0 0 0 10px transparent; }
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-color-warning) 40%, transparent); }
+  to { box-shadow: 0 0 0 10px transparent; }
 }
 
 /* Ambient color behind hero content: two slow-drifting radial blooms. */
@@ -469,7 +475,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .ui-shimmer-text, .ui-aurora::before, .ui-aurora::after, .ui-attention, .ui-status-live::after { animation: none !important; }
-  .ui-attention { box-shadow: var(--ui-shadow-card); }
   .ui-status-live::after { display: none; }
   /* Without the sweep, indeterminate progress reads as a dimmed full track. */
   .ui-meter-fill.ui-meter-indeterminate { width: 100% !important; opacity: 0.6; animation: none !important; }

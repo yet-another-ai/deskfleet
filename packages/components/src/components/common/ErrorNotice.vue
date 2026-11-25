@@ -27,7 +27,7 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
 </script>
 
 <template>
-  <div v-spring-enter role="alert" class="ui-rise-in min-w-0 rounded-lg border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
+  <div v-spring-enter role="alert" class="ui-rise-in min-w-0 squircle-xl border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
     <div class="flex items-start gap-2.5">
       <CircleAlert :size="17" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-danger" aria-hidden="true" />
       <div class="min-w-0 flex-1">

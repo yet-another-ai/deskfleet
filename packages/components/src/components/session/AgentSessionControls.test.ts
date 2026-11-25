@@ -32,8 +32,18 @@ test("message times render in every app locale", () => {
     }
   } finally { i18n.global.locale.value = "en-US" }
 })
-test("backlog exposes steer/withdraw only for candidates and retry only for confirmed failures", async () => {
+test("backlog shows a single item inline and folds multiple items behind a summary toggle", async () => {
+  const single = mount(AgentBacklog, { props: { inputs: [agentInput()], canSteer: true, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(single)
+  expect(single.find("[data-backlog-toggle]").exists()).toBe(false)
+  expect(single.findAll("li")).toHaveLength(1)
+  expect(single.text()).toContain("Fix the tests")
   const view = mount(AgentBacklog, { props: { inputs: [agentInput(), agentInput({ id: "41", state: "failed" }), agentInput({ id: "42", state: "uncertain" }), agentInput({ id: "43", state: "delivered" })], canSteer: true, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  expect(view.findAll("li")).toHaveLength(0)
+  expect(view.get("[data-backlog-toggle]").text()).toContain("1 message queued")
+  expect(view.get("[data-backlog-toggle]").text()).toContain("1 failed")
+  expect(view.get("[data-backlog-toggle]").attributes("aria-expanded")).toBe("false")
+  await view.get("[data-backlog-toggle]").trigger("click")
+  expect(view.get("[data-backlog-toggle]").attributes("aria-expanded")).toBe("true")
   expect(view.findAll("li")).toHaveLength(2)
   await button(view, "Steer now").trigger("click"); expect(view.emitted("steer")).toEqual([["40"]])
   await button(view, "Withdraw").trigger("click"); expect(view.emitted("withdraw")).toEqual([["40"]])
@@ -52,18 +62,43 @@ test("an uncertain dispatch leaves the backlog but remains visible in the conver
   expect(conversation.get('[data-conversation-entry="input-40"]').text()).toContain("Delivery uncertain")
   expect(conversation.text()).toContain("Check the conversation before submitting again")
 })
-test("queued commands and native skill commands remain withdrawable without a steer action", () => {
+test("queued commands and native skill commands remain withdrawable without a steer action", async () => {
   const view = mount(AgentBacklog, { props: { inputs: [
     agentInput({ content: [{ type: "text", text: "/compact" }] }),
     agentInput({ id: "41", content: [{ type: "resource_link", uri: "file:///repo/app.ts", name: "app.ts" }, { type: "text", text: "/skill:review check this file" }] }),
   ], canSteer: true, disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  await view.get("[data-backlog-toggle]").trigger("click")
   expect(view.text()).not.toContain("Steer now")
   expect(view.findAll('[aria-label="Withdraw"]')).toHaveLength(2)
 })
 test("only pending permissions are actionable and an answer is recorded on its tool call with the winning actor", async () => {
-  const view = mount(AgentPermissions, { props: { permissions: [agentPermission()], disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  const first = agentPermission()
+  const second = agentPermission({
+    id: "61",
+    request: {
+      ...first.request,
+      toolCall: { ...first.request.toolCall, toolCallId: "tool-2", kind: "execute", title: "Deploy staging", rawInput: { command: "wrangler deploy --env staging" } },
+      options: [
+        { optionId: "allow", name: "Allow once", kind: "allow_once" },
+        { optionId: "always", name: "Always allow deploy", kind: "allow_always" },
+        { optionId: "deny", name: "Reject", kind: "reject_once" },
+      ],
+    },
+  })
+  const view = mount(AgentPermissions, { attachTo: document.body, props: { permissions: [first, second], disabled: false }, global: { plugins: [i18n] } }); wrappers.push(view)
+  expect(view.findAll("[data-permission-id]")).toHaveLength(1)
+  expect(view.get("[data-permission-queue]").text()).toBe("1 / 2")
+  await view.get("[data-permission-next]").trigger("click")
+  expect(view.get("[data-permission-queue]").text()).toBe("2 / 2")
+  expect(view.get('[data-permission-id="61"]').text()).toContain("wrangler deploy --env staging")
+  expect(view.find("[data-permission-more-allow]").exists()).toBe(true)
+  await view.get("[data-permission-prev]").trigger("click")
+  expect(view.get("[data-permission-queue]").text()).toBe("1 / 2")
   await button(view, "Allow once").trigger("click"); expect(view.emitted("respond")).toEqual([["60", "allow"]])
   const resolved = agentPermission({ state: "resolved", optionId: "deny", actor: { ...actor, userId: "Grace" } })
+  await view.setProps({ permissions: [resolved, second] })
+  expect(view.get('[data-permission-id="61"]').text()).toContain("wrangler deploy --env staging")
+  expect(view.find("[data-permission-queue]").exists()).toBe(false)
   await view.setProps({ permissions: [resolved] })
   expect(view.find("section").exists()).toBe(false)
   const snapshot = agentSnapshot(); snapshot.permissions = [resolved]

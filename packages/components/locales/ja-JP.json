@@ -1227,9 +1227,12 @@
       "thoughts": "{n} 件の思考"
     },
     "steered": "実行中の指示を更新しました", "backlog": "キューに追加済み",
+    "backlogQueued": "{n} 件のメッセージが待機中", "backlogFailed": "{n} 件のエラー",
+    "backlogExpand": "展開", "backlogCollapse": "折りたたむ",
     "steer": "今すぐ指示を追加", "withdraw": "取り消す",
     "retryInput": "送信を再試行", "uncertainInput": "送信を確認できませんでした。再送信する前に会話を確認してください。",
     "permissions": "権限", "permissionRequired": "許可が必要です",
+    "permissionMoreOptions": "その他のオプション", "permissionPrevious": "前の許可リクエスト", "permissionNext": "次の許可リクエスト",
     "questions": {
       "title": "入力が必要です", "urlTitle": "ブラウザーで続行",
       "urlConsent": "{host} を開いて続行してください。リンク先の手続きを完了することと、このリクエストを承認することは別です。", "openUrl": "{host} を開く",

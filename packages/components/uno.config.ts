@@ -90,11 +90,11 @@ export default defineConfig({
     "ui-text-button":
       `${button} h-7 border-transparent bg-transparent px-2 text-ui-text-muted ${interactive}:hover:bg-ui-hover ${interactive}:hover:text-ui-text ${interactive}:active:bg-ui-active disabled:op-40`,
     "ui-input":
-      "w-full min-w-0 rounded-lg border border-ui-border-strong bg-ui-control px-2.5 py-1.5 leading-5 text-ui-text select-text ui-motion hover:border-ui-text-faint focus-visible:border-ui-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ui-accent/20 disabled:cursor-default disabled:op-50 disabled:hover:border-ui-border-strong",
+      "w-full min-w-0 rounded-lg border border-ui-border-strong bg-ui-control px-2.5 py-1.5 leading-5 text-ui-text select-text ui-motion duration-[var(--ui-duration-base)] focus-visible:border-ui-accent focus-visible:outline-none disabled:cursor-default disabled:op-50",
     "ui-switch":
       "relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-ui-border-strong ui-motion [&[aria-checked=true]]:bg-ui-accent disabled:op-50",
     "ui-switch-thumb":
-      "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ui-switch-thumb shadow-ui-card",
+      "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ui-switch-thumb",
     // A radio's ring; the checked item's ring tints, and its `ui-radio-dot` indicator springs in.
     "ui-radio":
       "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong bg-ui-control ui-motion",
@@ -115,7 +115,7 @@ export default defineConfig({
     "ui-menu": "rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover",
     "ui-menu-item":
       "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none ui-motion hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
-    "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
+    "ui-notice": "flex items-center gap-2 squircle-xl border px-3 py-2 text-[13px]",
     // A segmented control: the active segment is a raised pill that settles in (styles.css).
     "ui-segmented": "flex rounded-lg border border-ui-border bg-ui-hover p-1",
     "ui-segment":

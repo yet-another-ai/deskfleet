@@ -31,15 +31,22 @@ const cost = computed(() => {
 
 <template>
   <PopoverRoot>
-    <PopoverTrigger type="button" data-agent-usage class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs tabular-nums ui-motion hover:bg-ui-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent" :class="tone" :aria-label="summary" :title="summary">
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" opacity="0.2" />
-        <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" pathLength="100" :stroke-dasharray="`${fill} 100`" transform="rotate(-90 10 10)" />
+    <PopoverTrigger
+      type="button"
+      data-agent-usage
+      class="agent-usage-trigger ui-text-button shrink-0 gap-1.5 px-1.5 text-xs tabular-nums"
+      :class="ratio !== undefined && ratio >= 0.9 ? 'text-ui-warning hover:text-ui-warning' : undefined"
+      :aria-label="summary"
+      :title="summary"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="shrink-0" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75" opacity="0.2" />
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75" pathLength="100" :stroke-dasharray="`${fill} 100`" transform="rotate(-90 12 12)" />
       </svg>
-      <span>{{ percent }}</span>
+      <span class="agent-usage-percent">{{ percent }}</span>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4">
+      <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-card z-50 w-64 max-w-[calc(100vw-2rem)] p-4 shadow-ui-popover">
         <div class="mb-3 flex items-center justify-between gap-4">
           <h3 class="m-0 text-[13px] font-medium">{{ t('agent.usage.context') }}</h3>
           <span class="text-xs tabular-nums" :class="tone">{{ percent }}</span>
@@ -50,9 +57,22 @@ const cost = computed(() => {
         <dl class="m-0 flex flex-col gap-2 text-xs">
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.used') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-used>{{ t('agent.usage.tokens', { count: numbers.format(usage.used) }) }}</dd></div>
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.capacity') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-capacity>{{ usage.size > 0 ? t('agent.usage.tokens', { count: numbers.format(usage.size) }) : t('composer.unavailable') }}</dd></div>
-          <div v-if="cost !== undefined" class="mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
+          <div v-if="cost !== undefined" class="-mx-4 mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border-strong px-4 pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
         </dl>
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
 </template>
+
+<style scoped>
+@container session-composer (max-width: 32rem) {
+  .agent-usage-trigger {
+    width: 1.75rem;
+    padding-inline: 0;
+  }
+
+  .agent-usage-percent {
+    display: none;
+  }
+}
+</style>

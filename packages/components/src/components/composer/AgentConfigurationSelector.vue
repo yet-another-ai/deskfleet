@@ -130,13 +130,13 @@ function selectPeriodicModel(modelId: string): void {
 <template>
   <div data-agent-configuration class="flex min-w-0 items-center gap-1">
     <DropdownMenuRoot :open="expanded" :modal="false" @update:open="setOpen">
-      <DropdownMenuTrigger data-agent-configuration-trigger data-composer-context class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })">
-        <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-        <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="15" />
+      <DropdownMenuTrigger data-agent-configuration-trigger data-composer-context class="ui-text-button min-w-0 max-w-full px-1.5 leading-5" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })">
+        <span v-if="providerPending" class="h-4 w-4 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
+        <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="16" />
         <span class="truncate">{{ modelName ?? providerName }}</span>
         <template v-if="effortLabel">{{ " " }}<span class="shrink-0 text-ui-text-faint">{{ effortLabel }}</span></template>
-        <LoaderCircle v-if="requestedModel" :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
-        <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
+        <LoaderCircle v-if="requestedModel" :size="14" :stroke-width="1.75" class="shrink-0 animate-spin" aria-hidden="true" />
+        <ChevronDown :size="14" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent :as="SpringSurface" ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
@@ -188,7 +188,7 @@ function selectPeriodicModel(modelId: string): void {
       v-if="isAntigravity"
       type="button"
       data-gemini-periodic-table-trigger
-      class="ui-text-button h-7 shrink-0 cursor-pointer px-1.5 leading-5 hover:bg-ui-hover hover:text-ui-text"
+      class="ui-text-button h-7 min-w-7 shrink-0 px-1.5 leading-5"
       :title="t('composer.geminiPeriodicTable.trigger')"
       :aria-label="t('composer.geminiPeriodicTable.trigger')"
       :disabled="disabled || !sessionReady"
@@ -201,7 +201,7 @@ function selectPeriodicModel(modelId: string): void {
         :data-gemini-element-chip="activeGeminiElement.symbol"
         aria-hidden="true"
       >{{ activeGeminiElement.symbol }}</span>
-      <svg v-else viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true" class="shrink-0">
+      <svg v-else viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true" class="shrink-0">
         <rect x="1.5" y="2.5" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.9" />
         <rect x="12" y="2.5" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.55" />
         <rect x="1.5" y="6.25" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />

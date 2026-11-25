@@ -35,6 +35,7 @@ beforeEach(() => {
         h("div", { "data-mermaid-canvas": "" }, [h("svg")]),
         h("div", { "data-preview-kind": "image" }, [h("div", { "data-preview-canvas": "" }, [h("img")])]),
         h("div", { "data-office-preview": "xlsx" }, [h("canvas")]),
+        h("div", { "data-code-scroller": "", style: { overflowX: "auto" } }, [h("pre", [h("code", "const line = 1")])]),
       ])
     },
   }))
@@ -160,6 +161,30 @@ test.each(["[data-mermaid-canvas] svg", "[data-preview-canvas] img", "[data-offi
     }
   },
 )
+
+test("horizontally overflowing scrollers yield to native scroll while fitting blocks still switch views", async () => {
+  const scroller = wrapper.get("[data-code-scroller]").element as HTMLElement
+  const code = wrapper.get("[data-code-scroller] code").element
+  Object.defineProperty(scroller, "clientWidth", { value: 320, configurable: true })
+  Object.defineProperty(scroller, "scrollWidth", { value: 720, configurable: true })
+
+  await pointer("right", "pointerdown", 280, code)
+  await pointer("right", "pointermove", 100, code)
+  const blockedTouch = new TouchEvent("touchmove", { bubbles: true, cancelable: true })
+  code.dispatchEvent(blockedTouch)
+  await pointer("right", "pointerup", 100, code)
+  expect(blockedTouch.defaultPrevented).toBe(false)
+  expect(swipe.offset.value).toBe(0)
+  expect(swipe.dragging.value).toBe(false)
+  expect(index.value).toBe(0)
+
+  Object.defineProperty(scroller, "scrollWidth", { value: 320, configurable: true })
+  await pointer("right", "pointerdown", 280, code)
+  await tick(16)
+  await pointer("right", "pointermove", 100, code)
+  await pointer("right", "pointerup", 100, code)
+  expect(index.value).toBe(1)
+})
 
 test("button navigation animates the first input and redirects without changing screen position", async () => {
   index.value = 1

@@ -4,7 +4,17 @@ import { useSpring } from "./useSpring.ts"
 
 const PANNABLE_SELECTOR = "[data-mermaid-canvas], [data-preview-kind=\"image\"] [data-preview-canvas], [data-preview-kind=\"model\"] [data-preview-canvas], [data-office-preview]"
 
-/** Content-area horizontal swipes navigate between views while yielding to pannable canvases. */
+function hasHorizontalScroller(target: EventTarget | null, boundary: HTMLElement | null): boolean {
+  if (!(target instanceof Element)) return false
+  for (let node: Element | null = target; node && node !== boundary; node = node.parentElement) {
+    if (node.scrollWidth <= node.clientWidth + 1) continue
+    const overflowX = getComputedStyle(node).overflowX || (node instanceof HTMLElement ? node.style.overflowX : "")
+    if (overflowX === "auto" || overflowX === "scroll" || overflowX === "overlay") return true
+  }
+  return false
+}
+
+/** Content-area horizontal swipes navigate between views while yielding to pannable canvases and horizontal scrollers. */
 export function useMobileViewportSwipe(options: {
   viewport: Ref<HTMLElement | null>
   index: () => number
@@ -44,7 +54,7 @@ export function useMobileViewportSwipe(options: {
       const pannable = event.target instanceof Element ? event.target.closest<HTMLElement>(PANNABLE_SELECTOR) : null
       // Office widgets own their child canvas and control gestures.
       if (!pannable?.hasAttribute("data-office-preview")) pannable?.setPointerCapture?.(event.pointerId)
-      canceled = !options.enabled() || !event.isPrimary || !!pannable
+      canceled = !options.enabled() || !event.isPrimary || !!pannable || hasHorizontalScroller(event.target, options.viewport.value)
       if (canceled) return
       motion.startDrag(event.timeStamp / 1000)
       axis = undefined
