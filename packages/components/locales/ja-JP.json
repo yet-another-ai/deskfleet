@@ -1227,6 +1227,8 @@
       "thoughts": "{n} 件の思考"
     },
     "steered": "実行中の指示を更新しました", "backlog": "キューに追加済み",
+    "backlogQueued": "{n} 件のメッセージが待機中", "backlogFailed": "{n} 件のエラー",
+    "backlogExpand": "展開", "backlogCollapse": "折りたたむ",
     "steer": "今すぐ指示を追加", "withdraw": "取り消す",
     "retryInput": "送信を再試行", "uncertainInput": "送信を確認できませんでした。再送信する前に会話を確認してください。",
     "permissions": "権限", "permissionRequired": "許可が必要です",
