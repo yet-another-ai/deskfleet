@@ -462,7 +462,9 @@ launch failures surface as detection errors rather than missing installations.
 
 The Antigravity template runs Google's native
 [Antigravity CLI ACP server](https://antigravity.google/docs/cli/acp/) with
-`` `<binary> acp` `` and `agy` as the default executable. Settings installs the
+`` `<binary> acp --process-per-session` `` and `agy` as the default executable.
+The `--process-per-session` flag enables HTTP MCP servers in `agy acp`.
+Settings installs the
 CLI from Google's official installer (`https://antigravity.google/cli/install.sh`
 on macOS and Linux, or `https://antigravity.google/cli/install.ps1` on Windows).
 Discovery checks `PATH`, `~/.local/bin` on macOS and Linux, and
@@ -473,12 +475,9 @@ terminal for interactive Google sign-in.
 The CLI uses the profile under `GEMINI_HOME`, with configuration at
 `~/.gemini/antigravity-cli/settings.json` by default. **Test Connection** uses
 existing credentials and reports authentication required when absent.
-`agy acp` can answer `session/prompt` with `end_turn` while non-daemon tool calls
-and child sessions still run. The provider wrapper keeps that turn open until
-those ACP-reported workers settle, so their approvals, live state, and input
-queue are not retired early, then completes with the foreground stop reason.
-The wait is bound to 30 minutes and ends immediately on cancellation or steering;
-daemon tool calls do not hold a turn.
+Antigravity CLI 1.5.15 and later keep `session/prompt` open natively while
+non-daemon background tasks and subagents run. Earlier CLI versions can complete
+a turn before those background tasks finish.
 
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
