@@ -1,9 +1,9 @@
 import type { ForkSessionRequest, InitializeResponse, NewSessionRequest, PromptResponse, ResumeSessionRequest, Usage } from "@agentclientprotocol/sdk/unstable"
 import {
-  clampQuota, connectAcpProcess, jsonVersionParser, launchProviderCommand, resolveBashScriptInstaller,
-  resolvePowerShellScriptInstaller, runUsageJsonCommand, supportsAutoInstallPlatform,
+  connectAcpProcess, jsonVersionParser, launchProviderCommand, resolveBashScriptInstaller,
+  resolvePowerShellScriptInstaller, supportsAutoInstallPlatform,
   UNSUPPORTED_INSTALL_PLATFORM_MESSAGE,
-  type AgentConnection, type AgentProvider, type AgentProviderPlugin, type AgentQuotaItem,
+  type AgentConnection, type AgentProvider, type AgentProviderPlugin,
 } from "@deskfleet/agent-core"
 import { LEGACY_ANTIGRAVITY_BINARY, normalizeAntigravityBinaryPath } from "@deskfleet/protocol/agents/antigravity"
 
@@ -156,32 +156,6 @@ export function wrapAntigravityConnection(
   }
 }
 
-/** Parses `agy -p "/usage" --output-format json` output into quota buckets. */
-export function parseAntigravityUsage(stdout: string): AgentQuotaItem[] {
-  const payload = JSON.parse(stdout.trim()) as {
-    status?: string
-    error?: string
-    command?: { data?: { groups?: { name?: string; buckets?: { id?: string; name?: string; remaining_fraction?: number; reset_time?: string }[] }[] } }
-  }
-  if (payload.status !== "SUCCESS") throw new Error(payload.error?.trim() || "Could not read Antigravity usage")
-  const items: AgentQuotaItem[] = []
-  for (const group of payload.command?.data?.groups ?? []) {
-    const groupName = group.name?.trim() || undefined
-    for (const bucket of group.buckets ?? []) {
-      const label = bucket.name?.trim() || bucket.id?.trim()
-      if (typeof bucket.remaining_fraction !== "number" || !label) continue
-      items.push({
-        id: bucket.id?.trim() || label,
-        label,
-        ...(groupName ? { group: groupName } : {}),
-        remaining: clampQuota(bucket.remaining_fraction),
-        ...(bucket.reset_time ? { resetsAt: bucket.reset_time } : {}),
-      })
-    }
-  }
-  return items
-}
-
 /** Antigravity CLI serves ACP directly and uses its existing local credentials. */
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
@@ -196,14 +170,11 @@ export const antigravityProvider: AgentProvider = {
     )
     return wrapAntigravityConnection(connection, client.signal)
   },
-  async readUsage(config, signal) {
-    return parseAntigravityUsage(await runUsageJsonCommand(config.binaryPath || "agy", ["-p", "/usage", "--output-format", "json"], config.env, signal))
-  },
 }
 
 export const antigravityPlugin: AgentProviderPlugin<"antigravity"> = {
   id: "antigravity",
-  template: { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy", supportsUsage: true },
+  template: { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
   provider: antigravityProvider,
   normalizeBinaryPath: normalizeAntigravityBinaryPath,
   setup: {

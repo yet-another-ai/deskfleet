@@ -856,17 +856,17 @@ test("superseding an in-flight silent refresh with an explicit change does not b
   expect(row(view, "reasoning").attributes("data-value")).toBe("high")
 })
 
-test("prefetches View usage in parallel on menu open and caches quota across reopens", async () => {
+test("only prefetches quota for supported agents and reuses it when View usage opens", async () => {
   const providers = useProvidersStore()
   providers.providers = [
-    { id: "cursor", name: "Cursor", template: "cursor" },
-    { id: "codex", name: "Codex", template: "codex" },
     { id: "agy", name: "Antigravity", template: "antigravity" },
+    { id: "codex", name: "Codex", template: "codex" },
+    { id: "omp", name: "Oh My Pi", template: "omp" },
   ]
-  providers.selectedId = "cursor"
+  providers.selectedId = "agy"
   const quota = [
-    { id: "gemini-weekly", label: "Weekly Limit Remaining", group: "Gemini Models", remaining: 0.32, resetsAt: "2026-11-14T05:07:24Z" },
-    { id: "gemini-5h", label: "Five Hour Limit Remaining", group: "Gemini Models", remaining: 0.95 },
+    { id: "0:weekly", label: "Weekly limit", group: "Anthropic", remaining: 0.32, resetsAt: "2026-11-14T05:07:24Z" },
+    { id: "0:5h", label: "5-hour limit", group: "Anthropic", remaining: 0.95 },
   ]
   const usageApi = vi.mocked(agents.agentUsage).mockResolvedValue(quota)
 
@@ -880,23 +880,20 @@ test("prefetches View usage in parallel on menu open and caches quota across reo
   expect(content(view).find("[data-agent-view-usage]").exists()).toBe(true)
   expect(usageApi).toHaveBeenCalledWith("codex")
 
-  providers.selectedId = "agy"
+  providers.selectedId = "omp"
   await flushPromises()
   const usageRow = content(view).get("[data-agent-view-usage]")
   expect(usageRow.text()).toContain("View usage")
-  // Usage for agy is prefetched immediately while the dropdown is open, before hovering View usage.
-  expect(usageApi).toHaveBeenCalledWith("agy")
-  const callsBeforeOpen = usageApi.mock.calls.filter(([id]) => id === "agy").length
-  expect(callsBeforeOpen).toBe(1)
+  expect(usageApi.mock.calls.filter(([id]) => id === "omp")).toHaveLength(1)
 
   await usageRow.trigger("click"); await flushPromises()
   // Opening View usage reuses the prefetched result without making a second request.
-  expect(usageApi.mock.calls.filter(([id]) => id === "agy")).toHaveLength(1)
+  expect(usageApi.mock.calls.filter(([id]) => id === "omp")).toHaveLength(1)
   const menu = content(view).get("[data-agent-usage-menu]")
-  expect(menu.text()).toContain("Gemini Models")
-  expect(menu.text()).toContain("Weekly Limit Remaining")
+  expect(menu.text()).toContain("Anthropic")
+  expect(menu.text()).toContain("Weekly limit")
   expect(menu.text()).toContain("32%")
-  expect(menu.text()).toContain("Five Hour Limit Remaining")
+  expect(menu.text()).toContain("5-hour limit")
   expect(menu.text()).toContain("95%")
   expect(menu.findAll("[data-agent-quota-item]")).toHaveLength(2)
 })
