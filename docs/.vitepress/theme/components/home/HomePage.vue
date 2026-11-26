@@ -8,6 +8,7 @@ import HomeRemoteDesktop from "./HomeRemoteDesktop.vue"
 import ProductShowcase from "./ProductShowcase.vue"
 import HomeValues from "./HomeValues.vue"
 import HomeNetwork from "./HomeNetwork.vue"
+import HomePricing from "./HomePricing.vue"
 import HomeInstall from "./HomeInstall.vue"
 import "./home.css"
 const { lang } = useData()
@@ -22,6 +23,7 @@ const locale = computed(() => resolveAppLocale([lang.value]))
     <ProductShowcase :locale="locale" />
     <HomeValues :locale="locale" />
     <HomeNetwork :locale="locale" />
+    <HomePricing :locale="locale" />
     <HomeInstall :locale="locale" />
   </main>
 </template>

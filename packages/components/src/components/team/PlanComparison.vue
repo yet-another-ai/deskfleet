@@ -3,7 +3,7 @@ import { Check, Minus } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
-import type { BillingInterval, BillingPrice, PlanCatalogEntry, TeamBilling } from "@deskfleet/client/billing"
+import { formatBillingPrice, type BillingInterval, type PlanCatalogEntry, type TeamBilling } from "@deskfleet/client/billing"
 import { fileSize } from "../../services/file-format.ts"
 import UiButton from "../common/UiButton.vue"
 
@@ -30,12 +30,6 @@ const features = computed(() => quotaFeatures.filter(feature => feature.key !== 
 function price(plan: string) {
   return props.billing.prices?.find(value => value.plan === plan && value.interval === props.interval)
 }
-function amount(value: BillingPrice) {
-  const formatter = new Intl.NumberFormat(intlLocale(locale.value as AppLocale), { style: "currency", currency: value.currency, currencyDisplay: "code" })
-  // Stripe keeps ISK and UGX in hundredths for backwards-compatible charge amounts.
-  const digits = ["isk", "ugx"].includes(value.currency.toLowerCase()) ? 2 : (formatter.resolvedOptions().maximumFractionDigits ?? 2)
-  return formatter.format(value.unitAmount / 10 ** digits)
-}
 function relay(bytes: number | null) {
   if (bytes === null) return t("team.unlimited")
   if (bytes === 0) return t("billing.notIncluded")
@@ -53,7 +47,7 @@ function relay(bytes: number | null) {
           <span v-if="billing.plan === entry.plan" class="ui-badge bg-ui-accent/10 text-ui-accent">{{ t("billing.comparison.current") }}</span>
         </div>
         <div class="min-h-16">
-          <p v-if="price(entry.plan)" class="m-0 text-2xl font-semibold tabular-nums">{{ amount(price(entry.plan)!) }}<span class="ml-1 text-xs font-normal text-ui-text-muted">{{ t(`billing.comparison.per.${interval}`) }}</span></p>
+          <p v-if="price(entry.plan)" class="m-0 text-2xl font-semibold tabular-nums">{{ formatBillingPrice(price(entry.plan)!, intlLocale(locale as AppLocale)) }}<span class="ml-1 text-xs font-normal text-ui-text-muted">{{ t(`billing.comparison.per.${interval}`) }}</span></p>
           <p v-else class="m-0 text-sm font-medium">{{ t(entry.plan === 'free' ? 'billing.comparison.freePrice' : 'billing.comparison.priceUnavailable') }}</p>
           <p v-if="price(entry.plan)" class="m-0 mt-1 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }}</p>
         </div>

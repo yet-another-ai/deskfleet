@@ -16,6 +16,13 @@ pub(super) struct PlanPrice {
 pub(super) type PriceCache = Option<(Instant, Option<Vec<PlanPrice>>)>;
 
 impl BillingService {
+    pub(super) async fn catalog_prices(&self) -> Option<Vec<PlanPrice>> {
+        self.prices().await.unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not load billing display prices");
+            None
+        })
+    }
+
     pub(super) async fn prices(&self) -> Result<Option<Vec<PlanPrice>>> {
         if !self.enabled() {
             return Ok(Some(Vec::new()));

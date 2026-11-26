@@ -21,7 +21,10 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
             public_url: "https://control.test".into(),
             web_origins: vec![],
             auth: deskfleet_server::auth::config::AuthConfig::development("https://control.test"),
-            billing: Default::default(),
+            billing: deskfleet_server::billing::BillingConfig {
+                hosted: true,
+                ..Default::default()
+            },
             github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
@@ -56,7 +59,17 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     let member_login = state.store.new_session(&member.id).await.unwrap();
     let admin_token = admin_login["token"].as_str().unwrap();
     let member_token = member_login["token"].as_str().unwrap();
-    let app = test::init_service(App::new().app_data(state.clone()).configure(configure)).await;
+    let app = test::init_service(
+        App::new()
+            .wrap(
+                actix_cors::Cors::default()
+                    .allowed_origin("https://client.test")
+                    .supports_credentials(),
+            )
+            .app_data(state.clone())
+            .configure(configure),
+    )
+    .await;
     macro_rules! call {
         ($method:ident, $path:expr, $token:expr, $body:expr) => {
             test::call_service(
@@ -145,6 +158,34 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
         test::read_body_json(call!(get, quota_path, admin_token, &json!({}))).await;
     assert_eq!(quotas.len(), 5);
     assert!(quotas.contains(&expected));
+
+    // A visitor on the separate marketing site sees the operator's current allowances.
+    let pricing = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/pricing")
+            .insert_header(("Origin", "https://marketing.test"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(pricing.status(), StatusCode::OK);
+    assert_eq!(
+        pricing
+            .headers()
+            .get("access-control-allow-origin")
+            .unwrap(),
+        "*"
+    );
+    let pricing: Value = test::read_body_json(pricing).await;
+    assert_eq!(
+        pricing,
+        json!({
+            "planCatalog": [quotas[0], quotas[1], expected],
+            "prices": [],
+            "paymentsAvailable": false,
+            "enterpriseContactEmail": null
+        })
+    );
 
     let rates_path = "/api/admin/credit-rates";
     let rates = json!({"input":"0.5","output":"2","cacheRead":"0","cacheWrite":"0.125"});
