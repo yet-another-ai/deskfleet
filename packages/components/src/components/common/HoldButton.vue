@@ -45,6 +45,11 @@ function startHold(event: PointerEvent): void {
   progressFrames.resume()
   timer = window.setTimeout(() => { clearHold(false); emit("confirm") }, props.holdDurationMs)
 }
+function activate(event: MouseEvent): void {
+  // The native button also receives clicks from keyboards and assistive technology.
+  // Pointer clicks follow the hold gesture, even when it was released too soon.
+  if (event.detail === 0 && !("pointerType" in event && event.pointerType)) emit("confirm")
+}
 
 onMounted(() => updateWidth(false))
 onBeforeUnmount(() => clearHold(false))
@@ -61,6 +66,8 @@ onBeforeUnmount(() => clearHold(false))
     @pointerup="clearHold()"
     @pointerleave="clearHold(false)"
     @pointercancel="clearHold(false)"
+    @click="activate"
+    @keydown.enter="$event.repeat && $event.preventDefault()"
   >
     <span
       class="pointer-events-none absolute inset-y-0 left-0"

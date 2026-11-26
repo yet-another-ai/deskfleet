@@ -194,7 +194,7 @@ test("restore failure remains in the confirmation for retry and cancellation lea
   expect(router.currentRoute.value.params.sessionId).toBe(sessionId)
 })
 
-test("deleting an archived Session requires holding the danger confirmation button", async () => {
+test("a pointer must hold the danger confirmation button to delete an archived Session", async () => {
   vi.useFakeTimers()
   const { agents, remove } = await render()
   await wrapper!.get(`[data-delete-session="${sessionId}"]`).trigger("click"); await flushPromises()
@@ -202,6 +202,12 @@ test("deleting an archived Session requires holding the danger confirmation butt
   await confirmButton.trigger("pointerdown", { button: 0 })
   vi.advanceTimersByTime(600)
   await confirmButton.trigger("pointerup")
+  await confirmButton.trigger("click", { detail: 1 })
+  expect(remove).not.toHaveBeenCalled()
+  await confirmButton.trigger("pointerdown", { button: 0, pointerType: "touch" })
+  await confirmButton.trigger("pointercancel")
+  vi.advanceTimersByTime(1200)
+  await confirmButton.trigger("click", { detail: 0, pointerType: "touch" })
   expect(remove).not.toHaveBeenCalled()
   await confirmButton.trigger("pointerdown", { button: 0 })
   vi.advanceTimersByTime(1200)
@@ -209,6 +215,30 @@ test("deleting an archived Session requires holding the danger confirmation butt
   expect(remove).toHaveBeenCalledExactlyOnceWith(sessionId)
   expect(agents.sessions[sessionId]).toBeUndefined()
   expect(page().find('[role="dialog"]').exists()).toBe(false)
+})
+
+test("archive deletion focuses Cancel and accepts a separate native button activation", async () => {
+  const { remove } = await render()
+  const opener = wrapper!.get<HTMLButtonElement>(`[data-delete-session="${sessionId}"]`)
+  opener.element.focus()
+  opener.element.click()
+  await flushPromises()
+  const cancel = page().get('[role="dialog"] button')
+  expect(cancel.text()).toBe("Cancel")
+  expect(document.activeElement).toBe(cancel.element)
+  await cancel.trigger("click")
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
+  expect(remove).not.toHaveBeenCalled()
+  opener.element.click()
+  await flushPromises()
+  const confirm = page().get<HTMLButtonElement>("[data-confirm-delete]")
+  confirm.element.focus()
+  const repeat = new KeyboardEvent("keydown", { key: "Enter", repeat: true, cancelable: true })
+  expect(confirm.element.dispatchEvent(repeat)).toBe(false)
+  expect(remove).not.toHaveBeenCalled()
+  confirm.element.click()
+  await flushPromises()
+  expect(remove).toHaveBeenCalledExactlyOnceWith(sessionId)
 })
 
 test("offline archived history can be opened without pin actions while restore and rename remain disabled", async () => {

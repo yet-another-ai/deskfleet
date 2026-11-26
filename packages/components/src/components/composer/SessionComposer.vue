@@ -421,9 +421,11 @@ function submit(): void {
 }
 function keydown(event: KeyboardEvent): void {
   if (event.key === "Escape" && dictation.active) { event.preventDefault(); dictation.cancel(); return }
+  // WebKit can deliver compositionend before the IME's confirming Enter.
+  if (event.isComposing || completion.composing || (event.key === "Enter" && event.keyCode === 229)) return
   if (completion.keydown(event)) return
-  if (props.hosted && (client.mobile || event.keyCode === 229)) return
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit() }
+  if (props.hosted && client.mobile) return
+  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit() }
 }
 
 defineExpose({ focus: () => textarea.value?.focus() })

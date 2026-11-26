@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { getClient } from "@deskfleet/client/platform"
 import type { CentralApi } from "@deskfleet/client/central"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import { browserNotificationStorageKey, createBrowserNotificationSettings } from "@deskfleet/client/browser-notification-settings"
 import { reportingCentral } from "@deskfleet/client/reporting-central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
 import { i18n } from "../i18n/index.ts"
@@ -38,11 +39,11 @@ vi.mock("@deskfleet/client/task-notification-monitor", () => ({
 
 let view: VueWrapper | undefined
 beforeEach(() => { deliveries.length = 0; monitors.length = 0; permission.mockReturnValue("granted") })
-afterEach(() => { view?.unmount(); view = undefined })
+afterEach(() => { view?.unmount(); view = undefined; localStorage.removeItem(browserNotificationStorageKey) })
 
-function setup(platform: DeskfleetDesktopApi["platform"] = "web", mobile = false) {
+function setup(platform: DeskfleetDesktopApi["platform"] = "web", mobile = false, settings = getClient().settings) {
   const fake = fakeCentral()
-  const host = { ...getClient(), platform, ...(mobile ? { mobile: true } : {}), central: fake.central }
+  const host = { ...getClient(), platform, ...(mobile ? { mobile: true } : {}), central: fake.central, settings }
   view = mount(defineComponent({
     setup() { useBrowserNotifications(host); return () => null },
   }), { global: { plugins: [i18n] } })
@@ -62,6 +63,7 @@ test("web account ownership clears alerts on sign-out and restarts observation a
   expect(deliveries[0]!.clear).toHaveBeenCalledOnce()
   window.dispatchEvent(new Event("pageshow"))
   window.dispatchEvent(new Event("pageshow"))
+  await flushPromises()
   expect(monitors).toHaveLength(2)
   expect(monitors[1]!.start).toHaveBeenCalledOnce()
   view!.unmount()
@@ -72,15 +74,88 @@ test("web account ownership clears alerts on sign-out and restarts observation a
   expect(monitors).toHaveLength(2)
 })
 
-test("desktop hosts, mobile hosts, and unsupported browsers do not start another notification monitor", () => {
+test("desktop hosts, mobile hosts, and unsupported browsers do not start another notification monitor", async () => {
   setup("win32")
+  await flushPromises()
   expect(monitors).toHaveLength(0)
   view!.unmount()
   setup("web", true)
+  await flushPromises()
   expect(monitors).toHaveLength(0)
   view!.unmount()
   permission.mockReturnValue("unsupported")
   setup()
+  await flushPromises()
+  expect(monitors).toHaveLength(0)
+})
+
+test.each(["default", "denied"])("permission %s skips monitoring and a later grant starts a fresh monitor", async initial => {
+  permission.mockReturnValue(initial)
+  setup()
+  await flushPromises()
+  expect(monitors).toHaveLength(0)
+
+  permission.mockReturnValue("granted")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(monitors[0]!.start).toHaveBeenCalledOnce()
+
+  permission.mockReturnValue("denied")
+  window.dispatchEvent(new Event("focus"))
+  expect(monitors[0]!.close).toHaveBeenCalledOnce()
+  expect(deliveries[0]!.close).toHaveBeenCalledOnce()
+})
+
+test("same-page preferences and cross-tab storage changes gate monitoring", async () => {
+  const preferences = createBrowserNotificationSettings(localStorage)
+  const enabled = { enabled: true, taskCompleted: true, taskNeedsInput: true }
+  await preferences.setNotifications({ ...enabled, enabled: false })
+  setup("web", false, { ...getClient().settings, ...preferences })
+  await flushPromises()
+  expect(monitors).toHaveLength(0)
+
+  await preferences.setNotifications({ ...enabled, taskNeedsInput: false })
+  await flushPromises()
+  expect(monitors[0]!.start).toHaveBeenCalledOnce()
+  localStorage.setItem(browserNotificationStorageKey, JSON.stringify({ ...enabled, taskCompleted: false, taskNeedsInput: false }))
+  window.dispatchEvent(Object.assign(new Event("storage"), { key: browserNotificationStorageKey }))
+  await flushPromises()
+  expect(monitors[0]!.close).toHaveBeenCalledOnce()
+
+  localStorage.removeItem(browserNotificationStorageKey)
+  window.dispatchEvent(Object.assign(new Event("storage"), { key: null }))
+  await flushPromises()
+  expect(monitors[1]!.start).toHaveBeenCalledOnce()
+})
+
+test("a permission change while the page remains focused reconciles monitoring", async () => {
+  const status = Object.assign(new EventTarget(), { state: "prompt" as PermissionState, onchange: null, name: "notifications" })
+  vi.spyOn(navigator.permissions, "query").mockResolvedValue(status)
+  permission.mockReturnValue("default")
+  setup()
+  await flushPromises()
+  expect(monitors).toHaveLength(0)
+  status.state = "granted"
+  permission.mockReturnValue("granted")
+  status.dispatchEvent(new Event("change"))
+  await flushPromises()
+  expect(monitors[0]!.start).toHaveBeenCalledOnce()
+  status.state = "denied"
+  permission.mockReturnValue("denied")
+  status.dispatchEvent(new Event("change"))
+  await flushPromises()
+  expect(monitors[0]!.close).toHaveBeenCalledOnce()
+})
+
+test("an outstanding preference read cannot restart observation after pagehide", async () => {
+  const enabled = { enabled: true, taskCompleted: true, taskNeedsInput: true }
+  const pending = Promise.withResolvers<typeof enabled>()
+  const getNotifications = vi.fn(() => pending.promise)
+  setup("web", false, { ...getClient().settings, getNotifications })
+  expect(getNotifications).toHaveBeenCalled()
+  window.dispatchEvent(new Event("pagehide"))
+  pending.resolve(enabled)
+  await flushPromises()
   expect(monitors).toHaveLength(0)
 })
 
