@@ -4,6 +4,8 @@ use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde_json::json;
 use std::{collections::HashMap, net::TcpListener, sync::Mutex};
 
+mod public_pricing;
+
 #[derive(Default)]
 struct Provider {
     customer: String,

@@ -63,6 +63,16 @@ the full price for that billing period; relay allowances remain monthly. The UI
 formats Stripe minor units according to the currency, including Stripe's ISK and
 UGX charge conventions.
 
+The public website reads `GET /api/pricing` from the application origin with
+credentials omitted. The endpoint returns the current hosted allowances in
+`planCatalog`, the same cached `prices` as Plans & Usage, a `paymentsAvailable`
+flag, and `enterpriseContactEmail`. Hosted deployments include the Enterprise
+row when the operator configures a contact address. Self-hosted deployments
+return empty offers. Visitors can read this endpoint across origins without
+adding the website to the authenticated API origin list. Successful catalogs
+allow 30 seconds of HTTP caching. Responses with temporarily unavailable prices
+(`null`) request no caching.
+
 ## Billing Portal
 
 Create one Portal configuration with:

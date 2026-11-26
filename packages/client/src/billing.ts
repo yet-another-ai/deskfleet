@@ -24,6 +24,21 @@ export interface BillingPrice {
   unitAmount: number
   currency: string
 }
+/** Public hosted offers, without Team-specific usage or subscription state. */
+export interface PublicPricing {
+  planCatalog: PlanCatalogEntry[]
+  prices: BillingPrice[] | null
+  paymentsAvailable: boolean
+  enterpriseContactEmail: string | null
+}
+
+export function formatBillingPrice(value: BillingPrice, language: string): string {
+  const formatter = new Intl.NumberFormat(language, { style: "currency", currency: value.currency, currencyDisplay: "code" })
+  // Stripe keeps ISK and UGX in hundredths even when Intl displays no fractional digits.
+  const digits = ["isk", "ugx"].includes(value.currency.toLowerCase()) ? 2 : (formatter.resolvedOptions().maximumFractionDigits ?? 2)
+  return formatter.format(value.unitAmount / 10 ** digits)
+}
+
 export interface TeamBilling {
   /** Configured Stripe prices; null during another refresh or after a provider failure. */
   prices?: BillingPrice[] | null

@@ -1,11 +1,12 @@
 use crate::{AppState, auth, error::Result};
-use actix_web::{HttpRequest, web};
+use actix_web::{HttpRequest, HttpResponse, http::header, web};
 use deskfleet_control_store::billing::{CreditRates, Limits, Plan, PlanLimits};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub fn configure(config: &mut web::ServiceConfig) {
     config
+        .route("/pricing", web::get().to(public_pricing))
         .route("/teams/{teamId}/billing", web::get().to(summary))
         .route("/teams/{teamId}/billing/checkout", web::post().to(checkout))
         .route("/teams/{teamId}/billing/portal", web::post().to(portal))
@@ -44,6 +45,37 @@ pub fn configure(config: &mut web::ServiceConfig) {
             web::post().to(cancel),
         );
 }
+
+async fn public_pricing(s: web::Data<AppState>) -> Result<HttpResponse> {
+    let hosted = s.config.billing.hosted;
+    let contact = s.billing.enterprise_contact_email().filter(|_| hosted);
+    let mut plans = if hosted {
+        s.store.list_plan_limits().await?
+    } else {
+        Vec::new()
+    };
+    plans.retain(|entry| match entry.plan {
+        Plan::Free | Plan::Go | Plan::Pro => true,
+        Plan::Enterprise => contact.is_some(),
+        Plan::SelfHosted => false,
+    });
+    let prices = s.billing.catalog_prices().await;
+    let cache_control = if prices.is_some() {
+        "public, max-age=30"
+    } else {
+        "no-store"
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header((header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"))
+        .insert_header((header::CACHE_CONTROL, cache_control))
+        .json(json!({
+            "planCatalog": plans,
+            "prices": prices,
+            "paymentsAvailable": s.billing.enabled(),
+            "enterpriseContactEmail": contact
+        })))
+}
+
 async fn summary(
     req: HttpRequest,
     s: web::Data<AppState>,
@@ -55,13 +87,7 @@ async fn summary(
     summary["paymentsAvailable"] = json!(s.billing.enabled());
     summary["canManageBilling"] = json!(role == "owner");
     summary["enterpriseContactEmail"] = json!(s.billing.enterprise_contact_email());
-    summary["prices"] = match s.billing.prices().await {
-        Ok(prices) => json!(prices),
-        Err(error) => {
-            tracing::warn!(%error, "could not load billing display prices");
-            Value::Null
-        }
-    };
+    summary["prices"] = json!(s.billing.catalog_prices().await);
     Ok(web::Json(summary))
 }
 #[derive(Deserialize)]
