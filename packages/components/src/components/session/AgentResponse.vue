@@ -15,6 +15,7 @@ import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
 import AgentProtocolActivity from "./AgentProtocolActivity.vue"
+import ConversationEntry from "./ConversationEntry.vue"
 import { useConversationDisclosure, useConversationDisclosures } from "../../stores/conversation-reading.ts"
 const disclosures = useConversationDisclosures()
 const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
@@ -93,7 +94,7 @@ watchImmediate([() => props.locateEntry, steps], ([id, currentSteps]) => {
       <p v-else-if="duration" class="m-0 text-ui-text-muted">{{ t('agent.workedFor', { duration }) }}</p>
     </template>
     <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
-      <div v-for="step in groupedSteps" :key="step.id" :data-conversation-entry="step.kind === 'activity' ? undefined : step.id">
+      <ConversationEntry v-for="step in groupedSteps" :key="step.id" :id="step.kind === 'activity' ? undefined : step.id">
         <AgentActivityGroup v-if="step.kind === 'activity'" :steps="step.steps" :live="response.live" :last-step-id="steps.at(-1)?.id" :expanded-tool-id="endingToolId" :open="activities.get(step.id) ?? step.steps.some(item => item.id === endingToolId)" @update:open="activities.set(step.id, $event)" />
         <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
@@ -106,9 +107,11 @@ watchImmediate([() => props.locateEntry, steps], ([id, currentSteps]) => {
           <CollapsibleContent><AgentContent :content="step.content" :disclosure-id="step.id" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="mt-1" /></CollapsibleContent>
         </CollapsibleRoot>
         <AgentContent v-else :content="step.content" :disclosure-id="step.id" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="py-1" />
-      </div>
+      </ConversationEntry>
     </CollapsibleContent>
-    <AgentContent v-if="answer" :content="answer.content" :disclosure-id="answer.id" markdown :final="true" :data-conversation-entry="answer.id" />
+    <ConversationEntry v-if="answer" :id="answer.id">
+      <AgentContent :content="answer.content" :disclosure-id="answer.id" markdown :final="true" />
+    </ConversationEntry>
     <p v-if="summary.length" class="m-0 text-ui-text-muted">{{ summary.join(' \u00b7 ') }}</p>
     <div v-if="outcome" class="flex items-start gap-1.5 text-sm" :class="outcome.state === 'failed' ? 'text-ui-danger' : 'text-ui-text-muted'">
       <CircleX v-if="outcome.state === 'failed'" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />

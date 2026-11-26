@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { CircleAlert, CircleCheck, LoaderCircle, User } from "@lucide/vue"
 import { usePreferredReducedMotion } from "@vueuse/core"
-import { computed, onMounted, onScopeDispose, useTemplateRef } from "vue"
+import { computed, onMounted, onScopeDispose, provide, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { ConversationInput } from "../../services/agent-conversation.ts"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
 import { consumeSentMessageTransition, type SentMessageTransition } from "../../services/message-sent-transition.ts"
+import { conversationEntryIdKey } from "../../services/preview.ts"
 import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ input: ConversationInput; disclosureId?: string; animateSend?: boolean; unattributedLabel?: string }>()
+const props = defineProps<{ input: ConversationInput; entryId?: string; disclosureId?: string; animateSend?: boolean; unattributedLabel?: string }>()
+provide(conversationEntryIdKey, computed(() => props.entryId))
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
 const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.input.createdAt, intlLocale(locale.value as AppLocale)))

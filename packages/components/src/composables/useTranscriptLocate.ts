@@ -1,7 +1,6 @@
 import { computed, type Ref } from "vue"
 import type { ConversationInput, ConversationStep, TranscriptEntry } from "../services/agent-conversation.ts"
 import { scrollingToConversationEntry } from "../services/conversation-locate.ts"
-import { pendingMermaidLocate } from "../stores/layout.ts"
 import { pendingPreviewLocate } from "../stores/previews.ts"
 
 function matchesBlock(block: ConversationInput["content"][number], content: string, markdown: boolean) {
@@ -32,11 +31,10 @@ function locateStep(step: ConversationStep, id: string | undefined, content: str
 /** Resolve the row and its nested entry before the scroll target exists in the DOM. */
 export function useTranscriptLocate(entries: Readonly<Ref<TranscriptEntry[]>>, sessionId: Readonly<Ref<string | undefined>>, focusedEntry: () => string | undefined) {
   return computed(() => {
-    const pending = pendingPreviewLocate.value ?? pendingMermaidLocate.value ?? scrollingToConversationEntry.value
+    const pending = pendingPreviewLocate.value ?? scrollingToConversationEntry.value
     const target = pending && (!pending.sessionId || pending.sessionId === sessionId.value) ? pending : undefined
     const id = target?.entryId ?? (target ? undefined : focusedEntry())
     let content: string | undefined
-    if (target && "code" in target) content = target.code
     if (target && "content" in target) {
       content = target.content.startsWith("blob:") && target.itemId ? target.itemId : target.content
     }

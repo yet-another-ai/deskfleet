@@ -26,7 +26,8 @@ export async function focusPreview(item: PreviewDescriptor): Promise<void> {
     path: current.path,
     query: {
       ...current.query,
-      preview: item.content,
+      preview: item.content || undefined,
+      previewText: item.text || undefined,
       previewEntry: item.source?.entryId,
       previewItem: item.source?.itemId,
       previewKind: item.kind,
@@ -45,27 +46,21 @@ export function focusedPreviewFromRoute(
     return typeof value === "string" && value ? value : undefined
   }
   const content = query("preview")
-  if (!content) return undefined
+  const text = query("previewText")
+  if (!content && !text) return undefined
   const explicitKind = query("previewKind")
   const mimeType = query("previewMime")
   const title = query("previewTitle")
   const entryId = query("previewEntry")
   const itemId = query("previewItem")
-  const kind = resolvePreviewKind(content, explicitKind, mimeType)
+  const kind = resolvePreviewKind(content ?? "", explicitKind, mimeType)
   const resourceRequest = previewResourceRequestFromQuery(key => route.query[key])
   const source: PreviewSource = {
-    ...(typeof route.params.sessionId === "string" && route.params.sessionId ? { sessionId: route.params.sessionId } : {}),
-    ...(entryId ? { entryId } : {}),
-    ...(itemId ? { itemId } : {}),
+    sessionId: typeof route.params.sessionId === "string" && route.params.sessionId ? route.params.sessionId : undefined,
+    entryId,
+    itemId,
   }
-  return {
-    kind,
-    content,
-    ...(title ? { title } : {}),
-    ...(mimeType ? { mimeType } : {}),
-    source,
-    ...(resourceRequest ? { resourceRequest } : {}),
-  }
+  return { kind, content, text, title, mimeType, source, resourceRequest }
 }
 
 type LayoutStore = ReturnType<typeof useLayoutStore>
@@ -144,14 +139,16 @@ export async function locatePreviewInMainView(content: string, source?: PreviewS
   const request: PreviewLocateRequest = { id: nextLocateRequestId++, content, ...source }
   pendingPreviewLocate.value = request
   const current = router.currentRoute.value
-  if (source?.sessionId && (current.name !== "session" || current.params.sessionId !== source.sessionId || current.query.preview !== undefined)) {
+  const hasFocusedPreview = current.query.preview !== undefined || current.query.previewText !== undefined
+  if (source?.sessionId && (current.name !== "session" || current.params.sessionId !== source.sessionId || hasFocusedPreview)) {
     await router.push({ name: "session", params: { sessionId: source.sessionId }, query: {} })
-  } else if (current.query.preview !== undefined) {
+  } else if (hasFocusedPreview) {
     await router.push({
       path: current.path,
       query: {
         ...current.query,
         preview: undefined,
+        previewText: undefined,
         previewEntry: undefined,
         previewItem: undefined,
         previewKind: undefined,

@@ -42,7 +42,7 @@ onBeforeUnmount(() => {
 <template>
   <PreviewViewer
     v-if="!isLocalResource"
-    :data-preview="uri"
+    :source="{ itemId: uri }"
     :kind="previewKindFromUri(uri) ?? 'image'"
     :content="uri"
     :alt="alt"
@@ -53,6 +53,8 @@ onBeforeUnmount(() => {
   <span v-else :data-preview="uri" :data-preview-content="uri" class="ui-remote-image" :class="{ block: state?.url }">
     <PreviewViewer
       v-if="state?.url"
+      :source="{ itemId: uri }"
+      :locate-anchor="false"
       :kind="previewKindFromMime(state.mimeType) ?? 'image'"
       :content="state.url"
       :data="state.data"

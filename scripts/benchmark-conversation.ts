@@ -53,7 +53,7 @@ if (!values["skip-build"]) {
   ])
   // Markstream ships VDOM components. Include all custom Markdown leaves so the
   // comparison removes their repeated VDOM/Vapor crossings, not just the wrapper.
-  const markdownComponents = /\/components\/session\/(?:AgentMarkdown|MermaidViewer|markdown\/[^/]+)\.vue(?:$|\?)/u
+  const markdownComponents = /\/components\/session\/(?:AgentMarkdown|markdown\/[^/]+)\.vue(?:$|\?)/u
   function scopedVuePlugin(markdown: boolean) {
     const plugin = vue({ features: { vapor: !markdown }, ...(markdown ? { include: markdownComponents } : { exclude: markdownComponents }) })
     // plugin-vue admits every ?vue request regardless of include, and its load

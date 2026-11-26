@@ -53,7 +53,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
       </template>
       <PreviewViewer
         v-else-if="block.type === 'image'"
-        :data-preview="`image-${index}`"
+        :source="{ itemId: `image-${index}` }"
         kind="image"
         :content="`data:${block.mimeType};base64,${block.data}`"
         :mime-type="block.mimeType ?? undefined"
@@ -61,7 +61,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
       />
       <PreviewViewer
         v-else-if="block.type === 'audio'"
-        :data-preview="`audio-${index}`"
+        :source="{ itemId: `audio-${index}` }"
         kind="audio"
         :content="`data:${block.mimeType};base64,${block.data}`"
         :mime-type="block.mimeType ?? undefined"
@@ -87,7 +87,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
       </div>
       <PreviewViewer
         v-else-if="block.type === 'resource_link' && resourcePreviewKind(block)"
-        :data-preview="`resource-${index}`"
+        :source="{ itemId: `resource-${index}` }"
         :kind="resourcePreviewKind(block)"
         :content="block.uri"
         :title="block.name ?? undefined"

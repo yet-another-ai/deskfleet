@@ -24,7 +24,7 @@ if (props.windowed) provide(windowHeaderActionsTargetKey, computed(() => props.w
       <div v-if="layout.compact || !layout.sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="platform === 'darwin' ? 'pl-20' : 'pl-3'">
         <WindowToolbar />
       </div>
-      <PreviewViewer :key="content.content" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
+      <PreviewViewer :key="content.content ?? content.text" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
     </FocusOverlay>
   </main>
 </template>

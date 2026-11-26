@@ -25,7 +25,7 @@ watchEffect(() => {
     { id: "zoom-in", icon: ZoomIn, label: t("mermaid.zoomIn"), onClick: zoomIn },
     { id: "zoom-out", icon: ZoomOut, label: t("mermaid.zoomOut"), onClick: zoomOut },
     { id: "reset", icon: RotateCcw, label: t("mermaid.resetView"), onClick: resetView },
-    { id: "color-picker", icon: Pipette, label: t("mermaid.pickColor"), onClick: () => { pickingColor.value = !pickingColor.value } },
+    { id: "color-picker", icon: Pipette, label: t("mermaid.pickColor"), pressed: pickingColor.value, onClick: () => { pickingColor.value = !pickingColor.value } },
   ])
 })
 
@@ -46,7 +46,7 @@ function focusImage(): void {
 <template>
   <div
     data-preview-canvas
-    class="relative flex min-h-44 flex-1 touch-none items-center justify-center overflow-hidden p-4 pt-11 select-none"
+    class="relative flex min-h-44 flex-1 touch-none items-center justify-center overflow-hidden p-4 select-none"
     :class="pickingColor ? 'cursor-crosshair' : dragging ? 'cursor-grabbing' : 'cursor-grab'"
     @pointerdown="startDrag"
     @pointermove="moveDrag"

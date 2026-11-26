@@ -1,25 +1,22 @@
 <script setup lang="ts">
 import { vSpring } from "../../directives/spring.ts"
-import { Download, ExternalLink, Eye, FileCode, FolderOpen, LocateFixed } from "@lucide/vue"
+import { Download, ExternalLink, FolderOpen } from "@lucide/vue"
 import { getActivePinia } from "pinia"
 import { DialogTitle } from "reka-ui"
-import { splitLines } from "shiki/core"
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, provide, ref, shallowRef } from "vue"
+import { computed, onBeforeUnmount, provide, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileResource, FileResourceRequest, FilesApi } from "@deskfleet/client/files"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { agentResourceContextKey, fileResourceLines, revealResourceLabel } from "../../services/agent-resources.ts"
-import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
-import { previewKindFromMime, previewKindFromUri, type MediaPreviewKind, type PreviewSource } from "../../services/preview.ts"
+import { decodeUtf8Text, resolvePreviewFormat, type PreviewSource } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { locatePreviewInMainView } from "../../stores/previews.ts"
-import UiDialog from "../common/UiDialog.vue"
 import UiButton from "../common/UiButton.vue"
+import UiDialog from "../common/UiDialog.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import FileBrowserPane from "../files/FileBrowserPane.vue"
+import PreviewToolbar from "./PreviewToolbar.vue"
 import PreviewViewer from "./PreviewViewer.vue"
-
-const AgentMarkdown = defineAsyncComponent(() => import("./AgentMarkdown.vue"))
 
 const props = withDefaults(defineProps<{
   api?: FilesApi
@@ -30,64 +27,38 @@ const props = withDefaults(defineProps<{
 }>(), {
   mode: "dialog",
 })
+
 // Vue proxies cannot cross Electron's context bridge, including nested targets.
 const request: FileResourceRequest = { ...props.request, target: { ...props.request.target } }
-provide(agentResourceContextKey, computed(() => ({
-  target: { ...request.target },
-  sessionId: request.sessionId,
-})))
+provide(agentResourceContextKey, computed(() => ({ target: { ...request.target }, sessionId: request.sessionId })))
+
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const client = usePlatformClient()
 const filesApi = computed(() => props.api ?? client.files)
+const requestedLines = fileResourceLines(request.uri)
 const entry = ref<FileResource>()
+const content = ref<string>()
+const previewMime = ref<string>()
+const previewBytes = shallowRef<Uint8Array>()
+const downloadUrl = ref<string>()
+const loadPercent = ref<number>()
+const error = ref<string>()
+const loading = ref(true)
+let disposed = false
+
 const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.openResource))
 const canRevealResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.revealResource))
 const hasFileActions = computed(() => !loading.value && entry.value?.kind === "file")
 const hasPrimaryAction = computed(() => hasFileActions.value && (canOpenResource.value || !canRevealResource.value))
 const primaryActionLabel = computed(() => t(canOpenResource.value ? "files.openResource" : "files.downloadResource"))
 const revealLabel = computed(() => revealResourceLabel(client.platform, t))
-const content = ref<string>()
-const fileLanguage = computed(() => entry.value ? fileCodeLanguage(entry.value.name) : undefined)
-const documentPreviewKind = computed<"html" | "markdown" | undefined>(() =>
-  content.value !== undefined && (fileLanguage.value === "html" || fileLanguage.value === "markdown")
-    ? fileLanguage.value
-    : undefined,
-)
-const renderingPreview = ref(false)
-const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).filter(([text]) => text).map(([text]) => ({
-  text,
-  ending: text.match(/\r?\n$/u)?.[0] ?? "",
-})))
-const highlightedLines = computed(() => {
-  // Local previews may be large; keep them out of synchronous tokenization.
-  if (!fileLanguage.value || content.value === undefined || content.value.length > 200_000) return undefined
-  try {
-    return highlighter.codeToTokens(content.value, {
-      lang: fileLanguage.value,
-      themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: false,
-    }).tokens
-  } catch { return undefined }
-})
-const requestedLines = fileResourceLines(request.uri)
-const lineElement = ref<HTMLElement>()
-const imageUrl = ref<string>()
-let htmlPreviewSent = false
-const previewKind = ref<MediaPreviewKind>()
-const previewMime = ref<string>()
-const previewBytes = shallowRef<Uint8Array>()
-const loadPercent = ref<number>()
-const error = ref<string>()
-const loading = ref(true)
-let disposed = false
+const displayTitle = computed(() => entry.value?.name ?? props.title ?? request.uri)
+const fileReady = computed(() => !loading.value && entry.value?.kind === "file" && !error.value)
+
 async function open(): Promise<void> {
   const api = filesApi.value
-  if (!api) {
-    error.value = t("files.resourceUnavailable")
-    loading.value = false
-    return
-  }
+  if (!api) { error.value = t("files.resourceUnavailable"); loading.value = false; return }
   try {
     const result = await api.resolveResource(request)
     if (disposed) return
@@ -102,71 +73,49 @@ async function open(): Promise<void> {
       if (disposed) return
       previewMime.value = file.mimeType
       previewBytes.value = file.data
-      const kind = !requestedLines
-        ? (previewKindFromMime(file.mimeType) ?? previewKindFromUri(result.name, file.mimeType))
-        : undefined
-      if (kind) {
-        previewKind.value = kind
-        imageUrl.value = URL.createObjectURL(new Blob([new Uint8Array(file.data)], { type: file.mimeType }))
-      } else {
-        try {
-          const text = new TextDecoder("utf-8", { fatal: true }).decode(file.data)
-          if (text.includes("\0")) throw new Error("Binary file")
-          content.value = text
-          if (requestedLines) {
-            loading.value = false
-            await nextTick()
-            lineElement.value?.scrollIntoView({ block: "center" })
-          }
-        } catch { error.value = t((canOpenResource.value || canRevealResource.value) ? "files.previewUnavailableLocal" : "files.previewUnavailable") }
+      const format = resolvePreviewFormat(result.name, file.mimeType)
+      const needsText = !format || format.views.includes("source") || format.views.some(v => v === "markdown" || v === "html" || v === "mermaid")
+      const decoded = needsText ? decodeUtf8Text(file.data) : undefined
+      if (decoded !== undefined) content.value = decoded
+      if (!format && decoded === undefined) {
+        error.value = t((canOpenResource.value || canRevealResource.value) ? "files.previewUnavailableLocal" : "files.previewUnavailable")
       }
     }
-  } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { if (!disposed) loading.value = false }
+  } catch (reason) {
+    if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason)
+  } finally {
+    if (!disposed) loading.value = false
+  }
 }
+
 async function runAction(task: () => Promise<unknown>): Promise<void> {
   try { await task() }
   catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
 }
+
 async function fileAction(): Promise<void> {
   if (entry.value?.kind !== "file") return
   if (canOpenResource.value) return runAction(() => filesApi.value!.openResource!(request))
   if (!previewBytes.value) return runAction(() => filesApi.value?.saveResource(request) ?? Promise.resolve())
-  imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
+  downloadUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
   const link = document.createElement("a")
-  link.href = imageUrl.value
+  link.href = downloadUrl.value
   link.download = entry.value.name
   link.click()
 }
+
 function revealResource(): Promise<void> | undefined {
   if (entry.value?.kind === "file" && canRevealResource.value) return runAction(() => filesApi.value!.revealResource!(request))
 }
+
 function locateOriginal(): void {
   const pinia = getActivePinia()
   if (props.mode === "tab" && pinia) useLayoutStore(pinia).closeCompactPanel()
-  void locatePreviewInMainView(request.uri, {
-    ...props.source,
-    sessionId: props.source?.sessionId ?? request.sessionId,
-    itemId: request.uri,
-  })
+  void locatePreviewInMainView(request.uri, { ...props.source, sessionId: props.source?.sessionId ?? request.sessionId, itemId: request.uri })
 }
-function sendHtmlPreview(event: Event): void {
-  if (htmlPreviewSent || content.value === undefined) return
-  const frame = event.currentTarget instanceof HTMLIFrameElement ? event.currentTarget : undefined
-  if (!frame?.contentWindow) return
-  htmlPreviewSent = true
-  frame.contentWindow.postMessage({ html: content.value }, "*")
-}
-async function toggleDocumentPreview(): Promise<void> {
-  htmlPreviewSent = false
-  renderingPreview.value = !renderingPreview.value
-  if (!renderingPreview.value && requestedLines) {
-    await nextTick()
-    lineElement.value?.scrollIntoView({ block: "center" })
-  }
-}
+
 void open()
-onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL(imageUrl.value) })
+onBeforeUnmount(() => { disposed = true; if (downloadUrl.value) URL.revokeObjectURL(downloadUrl.value) })
 </script>
 
 <template>
@@ -178,31 +127,35 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-ui-surface text-ui-text"
   >
     <PreviewViewer
-      v-if="!loading && imageUrl && previewKind"
-      :kind="previewKind"
-      :content="imageUrl"
+      v-if="fileReady"
+      mode="tab"
+      :title="displayTitle"
       :data="previewBytes"
+      :text="content"
       :mime-type="previewMime"
-      :title="entry?.name ?? title"
+      :filename="entry?.name"
+      :base-path="entry?.path"
+      :requested-lines="requestedLines"
       :source="{ ...source, sessionId: source?.sessionId ?? request.sessionId, itemId: request.uri }"
       :resource-request="request"
       :api="filesApi"
       :can-open="entry?.canOpen"
-      mode="tab"
       class="h-full flex-1 rounded-none border-0"
     />
     <template v-else>
-      <header class="flex shrink-0 items-center justify-between gap-2 border-b border-ui-border px-4 py-1.5">
-        <span class="min-w-0 truncate text-xs font-medium text-ui-text-muted" :title="entry?.path ?? request.uri">
-          {{ entry?.name ?? title ?? request.uri }}
-        </span>
-        <div class="flex shrink-0 items-center gap-0.5">
-          <UiButton v-if="documentPreviewKind" variant="ghost" size="icon" :label="t(renderingPreview ? 'files.viewSource' : 'files.preview')" :data-preview-action="renderingPreview ? 'source' : `preview-${documentPreviewKind}`" @click="toggleDocumentPreview"><component :is="renderingPreview ? FileCode : Eye" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <UiButton variant="ghost" size="icon" :label="t('mermaid.locateMessage')" data-preview-action="locate-message" @click="locateOriginal"><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <UiButton v-if="hasFileActions && canRevealResource" variant="ghost" size="icon" :label="revealLabel" data-preview-action="reveal" @click="revealResource"><FolderOpen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <UiButton v-if="hasPrimaryAction" variant="ghost" size="icon" :label="primaryActionLabel" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction"><component :is="canOpenResource ? ExternalLink : Download" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-        </div>
-      </header>
+      <PreviewToolbar
+        mode="tab"
+        :title="displayTitle"
+        :title-tooltip="entry?.path ?? request.uri"
+        :can-locate-message="true"
+        :can-reveal="hasFileActions && canRevealResource"
+        :can-open="hasFileActions && canOpenResource"
+        :can-download="hasPrimaryAction && !canOpenResource"
+        @locate-message="locateOriginal"
+        @reveal="revealResource"
+        @open="fileAction"
+        @download="fileAction"
+      />
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div v-if="loading" class="flex flex-col gap-2 p-4 text-sm text-ui-text-muted" role="status">
           <div class="flex items-center justify-between gap-2">
@@ -216,23 +169,9 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </UiScrollArea>
-        <iframe v-else-if="renderingPreview && documentPreviewKind === 'html'" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
-        <UiScrollArea v-else-if="renderingPreview && documentPreviewKind === 'markdown' && content !== undefined" data-markdown-preview class="min-h-0 flex-1" viewport-class="p-4">
-          <AgentMarkdown :text="content" :api="filesApi" :base-path="entry?.path" class="min-w-0 text-sm" />
-        </UiScrollArea>
-        <UiScrollArea v-else-if="content !== undefined" orientation="both" class="min-h-0 flex-1">
-          <pre class="m-0 p-4 whitespace-pre text-xs select-text"><code><span
-            v-for="(line, index) in lines"
-            :key="index"
-            :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
-            :data-line="index + 1"
-            class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
-            :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
-          ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
-        </UiScrollArea>
         <div v-if="error" class="flex flex-col items-start gap-3 p-4">
           <p class="m-0 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
-          <div v-if="hasFileActions && content === undefined" data-preview-error-actions class="flex flex-wrap items-center gap-2">
+          <div v-if="hasFileActions" data-preview-error-actions class="flex flex-wrap items-center gap-2">
             <UiButton v-if="canRevealResource" type="button" data-preview-action="reveal" @click="revealResource"><FolderOpen :size="15" aria-hidden="true" />{{ revealLabel }}</UiButton>
             <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction"><component :is="canOpenResource ? ExternalLink : Download" :size="15" aria-hidden="true" />{{ primaryActionLabel }}</UiButton>
           </div>
@@ -253,42 +192,24 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     </div>
     <FileBrowserPane v-else-if="entry?.kind === 'directory' && filesApi" :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
     <PreviewViewer
-      v-else-if="imageUrl && previewKind"
-      :kind="previewKind"
-      :content="imageUrl"
+      v-else-if="fileReady"
+      mode="dialog"
+      :title="displayTitle"
       :data="previewBytes"
+      :text="content"
       :mime-type="previewMime"
-      :title="entry?.name"
+      :filename="entry?.name"
+      :base-path="entry?.path"
+      :requested-lines="requestedLines"
       :resource-request="request"
       :api="filesApi"
       :can-open="entry?.canOpen"
-      mode="inline"
-      class="max-h-[60vh]"
     />
-    <iframe v-else-if="renderingPreview && documentPreviewKind === 'html'" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
-    <UiScrollArea v-else-if="renderingPreview && documentPreviewKind === 'markdown' && content !== undefined" data-markdown-preview fade-size="sm" class="max-h-[60vh]">
-      <AgentMarkdown :text="content" :api="filesApi" :base-path="entry?.path" class="min-w-0 text-sm" />
-    </UiScrollArea>
-    <UiScrollArea v-else-if="content !== undefined" orientation="both" fade-size="sm" class="max-h-[60vh]">
-      <pre class="m-0 whitespace-pre text-xs select-text"><code><span
-        v-for="(line, index) in lines"
-        :key="index"
-        :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
-        :data-line="index + 1"
-        class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
-        :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
-      ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
-    </UiScrollArea>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="documentPreviewKind" type="button" variant="ghost" :data-preview-action="renderingPreview ? 'source' : `preview-${documentPreviewKind}`" @click="toggleDocumentPreview"><component :is="renderingPreview ? FileCode : Eye" :size="15" aria-hidden="true" />{{ t(renderingPreview ? 'files.viewSource' : 'files.preview') }}</UiButton>
       <UiButton v-if="hasFileActions && canRevealResource" type="button" data-preview-action="reveal" @click="revealResource">{{ revealLabel }}</UiButton>
       <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ primaryActionLabel }}</UiButton>
       <UiButton type="button" @click="close">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>
 </template>
-
-<style scoped>
-[data-line]::before { content: attr(data-line); }
-</style>

@@ -10,6 +10,7 @@ import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
+import ConversationEntry from "./ConversationEntry.vue"
 
 const props = defineProps<{ step: ConversationStep; live?: boolean; disabled?: boolean; sessionLabels?: Record<string, string>; locateEntry?: string }>()
 const { t } = useI18n()
@@ -77,7 +78,9 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
     <CollapsibleContent>
       <div class="flex flex-col gap-3 border-t border-ui-border p-3">
         <p v-if="childError" class="m-0 whitespace-pre-wrap text-ui-danger">{{ childError }}</p>
-        <AgentProtocolActivity v-for="child in step.steps" :key="child.id" :step="child" :live="live && childLive" :disabled="disabled" :session-labels="sessionLabels" :locate-entry="locateEntry" :data-conversation-entry="child.id" />
+        <ConversationEntry v-for="child in step.steps" :key="child.id" :id="child.id">
+          <AgentProtocolActivity :step="child" :live="live && childLive" :disabled="disabled" :session-labels="sessionLabels" :locate-entry="locateEntry" />
+        </ConversationEntry>
       </div>
     </CollapsibleContent>
   </CollapsibleRoot>

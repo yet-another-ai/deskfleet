@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject } from "vue"
-import MermaidViewer from "../MermaidViewer.vue"
+import PreviewViewer from "../PreviewViewer.vue"
 import { markdownHostKey } from "./context.ts"
 
 const props = withDefaults(defineProps<{
@@ -19,9 +19,10 @@ const isLoading = computed(() => Boolean(props.loading ?? props.node.loading))
 </script>
 
 <template>
-  <MermaidViewer
-    :data-mermaid="diagramId"
-    :code="rawCode"
+  <PreviewViewer
+    kind="mermaid"
+    :text="rawCode"
+    :source="{ itemId: `mermaid-${diagramId}` }"
     mode="inline"
     :loading="isLoading"
   />

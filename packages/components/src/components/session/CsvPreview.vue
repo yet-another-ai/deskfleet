@@ -42,7 +42,7 @@ watchImmediate([() => props.src, () => props.data], async ([src, data], _previou
 </script>
 
 <template>
-  <div data-csv-preview class="flex min-h-0 min-w-0 flex-1 flex-col pt-11">
+  <div data-csv-preview class="flex min-h-0 min-w-0 flex-1 flex-col">
     <p v-if="loading" class="m-0 px-3 py-2 text-xs text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
     <p v-else-if="failed" class="m-0 px-3 py-2 text-xs text-ui-danger" role="alert">
       {{ t(localActions ? 'files.previewUnavailableLocal' : 'files.previewUnavailable') }}

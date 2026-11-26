@@ -43,3 +43,15 @@ test("focusing a URL clears any previous file request from the route", async () 
   expect(navigation.query.fileTarget).toBeUndefined()
   expect(navigation.query.fileUri).toBeUndefined()
 })
+
+test("focus navigation round-trips inline text previews independently of resource content", async () => {
+  await focusPreview({ kind: "mermaid", text: "graph TD; A --> B", source: { entryId: "e1", itemId: "mermaid-0" } })
+  const navigation = state.push.mock.calls[0]![0]
+  expect(navigation.query.preview).toBeUndefined()
+  expect(navigation.query.previewText).toBe("graph TD; A --> B")
+  expect(focusedPreviewFromRoute({ params: { sessionId: "current" }, query: navigation.query })).toEqual({
+    kind: "mermaid",
+    text: "graph TD; A --> B",
+    source: { sessionId: "current", entryId: "e1", itemId: "mermaid-0" },
+  })
+})

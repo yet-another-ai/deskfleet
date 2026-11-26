@@ -1,6 +1,6 @@
 import { useBreakpoints, useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { computed, markRaw, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
+import { computed, markRaw, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { AgentSessionContext } from "@deskfleet/protocol/agent"
 import type { FileResourceRequest } from "@deskfleet/client/files"
 import { parseSessionWindowHash } from "@deskfleet/client/session-window"
@@ -10,10 +10,7 @@ import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
 import { createSidebarOrder } from "../composables/useSidebarOrder.ts"
 import { createSidebarPanel, panelForRouteName } from "../composables/useSidebarPanel.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
-import { scrollToConversationEntry } from "../services/conversation-locate.ts"
 
-export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
-export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
 export interface ResourceWindowItem {
   request: FileResourceRequest
   title?: string
@@ -21,69 +18,12 @@ export interface ResourceWindowItem {
 }
 export type SessionWindowRequest =
   | { id: number; kind: "preview"; item: PreviewDescriptor }
-  | { id: number; kind: "mermaid"; code: string; source?: MermaidSource }
   | { id: number; kind: "resource"; item: ResourceWindowItem }
 type NewSessionWindowRequest =
   | { kind: "preview"; item: PreviewDescriptor }
-  | { kind: "mermaid"; code: string; source?: MermaidSource }
   | { kind: "resource"; item: ResourceWindowItem }
 
-export const pendingMermaidLocate = ref<MermaidLocateRequest | null>(null)
-const MERMAID_LOCATE_CHANNEL = "deskfleet.mermaid-locate"
-let nextId = 1
 let nextWindowRequestId = 1
-let locatedTimer: ReturnType<typeof setTimeout> | undefined
-
-export function performMermaidLocateDom(request: MermaidLocateRequest | null = pendingMermaidLocate.value): boolean {
-  if (!request || typeof document === "undefined") return false
-  const entryEl = request.entryId ? document.querySelector<HTMLElement>(`[data-conversation-entry=${JSON.stringify(request.entryId)}]`) : null
-  if (request.entryId && !entryEl) return false
-  const candidates = [...(entryEl ?? document).querySelectorAll<HTMLElement>("[data-mermaid]")].filter(
-    el => !el.dataset.mermaidMode || el.dataset.mermaidMode === "inline",
-  )
-  const target = (request.diagramId && candidates.find(el => el.dataset.mermaid === request.diagramId))
-    || candidates.find(el => el.dataset.mermaidCode === request.code)
-    || entryEl
-  if (!target) return false
-  if (pendingMermaidLocate.value?.id === request.id) pendingMermaidLocate.value = null
-  clearTimeout(locatedTimer)
-  for (const prev of document.querySelectorAll<HTMLElement>("[data-mermaid-located]")) delete prev.dataset.mermaidLocated
-  target.dataset.mermaidLocated = "true"
-  scrollToConversationEntry(target, request.sessionId)
-  locatedTimer = setTimeout(() => { delete target.dataset.mermaidLocated }, 1600)
-  return true
-}
-
-export async function locateMermaidInMainView(code: string, source?: MermaidSource): Promise<boolean> {
-  const request: MermaidLocateRequest = { id: nextId++, code, ...source }
-  pendingMermaidLocate.value = request
-  const current = router.currentRoute.value
-  if (source?.sessionId && (current.name !== "session" || current.params.sessionId !== source.sessionId || current.query.mermaid !== undefined)) {
-    await router.push({ name: "session", params: { sessionId: source.sessionId }, query: {} })
-  } else if (current.query.mermaid !== undefined) {
-    await router.push({ path: current.path, query: { ...current.query, mermaid: undefined, mermaidEntry: undefined, mermaidDiagram: undefined } })
-  }
-  await nextTick()
-  return performMermaidLocateDom(request) || (await nextTick(), performMermaidLocateDom(request))
-}
-
-export function broadcastMermaidLocate(code: string, source?: MermaidSource): void {
-  try {
-    const channel = new BroadcastChannel(MERMAID_LOCATE_CHANNEL)
-    channel.postMessage({ code, source })
-    channel.close()
-  } catch { /* BroadcastChannel is optional in non-browser environments. */ }
-}
-
-export function listenMermaidLocate(handler: (code: string, source?: MermaidSource) => void): () => void {
-  try {
-    const channel = new BroadcastChannel(MERMAID_LOCATE_CHANNEL)
-    channel.onmessage = ({ data }) => { if (typeof data?.code === "string") handler(data.code, data.source) }
-    return () => channel.close()
-  } catch {
-    return () => {}
-  }
-}
 
 export const useLayoutStore = defineStore("layout", () => {
   const sidebarOrder = markRaw(createSidebarOrder())
@@ -138,9 +78,8 @@ export const useLayoutStore = defineStore("layout", () => {
   function requestSessionWindow(request: NewSessionWindowRequest): boolean {
     if (!sessionWindowsAvailable.value) return false
     const routeSessionId = router.currentRoute.value.params.sessionId
-    const sourceSessionId = request.kind === "mermaid"
-      ? request.source?.sessionId
-      : (request.item.source?.sessionId ?? (request.kind === "resource" ? request.item.request.sessionId : undefined))
+    const sourceSessionId = request.item.source?.sessionId
+      ?? (request.kind === "resource" ? request.item.request.sessionId : undefined)
     if (sourceSessionId && sourceSessionId !== routeSessionId) return false
     sessionWindowRequest.value = { id: nextWindowRequestId++, ...request } as SessionWindowRequest
     return true

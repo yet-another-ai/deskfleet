@@ -6,6 +6,7 @@ import type { FilesApi, FileResourceRequest } from "@deskfleet/client/files"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { highlighter } from "../../services/code-highlight.ts"
+import * as mermaidService from "../../services/mermaid.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 
@@ -323,8 +324,6 @@ test("renders media, line-highlighted code, and workspace authorization errors i
   expect(mediaView.get("video").attributes("src")).toBe("blob:clip")
   expect(mediaView.find("pre code").exists()).toBe(false)
   expect(create).toHaveBeenCalledOnce()
-  await mediaView.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   await mediaView.get('[data-preview-action="download"]').trigger("click")
   expect(downloads).toEqual([{ href: "blob:clip", filename: "clip.mp4" }])
   expect(saveResource).not.toHaveBeenCalled()
@@ -430,10 +429,9 @@ test.each([
   expect(scroll).toHaveBeenCalledTimes(1)
 
   const previewButton = view.get('[data-preview-action="preview-markdown"]')
-  if (mode === "tab") {
-    expect(previewButton.attributes("aria-label")).toBe("Preview")
-    expect(previewButton.text()).toBe("")
-  }
+  expect(previewButton.text()).toBe("Preview")
+  expect(previewButton.attributes("aria-pressed")).toBe("false")
+  expect(view.get('[data-preview-action="source"]').attributes("aria-pressed")).toBe("true")
   await previewButton.trigger("click")
   await vi.waitFor(() => expect(view.findComponent(AgentMarkdown).exists()).toBe(true))
 
@@ -445,10 +443,9 @@ test.each([
   })
 
   const sourceButton = view.get('[data-preview-action="source"]')
-  if (mode === "tab") {
-    expect(sourceButton.attributes("aria-label")).toBe("Source")
-    expect(sourceButton.text()).toBe("")
-  }
+  expect(sourceButton.text()).toBe("Source")
+  expect(sourceButton.attributes("aria-pressed")).toBe("false")
+  expect(view.get('[data-preview-action="preview-markdown"]').attributes("aria-pressed")).toBe("true")
   await sourceButton.trigger("click")
   await flushPromises()
 
@@ -489,5 +486,84 @@ test("passes the Markdown file path as basePath when loading relative images in 
   createUrl.mockRestore()
   revokeUrl.mockRestore()
 })
+
+test("defaults SVG to rendered image with canvas actions and switches bidirectionally to XML source", async () => {
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:logo-svg")
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  const svg = '<svg viewBox="0 0 10 10">\n  <circle cx="5" cy="5" r="4" />\n</svg>'
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "logo.svg", path: "/work/logo.svg", kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name: "logo.svg", data: new TextEncoder().encode(svg), mimeType: "image/svg+xml" }),
+  }, { ...request, uri: "/work/logo.svg" }, "tab")
+  await flushPromises()
+
+  expect(view.get("img").attributes("src")).toBe("blob:logo-svg")
+  expect(view.find('[data-preview-action="zoom-in"]').exists()).toBe(true)
+  expect(view.get('[data-preview-action="preview-image"]').attributes("aria-pressed")).toBe("true")
+  expect(view.get('[data-preview-action="source"]').attributes("aria-pressed")).toBe("false")
+
+  await view.get('[data-preview-action="source"]').trigger("click")
+  await flushPromises()
+  expect(view.find("img").exists()).toBe(false)
+  expect(view.find('[data-preview-action="zoom-in"]').exists()).toBe(false)
+  expect(view.get("pre code").element.textContent).toBe(svg)
+  expect(view.find("pre code span[style]").exists()).toBe(true)
+
+  await view.get('[data-preview-action="preview-image"]').trigger("click")
+  await flushPromises()
+  expect(view.get("img").attributes("src")).toBe("blob:logo-svg")
+  expect(view.find('[data-preview-action="zoom-in"]').exists()).toBe(true)
+  view.unmount()
+  expect(revokeUrl).toHaveBeenCalledWith("blob:logo-svg")
+  createUrl.mockRestore()
+  revokeUrl.mockRestore()
+})
+
+test("opens SVG and CSV line anchors in source view while keeping the segmented switch to rendered preview", async () => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const csv = "Name,Role\nAlice,Engineer\nBob,Designer\n"
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "team.csv", path: "/work/team.csv", kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name: "team.csv", data: new TextEncoder().encode(csv), mimeType: "text/csv" }),
+  }, { ...request, uri: "/work/team.csv#L2" }, "tab")
+  await flushPromises()
+
+  expect(view.get("pre [data-line='2']").classes()).toContain("bg-ui-hover")
+  expect(view.get('[data-preview-action="source"]').attributes("aria-pressed")).toBe("true")
+  expect(scroll).toHaveBeenCalledTimes(1)
+
+  await view.get('[data-preview-action="preview-csv"]').trigger("click")
+  await flushPromises()
+  expect(view.find("pre code").exists()).toBe(false)
+  expect(view.get("[data-csv-preview] table").text()).toContain("Alice")
+
+  await view.get('[data-preview-action="source"]').trigger("click")
+  await flushPromises()
+  expect(view.get("pre [data-line='2']").classes()).toContain("bg-ui-hover")
+  expect(scroll).toHaveBeenCalledTimes(2)
+  view.unmount()
+})
+
+test("renders .mmd files as Mermaid diagrams by default and switches bidirectionally to source", async () => {
+  vi.spyOn(mermaidService, "renderMermaidDiagram").mockResolvedValue('<svg data-test-mmd="ok"></svg>')
+  const code = "flowchart LR\n  A --> B\n"
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "arch.mmd", path: "/work/arch.mmd", kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name: "arch.mmd", data: new TextEncoder().encode(code), mimeType: "text/plain" }),
+  }, { ...request, uri: "/work/arch.mmd" }, "tab")
+  await flushPromises()
+
+  expect(view.find('svg[data-test-mmd="ok"]').exists()).toBe(true)
+  expect(view.find('[data-preview-action="zoom-in"]').exists()).toBe(true)
+  expect(view.get('[data-preview-action="preview-mermaid"]').attributes("aria-pressed")).toBe("true")
+
+  await view.get('[data-preview-action="source"]').trigger("click")
+  await flushPromises()
+  expect(view.find('svg[data-test-mmd="ok"]').exists()).toBe(false)
+  expect(view.find('[data-preview-action="zoom-in"]').exists()).toBe(false)
+  expect(view.get("pre code").element.textContent).toBe(code)
+  view.unmount()
+})
+
 
 

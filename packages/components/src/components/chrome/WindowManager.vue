@@ -28,6 +28,7 @@ import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
+import { previewDefaultTitle } from "../../services/preview.ts"
 import {
   formatWebPreviewTabTitle,
   isWebPreviewSupported,
@@ -165,7 +166,7 @@ function addDesktopsPanel(group?: DockviewGroupPanel): void {
 }
 
 function isPreviewPanel(panelId: string): boolean {
-  return panelId.startsWith("preview:") || panelId.startsWith("mermaid-preview:")
+  return panelId.startsWith("preview:")
 }
 
 function isWebPreviewPanel(panelId: string): boolean {
@@ -191,17 +192,15 @@ function openSessionWindow(request: SessionWindowRequest): void {
   const current = api.value
   if (!current) return
   const contentRequest = structuredClone(toRaw(request))
-  const windowId = `${contentRequest.kind === "mermaid" ? "mermaid-preview" : "preview"}:${crypto.randomUUID()}`
+  const windowId = `preview:${crypto.randomUUID()}`
   const group = rightWindowGroup(current)
 
   current.addPanel({
     id: windowId,
     component: "sessionPreview",
     title: contentRequest.kind === "preview"
-      ? contentRequest.item.title || (contentRequest.item.kind === "image" ? t("agent.image") : t("agent.contentType", { type: contentRequest.item.kind }))
-      : contentRequest.kind === "resource"
-        ? resourceWindowTitle(contentRequest)
-        : t("mermaid.title"),
+      ? contentRequest.item.title || previewDefaultTitle(contentRequest.item.kind, t)
+      : resourceWindowTitle(contentRequest),
     params: { request: contentRequest },
     position: group
       ? { referenceGroup: group, direction: "within" }

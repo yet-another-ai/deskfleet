@@ -8,6 +8,7 @@ import * as mermaidService from "../../services/mermaid.ts"
 import * as springScroll from "../../services/spring-scroll.ts"
 import { previewKindFromMime, previewKindFromUri, resolvePreviewKind } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
+import ConversationEntry from "./ConversationEntry.vue"
 import PreviewViewer from "./PreviewViewer.vue"
 
 let wrapper: VueWrapper | undefined
@@ -40,9 +41,9 @@ test.each([
   const entry = document.createElement("div")
   entry.dataset.conversationEntry = "message-7"
   const original = document.createElement("div")
-  original.dataset[kind === "mermaid" ? "mermaid" : "preview"] = "0"
-  original.dataset[kind === "mermaid" ? "mermaidMode" : "previewMode"] = "inline"
-  original.dataset[kind === "mermaid" ? "mermaidCode" : "previewContent"] = content
+  original.dataset.preview = "0"
+  original.dataset.previewMode = "inline"
+  original.dataset.previewContent = content
   const scroll = vi.spyOn(springScroll, "springScrollIntoView")
   entry.appendChild(original)
   document.body.appendChild(entry)
@@ -53,7 +54,7 @@ test.each([
     setup() {
       const layout = useLayoutStore()
       return () => (!compact || layout.detailsOpen) ? h(PreviewViewer, {
-        kind, content, mode: "tab", source: { sessionId: "30", entryId: "message-7", itemId: "0" },
+        kind, ...(kind === "mermaid" ? { text: content } : { content }), mode: "tab", source: { sessionId: "30", entryId: "message-7", itemId: "0" },
       }) : null
     },
   })
@@ -72,16 +73,12 @@ test.each([
   const otherLayout = useLayoutStore(otherPinia)
   if (compact) otherLayout.toggleDetails()
   setActivePinia(otherPinia)
-  if (kind === "image") {
-    await wrapper.get('[data-preview-action="more"]').trigger("click")
-    await flushPromises()
-  }
-  await wrapper.get(`[data-${kind === "mermaid" ? "mermaid" : "preview"}-action="locate-message"]`).trigger("click")
+  await wrapper.get('[data-preview-action="locate-message"]').trigger("click")
   await flushPromises()
   expect(navigate).not.toHaveBeenCalled()
   expect(scroll).toHaveBeenCalledWith(original)
   expect(layout.detailsOpen).toBe(false)
-  expect(wrapper.find(`[data-${kind === "mermaid" ? "mermaid" : "preview"}-mode="tab"]`).exists()).toBe(!compact)
+  expect(wrapper.find('[data-preview-mode="tab"]').exists()).toBe(!compact)
   expect(otherLayout.detailsOpen).toBe(compact)
 })
 
@@ -204,4 +201,34 @@ test("picks colors from image and video previews, pins loupe on click, copies HE
   await wrapper.get("[data-preview-canvas]").trigger("click", { clientX: 20, clientY: 10 })
   expect(drawImage).toHaveBeenLastCalledWith(video, 0, 0, 80, 40)
   expect(wrapper.get("[data-color-picker-loupe]").attributes("data-color-picker-hex")).toBe("#6464F6")
+})
+
+test("inline PreviewViewer inherits entryId from ConversationEntry and uses explicit itemId without DOM scraping", async () => {
+  const pinia = createPinia()
+  stores.push(pinia)
+  await router.push("/sessions/30")
+  vi.spyOn(mermaidService, "renderMermaidDiagram").mockResolvedValue("<svg></svg>")
+  const Harness = defineComponent({
+    setup: () => () => h(ConversationEntry, { id: "entry-9" }, () => h(PreviewViewer, {
+      kind: "mermaid",
+      text: "graph TD; A --> B",
+      mode: "inline",
+      source: { itemId: "mermaid-0" },
+    })),
+  })
+  wrapper = mount(Harness, {
+    attachTo: document.body,
+    global: { plugins: [pinia, i18n, router] },
+  })
+  await flushPromises()
+  expect(wrapper.get('[data-preview="mermaid-0"]').attributes("data-preview-kind")).toBe("mermaid")
+  await wrapper.get('[data-preview-action="show-in-right-tab"]').trigger("click")
+  expect(useLayoutStore(pinia).sessionWindowRequest).toMatchObject({
+    kind: "preview",
+    item: {
+      kind: "mermaid",
+      text: "graph TD; A --> B",
+      source: { sessionId: "30", entryId: "entry-9", itemId: "mermaid-0" },
+    },
+  })
 })

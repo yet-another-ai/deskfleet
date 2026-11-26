@@ -27,6 +27,8 @@ function distribution(values: number[]) {
   const percentile = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0
   return { count: sorted.length, p50: percentile(0.5), p95: percentile(0.95), max: sorted.at(-1) ?? 0 }
 }
+const DIAGRAM_SELECTOR = '.ui-mermaid, [data-preview-kind="mermaid"]'
+
 function domCounts() {
   const el = conversation.value!
   return {
@@ -36,7 +38,7 @@ function domCounts() {
     collapsed: el.querySelectorAll('button[aria-expanded="false"]').length,
     expanded: el.querySelectorAll('button[aria-expanded="true"]').length,
     hiddenElements: el.querySelectorAll("[hidden] *").length,
-    diagrams: el.querySelectorAll(".ui-mermaid").length,
+    diagrams: el.querySelectorAll(DIAGRAM_SELECTOR).length,
     renderedDiagrams: el.querySelectorAll("[data-mermaid-stage] svg").length,
   }
 }
@@ -127,7 +129,7 @@ async function run(mountedAt: number) {
     await frame()
     const el = conversation.value!
     const current = el.textContent ?? ""
-    const diagramsReady = el.querySelectorAll(".ui-mermaid").length === el.querySelectorAll("[data-mermaid-stage] svg").length
+    const diagramsReady = el.querySelectorAll(DIAGRAM_SELECTOR).length === el.querySelectorAll("[data-mermaid-stage] svg").length
     stableHistoryFrames = diagramsReady && current === historyText ? stableHistoryFrames + 1 : 0
     historyText = current
   }
@@ -215,7 +217,7 @@ async function run(mountedAt: number) {
             diagramReadiness = (async () => {
               const readyDeadline = expandingAt + 15_000
               while (performance.now() < readyDeadline) {
-                const diagrams = response.querySelectorAll(".ui-mermaid")
+                const diagrams = response.querySelectorAll(DIAGRAM_SELECTOR)
                 if (diagrams.length && diagrams.length === response.querySelectorAll("[data-mermaid-stage] svg").length) {
                   diagramReopenReadyMs = performance.now() - expandingAt
                   diagramReopenStatus = "ready"
@@ -255,8 +257,8 @@ async function run(mountedAt: number) {
       [...code.querySelectorAll(".shiki-stream-stable, .shiki-stream-unstable")]
         .map(tokens => tokens.textContent ?? "").join("").includes(CODE_MARKER),
     )
-    const diagramsComplete = el.querySelectorAll(".ui-mermaid").length > 0
-      && el.querySelectorAll(".ui-mermaid").length === el.querySelectorAll("[data-mermaid-stage] svg").length
+    const diagramsComplete = el.querySelectorAll(DIAGRAM_SELECTOR).length > 0
+      && el.querySelectorAll(DIAGRAM_SELECTOR).length === el.querySelectorAll("[data-mermaid-stage] svg").length
     const current = el.textContent ?? ""
     stableFrames = answerComplete && codeComplete && diagramsComplete && current === previous ? stableFrames + 1 : 0
     previous = current

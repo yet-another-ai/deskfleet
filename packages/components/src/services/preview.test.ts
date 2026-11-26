@@ -1,5 +1,15 @@
 import { expect, test } from "vitest"
-import { isPannablePreview, previewKindFromMime, previewKindFromUri, previewResourceRequestFromQuery, previewResourceRequestToQuery, resolvePreviewKind } from "./preview.ts"
+import {
+  isPannablePreview,
+  previewKindFromMime,
+  previewKindFromUri,
+  previewResourceRequestFromQuery,
+  previewResourceRequestToQuery,
+  resolveAvailableViews,
+  resolveInitialView,
+  resolvePreviewFormat,
+  resolvePreviewKind,
+} from "./preview.ts"
 
 test.each([
   ["csv", "text/csv"],
@@ -62,4 +72,35 @@ test("local window grants are never placed in preview URLs", () => {
   })
   expect(Object.values(query).every(value => value === undefined)).toBe(true)
   expect(query).not.toHaveProperty("grantId")
+})
+
+test("resolves declared switchable formats, view availability, and #L initial views", () => {
+  const md = resolvePreviewFormat("README.md", "text/markdown")
+  expect(md?.views).toEqual(["source", "markdown"])
+  expect(previewKindFromMime("text/markdown")).toBeUndefined()
+
+  const html = resolvePreviewFormat("index.htm", "text/html")
+  expect(html?.views).toEqual(["source", "html"])
+  expect(previewKindFromMime("text/html")).toBeUndefined()
+
+  const svg = resolvePreviewFormat("logo.svg", "image/svg+xml")
+  expect(svg?.views).toEqual(["image", "source"])
+  expect(previewKindFromMime("image/svg+xml")).toBe("image")
+  expect(resolveAvailableViews(svg, false)).toEqual(["image"])
+  expect(resolveInitialView(resolveAvailableViews(svg, true), false)).toBe("image")
+  expect(resolveInitialView(resolveAvailableViews(svg, true), true)).toBe("source")
+
+  const csv = resolvePreviewFormat("report.csv", "text/csv")
+  expect(csv?.views).toEqual(["csv", "source"])
+  expect(resolveInitialView(resolveAvailableViews(csv, true), false)).toBe("csv")
+  expect(resolveInitialView(resolveAvailableViews(csv, true), true)).toBe("source")
+
+  const mmd = resolvePreviewFormat("diagram.mmd", "text/plain")
+  expect(mmd?.views).toEqual(["mermaid", "source"])
+  expect(resolveInitialView(resolveAvailableViews(mmd, true), false)).toBe("mermaid")
+  expect(resolveInitialView(resolveAvailableViews(mmd, true), true)).toBe("source")
+
+  const png = resolvePreviewFormat("photo.png", "image/png")
+  expect(png?.views).toEqual(["image"])
+  expect(resolveInitialView(resolveAvailableViews(png, false), true)).toBe("image")
 })

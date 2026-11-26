@@ -17,7 +17,7 @@ export function isAuxiliaryRendererUrl(url: string): boolean {
   if (!isMainRendererUrl(url)) return false
   try {
     const hash = new URL(url).hash
-    return hash.startsWith("#/mermaid") || hash.startsWith("#/preview") || parseSessionWindowHash(hash) !== undefined
+    return hash.startsWith("#/preview") || parseSessionWindowHash(hash) !== undefined
   } catch {
     return false
   }

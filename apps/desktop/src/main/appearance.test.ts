@@ -49,7 +49,7 @@ test.each([
   expect(t("tray.show")).toBe(trayLabel)
   expect(refreshTrayMenu).toHaveBeenCalledOnce()
   const main = renderer()
-  const auxiliary = renderer("#/mermaid?code=graph")
+  const auxiliary = renderer("#/preview?kind=mermaid&text=graph")
   attachAppearance(main.window)
   attachAppearance(auxiliary.window)
   expect(invoke(auxiliary.event, "get")).toEqual({ ok: true, value: saved })

@@ -12,7 +12,7 @@ import SessionConversationPane from "./SessionConversationPane.vue"
 
 test.each([["darwin", "pl-20"], ["win32", "pl-2"]] as const)("focus overlay toolbars follow the sidebar on %s", async (platform, closedInset) => {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/sessions/:sessionId", component: SessionConversationPane }] })
-  await router.push({ path: "/sessions/30", query: { mermaid: "flowchart TD; A --> B", preview: "diagram.png", previewKind: "image" } })
+  await router.push({ path: "/sessions/30", query: { preview: "diagram.png", previewKind: "image" } })
   const pinia = createPinia()
   const layout = useLayoutStore(pinia)
   layout.sidebarOpen = true
@@ -21,13 +21,11 @@ test.each([["darwin", "pl-20"], ["win32", "pl-2"]] as const)("focus overlay tool
     global: {
       plugins: [pinia, router, i18n],
       provide: { [platformClientKey as symbol]: { ...getClient(), platform } },
-      stubs: { MermaidViewer: true, PreviewViewer: true, ReadingSpotlight: true, WindowToolbar: true },
+      stubs: { PreviewViewer: true, ReadingSpotlight: true, WindowToolbar: true },
     },
   })
   const expectInset = (inset: string) => {
-    for (const view of ["[data-mermaid-focus-view]", "[data-preview-focus-view]"]) {
-      expect(wrapper.get(`${view} .app-drag`).classes()).toContain(inset)
-    }
+    expect(wrapper.get("[data-preview-focus-view] .app-drag").classes()).toContain(inset)
   }
   try {
     expectInset("pl-2")

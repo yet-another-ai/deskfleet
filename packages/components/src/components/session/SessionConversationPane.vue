@@ -6,14 +6,13 @@ import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../../stores/conversation-reading.ts"
-import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../../stores/previews.ts"
 import { scrollSpring, type SpringScroll } from "../../services/spring-scroll.ts"
 import FocusOverlay from "../common/FocusOverlay.vue"
 import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
-import MermaidViewer from "./MermaidViewer.vue"
 import PreviewViewer from "./PreviewViewer.vue"
 import ReadingSpotlight from "./ReadingSpotlight.vue"
 
@@ -44,19 +43,14 @@ const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 14
 const followBottom = ref(true)
 const activeEntry = ref<string>()
 const focusedEntry = computed(() => typeof route.query.entry === "string" && route.query.entry ? route.query.entry : undefined)
-const focusedMermaid = computed(() => typeof route.query.mermaid === "string" && route.query.mermaid ? route.query.mermaid : undefined)
-const mermaidSource = computed<MermaidSource>(() => ({
-  ...(props.sessionId ? { sessionId: props.sessionId } : {}),
-  ...(typeof route.query.mermaidEntry === "string" && route.query.mermaidEntry ? { entryId: route.query.mermaidEntry } : {}),
-  ...(typeof route.query.mermaidDiagram === "string" && route.query.mermaidDiagram ? { diagramId: route.query.mermaidDiagram } : {}),
-}))
-const mermaidContent = computed(() => focusedMermaid.value ? { code: focusedMermaid.value, source: mermaidSource.value } : undefined)
 const focusedPreview = computed(() => {
   const preview = focusedPreviewFromRoute(route)
   if (!preview) return undefined
-  return props.sessionId ? { ...preview, source: { sessionId: props.sessionId, ...preview.source } } : preview
+  return props.sessionId
+    ? { ...preview, source: { ...preview.source, sessionId: preview.source?.sessionId ?? props.sessionId } }
+    : preview
 })
-const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
+const pendingLocate = computed(() => pendingPreviewLocate.value)
 let locatedEntry: string | undefined
 let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
 let restoringScroll = false
@@ -171,13 +165,12 @@ watch([focusedEntry, () => props.readingId, () => props.loading, () => props.rev
   target.scrollIntoView({ block: "center", behavior: "instant" })
   entryHighlightTimer = setTimeout(() => { delete target.dataset.conversationLocated }, 2000)
 }, { immediate: true, flush: "post" })
-watch([pendingLocate, () => props.loading, () => props.revision, focusedPreview, focusedMermaid], async ([target, loading, , preview, mermaid]) => {
-  if (!target || loading || preview || mermaid) return
+watch([pendingLocate, () => props.loading, () => props.revision, focusedPreview], async ([target, loading, , preview]) => {
+  if (!target || loading || preview) return
   if (target.sessionId && target.sessionId !== props.sessionId) return
   followBottom.value = false
   await nextTick()
-  if ("content" in target) performPreviewLocateDom(target)
-  else performMermaidLocateDom(target)
+  performPreviewLocateDom(target)
 }, { flush: "post" })
 </script>
 
@@ -213,13 +206,9 @@ watch([pendingLocate, () => props.loading, () => props.revision, focusedPreview,
         <slot name="composer" />
       </div>
     </div>
-    <FocusOverlay :content="mermaidContent" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performMermaidLocateDom()" v-slot="{ content }">
-      <div class="app-drag flex h-9 shrink-0 items-center pr-[var(--window-controls-width,0px)]" :class="toolbarLeftInset"><WindowToolbar :sidebar="sidebar" /></div>
-      <MermaidViewer :key="content.code" :code="content.code" :source="content.source" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
-    </FocusOverlay>
     <FocusOverlay :content="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performPreviewLocateDom()" v-slot="{ content }">
       <div class="app-drag flex h-9 shrink-0 items-center pr-[var(--window-controls-width,0px)]" :class="toolbarLeftInset"><WindowToolbar :sidebar="sidebar" /></div>
-      <PreviewViewer :key="content.content" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
+      <PreviewViewer :key="content.content ?? content.text" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
     </FocusOverlay>
   </div>
 </template>

@@ -14,18 +14,26 @@ import "./styles.css"
 export async function mountDeskfleet(target: string | Element = "#root") {
   const state = createPinia()
   await useAppearanceStore(state).initialize()
-  const previewWindow = window.location.hash.startsWith("#/preview")
-  const mermaidWindow = window.location.hash.startsWith("#/mermaid")
-  if (previewWindow || mermaidWindow) {
+  if (window.location.hash.startsWith("#/preview")) {
     const params = new URLSearchParams(window.location.hash.split("?")[1])
-    const content = params.get(previewWindow ? "content" : "code") ?? ""
+    const content = params.get("content") || undefined
+    const text = params.get("text") || undefined
     const mimeType = params.get("mimeType") || undefined
-    const root = previewWindow
-      ? (await import("./components/session/PreviewViewer.vue")).default
-      : (await import("./components/session/MermaidViewer.vue")).default
-    const props = previewWindow
-      ? { kind: resolvePreviewKind(content, params.get("kind"), mimeType), content, title: params.get("title") || undefined, mimeType, mode: "window", resourceRequest: previewResourceRequestFromQuery(key => params.get(key)), source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, itemId: params.get("itemId") || undefined } }
-      : { code: content, mode: "window", source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, diagramId: params.get("diagramId") || undefined } }
+    const root = (await import("./components/session/PreviewViewer.vue")).default
+    const props = {
+      kind: resolvePreviewKind(content ?? "", params.get("kind"), mimeType),
+      content,
+      text,
+      title: params.get("title") || undefined,
+      mimeType,
+      mode: "window",
+      resourceRequest: previewResourceRequestFromQuery(key => params.get(key)),
+      source: {
+        sessionId: params.get("sessionId") || undefined,
+        entryId: params.get("entryId") || undefined,
+        itemId: params.get("itemId") || undefined,
+      },
+    }
     const app = createApp(root, props)
     installErrorReporting(app)
     const central = getClient().central

@@ -32,11 +32,11 @@ test("allows auxiliary preview and Session windows on the main renderer origin w
   )
   attachExternalLinks(contents as unknown as WebContents, auxiliaryWindowOptions)
   const handler = contents.setWindowOpenHandler.mock.calls[0]![0] as (details: HandlerDetails) => { action: string; overrideBrowserWindowOptions?: unknown }
-  expect(handler({ url: "http://127.0.0.1:5173/#/mermaid?code=graph%20TD" } as HandlerDetails)).toEqual({
+  expect(handler({ url: "http://127.0.0.1:5173/#/preview?kind=mermaid&text=graph%20TD" } as HandlerDetails)).toEqual({
     action: "allow",
     overrideBrowserWindowOptions: { width: 960, height: 680 },
   })
-  expect(handler({ url: "deskfleet-app://bundle/index.html#/mermaid?code=graph%20TD" } as HandlerDetails)).toEqual({
+  expect(handler({ url: "deskfleet-app://bundle/index.html#/preview?kind=mermaid&text=graph%20TD" } as HandlerDetails)).toEqual({
     action: "allow",
     overrideBrowserWindowOptions: { width: 960, height: 680 },
   })
