@@ -159,9 +159,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   the CI mise environment and retries the install once after a transient
   failure: hosted macOS runners have SIGKILL'd rustup during the first attempt.
 - `.github/actions/setup-build/action.yml` calls setup-mise with each job's
-  required tool subset (`tools`), skips Linux desktop viewer dev packages and
-  Windows LLVM lookup when `install-native-deps` is `false`, installs the
-  workspace, and configures shared Cargo caches for the Test and Build workflows.
+  required tool subset (`tools`), installs the workspace, and configures shared
+  Cargo caches for the Test and Build workflows. Native desktop jobs also set up
+  the macOS Metal compiler, Linux viewer libraries, or Windows LLVM libclang.
   It writes a cache restore summary for each job.
 
 The build matrix covers Linux x64/arm64, macOS arm64/x64, and Windows x64. The
