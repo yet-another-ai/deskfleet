@@ -403,6 +403,37 @@ test("creating and joining Teams select them; signing out clears every selection
   expect(session.teamId.value).toBeUndefined()
 })
 
+test("deleting the selected Team opens the next one and clears its selection", async () => {
+  const fake = fakeCentral({ teams: [
+    { id: "one", name: "One", role: "owner" },
+    { id: "two", name: "Two", role: "admin" },
+  ] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  await session.deleteTeam()
+  expect(fake.central.deleteTeam).toHaveBeenCalledExactlyOnceWith("one")
+  expect(session.teams.value.map(team => team.id)).toEqual(["two"])
+  expect(session.teamId.value).toBe("two")
+  expect(session.team.value?.name).toBe("Two")
+  expect(session.machineId.value).toBeUndefined()
+  expect(session.machines.value).toEqual([])
+})
+
+test("deleting the last Team opens onboarding and keeps a failed deletion selected", async () => {
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  fake.central.deleteTeam.mockRejectedValueOnce(new Error("team still owns machine records"))
+  await expect(session.deleteTeam()).rejects.toThrow("team still owns machine records")
+  expect(session.teamId.value).toBe("team-1")
+  expect(push).not.toHaveBeenCalled()
+  await session.deleteTeam()
+  expect(session.teams.value).toEqual([])
+  expect(session.teamId.value).toBeUndefined()
+  expect(push).toHaveBeenCalledWith({ name: "new-session" })
+})
+
 test("a rejected invitation acceptance records failure without the code or server message", async () => {
   const fake = fakeCentral()
   fake.central.acceptInvite.mockRejectedValueOnce(new Error("Private invitation details"))

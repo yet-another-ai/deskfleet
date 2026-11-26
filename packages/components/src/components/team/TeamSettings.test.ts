@@ -4,6 +4,7 @@ import type { Team, TeamMember } from "@deskfleet/client/central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
+import { router } from "../../router/index.ts"
 import TeamSettings from "./TeamSettings.vue"
 import { selectOption } from "../../test/controls.ts"
 import { captureAnalyticsContext, trackEvent } from "../../services/analytics.ts"
@@ -183,6 +184,7 @@ test("ordinary members see the roster and machines without administration contro
   expect(view!.find("[data-member-id] select").exists()).toBe(false)
   expect(view!.find('[aria-label^="Remove"]').exists()).toBe(false)
   expect(button("Invite")).toBeUndefined()
+  expect(button("Delete team")).toBeUndefined()
   // Every member can add their own machines.
   await button("Add machine")!.trigger("click")
   expect(session!.dialog.value).toBe("add-machine")
@@ -226,6 +228,37 @@ test("administrators cannot change the Owner or transfer ownership", async () =>
   expect(view!.find('[aria-label="Remove Grace"]').exists()).toBe(false)
   await vi.waitFor(() => expect(button("Transfer ownership")).toBeUndefined())
   expect(button("Invite")).toBeDefined()
+  expect(button("Delete team")).toBeUndefined()
+})
+
+test("owners delete the team after confirmation and leave when it was the last one", async () => {
+  const fake = await setup("owner", structuredClone(ownerMembers))
+  const push = vi.spyOn(router, "push").mockResolvedValue(undefined)
+  await button("Delete team")!.trigger("click")
+  await flushPromises()
+  expect(fake.central.deleteTeam).not.toHaveBeenCalled()
+  expect(view!.get("[role=dialog][data-state=open] h2").text()).toBe("Delete Design team?")
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Delete team")!.trigger("click")
+  await flushPromises()
+  expect(fake.central.deleteTeam).toHaveBeenCalledExactlyOnceWith("team-1")
+  expect(session!.teams.value).toEqual([])
+  expect(session!.team.value).toBeUndefined()
+  expect(push).toHaveBeenCalledWith({ name: "new-session" })
+})
+
+test("a rejected deletion stays open with its error for retry", async () => {
+  const fake = await setup("owner", structuredClone(ownerMembers))
+  fake.central.deleteTeam.mockRejectedValueOnce(new Error("team still owns machine records"))
+  await button("Delete team")!.trigger("click")
+  await flushPromises()
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Delete team")!.trigger("click")
+  await flushPromises()
+  expect(view!.get('[role=dialog][data-state=open] [role="alert"] pre').text()).toBe("team still owns machine records")
+  expect(fake.central.deleteTeam).toHaveBeenCalledExactlyOnceWith("team-1")
+  await view!.get("[role=dialog][data-state=open]").findAll("button").find(value => value.text() === "Delete team")!.trigger("click")
+  await flushPromises()
+  expect(fake.central.deleteTeam).toHaveBeenCalledTimes(2)
+  await vi.waitFor(() => expect(view!.find("[role=dialog]").exists()).toBe(false))
 })
 
 test("a refresh failure after transfer closes the dialog without offering to repeat the completed mutation", async () => {

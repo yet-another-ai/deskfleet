@@ -291,6 +291,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   updateCloudflareTurnSettings(settings: CloudflareTurnSettingsUpdate) { return this.request<CloudflareTurnSettings>("PATCH", "/api/admin/cloudflare-turn-settings", settings) }
   teams() { return this.request<Team[]>("GET", "/api/teams") }
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
+  async deleteTeam(teamId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}`) }
   async enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string; identityToken: string }) {
     const result = await this.request<{ machine: WireMachine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine)
     return { ...result, machine: machineFromWire(result.machine) }

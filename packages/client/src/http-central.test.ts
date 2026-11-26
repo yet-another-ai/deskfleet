@@ -434,6 +434,13 @@ test.each([null, { desktop: true, platform: "linux" }])("normalizes enrollment a
   expect(await f.client.renameMachine("team", machine.id, renamed.name)).toEqual({ ...renamed, capabilities: capabilities ?? {} })
 })
 
+test("deletes a Team through its encoded identifier", async () => {
+  const f = setup()
+  f.responses.push({})
+  await f.client.deleteTeam("team/1")
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team%2F1", { method: "DELETE" })
+})
+
 test("loads team AI usage and day details with explicit timezone and encoded team identity", async () => {
   const f = setup()
   const summary = { period: "30d", timeZone: "Asia/Shanghai", totals: { totalTokens: 123 } }

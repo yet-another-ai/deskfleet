@@ -1886,7 +1886,12 @@
     "machineNameFor": "New name for {name}",
     "removeMachineLabel": "Remove {name}",
     "removeMachineTitle": "Remove {name}?",
-    "removeMachineDescription": "Its credential for this Team is revoked and connections to this Team close. Files and history are kept for rejoining. Other Teams stay connected."
+    "removeMachineDescription": "Its credential for this Team is revoked and connections to this Team close. Files and history are kept for rejoining. Other Teams stay connected.",
+    "dangerZone": "Danger zone",
+    "deleteTeam": "Delete team",
+    "deleteTeamDescription": "Permanently delete this team, its memberships, invitations, and settings. Teams that still have machines or billing records can’t be deleted.",
+    "deleteTeamTitle": "Delete {team}?",
+    "deleteTeamConfirmDescription": "Everyone loses access immediately. This cannot be undone."
   },
   "addMachine": {
     "title": "Add a machine to {team}",

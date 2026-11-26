@@ -139,6 +139,8 @@ export interface CentralApi {
   updateTelemetryConsent(update: TelemetryConsentUpdate): Promise<void>
   teams(): Promise<Team[]>
   createTeam(name: string): Promise<Team>
+  /** Permanently deletes the Team and its membership. Owner-only. */
+  deleteTeam(teamId: string): Promise<void>
   members(teamId: string): Promise<TeamMember[]>
   teamUsage(teamId: string): Promise<TeamUsage>
   /** Team owners and administrators; the shared secret is write-only. */

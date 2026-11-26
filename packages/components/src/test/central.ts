@@ -131,6 +131,9 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       state.teams.push(team)
       return { ...team }
     }),
+    deleteTeam: vi.fn(async (teamId: string) => {
+      state.teams = state.teams.filter(value => value.id !== teamId)
+    }),
     renameTeam: vi.fn(async (teamId: string, name: string) => {
       const team = state.teams.find(value => value.id === teamId)!
       team.name = name

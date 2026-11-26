@@ -781,6 +781,10 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
         },
       ],
     }),
+    deleteTeam: async (teamId: string) => {
+      const index = teams.findIndex(team => team.id === teamId)
+      if (index >= 0) teams.splice(index, 1)
+    },
     renameTeam: async (teamId: string, name: string) => {
       const found = teams.find(t => t.id === teamId) ?? teams[0]!
       found.name = name

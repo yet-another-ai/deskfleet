@@ -1438,7 +1438,10 @@
     "neverConnected": "接続履歴なし", "noMachines": "マシンがありません",
     "noMachinesDescription": "チームメンバーがエージェントを実行したりターミナルを開いたりできるよう、マシンを追加してください。", "renameMachineLabel": "{name} の名前を変更",
     "machineNameFor": "{name} の新しい名前", "removeMachineLabel": "{name} を削除",
-    "removeMachineTitle": "{name} を削除しますか？", "removeMachineDescription": "このチームの認証情報が失効し、このチームとの接続が切断されます。ファイルと履歴は再参加に備えて保持されます。他のチームとの接続は維持されます。"
+    "removeMachineTitle": "{name} を削除しますか？", "removeMachineDescription": "このチームの認証情報が失効し、このチームとの接続が切断されます。ファイルと履歴は再参加に備えて保持されます。他のチームとの接続は維持されます。",
+    "dangerZone": "危険な操作", "deleteTeam": "チームを削除",
+    "deleteTeamDescription": "このチーム、メンバーシップ、招待、設定を完全に削除します。マシンまたは請求記録が残っているチームは削除できません。",
+    "deleteTeamTitle": "{team} を削除しますか？", "deleteTeamConfirmDescription": "全員がすぐにアクセスできなくなります。この操作は元に戻せません。"
   },
   "addMachine": {
     "title": "{team} にマシンを追加", "description": "マシンでは、チーム用のエージェント、ターミナル、リモートデスクトップを実行します。",

@@ -1886,7 +1886,12 @@
     "machineNameFor": "{name} 的新名称",
     "removeMachineLabel": "移除 {name}",
     "removeMachineTitle": "移除 {name}？",
-    "removeMachineDescription": "该机器在当前团队的凭据将被吊销，与此团队的连接会关闭。文件和历史记录会保留，重新加入后可继续访问。其他团队的连接不受影响。"
+    "removeMachineDescription": "该机器在当前团队的凭据将被吊销，与此团队的连接会关闭。文件和历史记录会保留，重新加入后可继续访问。其他团队的连接不受影响。",
+    "dangerZone": "危险操作",
+    "deleteTeam": "删除团队",
+    "deleteTeamDescription": "永久删除此团队、成员关系、邀请和设置。仍有机器或账单记录的团队无法删除。",
+    "deleteTeamTitle": "删除 {team}？",
+    "deleteTeamConfirmDescription": "所有成员将立即失去访问权限。此操作无法撤销。"
   },
   "addMachine": {
     "title": "向 {team} 添加机器",

@@ -3,6 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { computed, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 import SettingsRow from "../settings/SettingsRow.vue"
 import TeamMachines from "./TeamMachines.vue"
 import TeamMembers from "./TeamMembers.vue"
@@ -16,6 +17,7 @@ const team = computed(() => session?.team.value)
 const admin = computed(() => team.value?.role === "owner" || team.value?.role === "admin")
 const name = ref(team.value?.name ?? "")
 const saving = ref(false)
+const confirmingDelete = ref(false)
 const error = ref<string>()
 const changed = computed(() => !!name.value.trim() && name.value.trim() !== team.value?.name)
 watch(() => team.value?.name, value => { name.value = value ?? ""; error.value = undefined })
@@ -27,6 +29,10 @@ async function rename(): Promise<void> {
   try { await session.renameTeam(name.value.trim()) }
   catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { saving.value = false }
+}
+async function deleteTeam(): Promise<void> {
+  if (!session) return
+  await session.deleteTeam()
 }
 </script>
 
@@ -50,5 +56,22 @@ async function rename(): Promise<void> {
     <TeamMachines />
     <TeamSuperAgentSettings v-if="session.superAgentEnabled.value" :key="`super-agent-${team.id}`" class="mt-8" :api="session.central" :team-id="team.id" :machines="session.machines.value" :local-machine-id="session.localMachineId.value" />
     <TeamTurnSettings v-if="admin" :key="team.id" class="mt-8" :api="session.central" :team-id="team.id" @plans="session.openSettings('plans')" />
+    <section v-if="team.role === 'owner'" :aria-labelledby="`${id}-danger`" class="mt-8">
+      <h2 :id="`${id}-danger`" class="ui-section-title mb-2">{{ t("team.dangerZone") }}</h2>
+      <div class="ui-card">
+        <SettingsRow :label="t('team.deleteTeam')" :label-id="`${id}-delete`">
+          <template #description>{{ t("team.deleteTeamDescription") }}</template>
+          <UiButton variant="danger" type="button" :aria-labelledby="`${id}-delete`" @click="confirmingDelete = true">{{ t("team.deleteTeam") }}</UiButton>
+        </SettingsRow>
+      </div>
+    </section>
   </template>
+  <ConfirmDialog
+    v-if="confirmingDelete && session && team"
+    :title="t('team.deleteTeamTitle', { team: team.name })"
+    :description="t('team.deleteTeamConfirmDescription')"
+    :confirm-label="t('team.deleteTeam')"
+    :confirm="deleteTeam"
+    @close="confirmingDelete = false"
+  />
 </template>
