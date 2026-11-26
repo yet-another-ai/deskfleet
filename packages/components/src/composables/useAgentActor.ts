@@ -16,5 +16,9 @@ export function useAgentActor(actor: () => AgentActor) {
   return {
     name: computed(() => profile.value?.name.trim() || profile.value?.email || actor().userId || t(actor().kind === "system" ? "agent.system" : "agent.localUser")),
     email: computed(() => profile.value?.email),
+    mcpSender: computed(() => {
+      const via = actor().via
+      return via && t(via === "super_agent_mcp" ? "superAgent.title" : "agent.mcpAttribution.ai")
+    }),
   }
 }

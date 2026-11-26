@@ -1510,6 +1510,12 @@
       "cost": "会话费用"
     },
     "localUser": "本地用户",
+    "mcpAttribution": {
+      "ai": "AI",
+      "sent": "{sender} 发送",
+      "created": "{sender} 创建的会话",
+      "authorizedBy": "由 {name} 授权"
+    },
     "presenceHere": "{name} 正在查看",
     "presenceVisited": "{name} 看过这个会话",
     "presenceMore": "还有 {count} 人",

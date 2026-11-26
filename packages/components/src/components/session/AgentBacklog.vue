@@ -9,6 +9,7 @@ import type { AgentInput } from "@deskfleet/protocol/agent"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { commandDraft } from "../../services/composer-mentions.ts"
 import AgentActor from "./AgentActor.vue"
+import McpActorBadge from "./McpActorBadge.vue"
 const props = defineProps<{ inputs: AgentInput[]; canSteer: boolean; disabled: boolean; excludeInputId?: string; excludeInputIds?: string[] }>()
 const emit = defineEmits<{ steer: [id: string]; withdraw: [id: string]; retry: [id: string] }>()
 const { t } = useI18n()
@@ -58,7 +59,8 @@ watch(() => candidates.value.length, count => {
               <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
               <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
-              <AgentActor v-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
+              <McpActorBadge v-if="input.author.via" :actor="input.author" />
+              <AgentActor v-else-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
               <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
               <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
               <UiButton variant="ghost" size="icon" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
@@ -78,7 +80,8 @@ watch(() => candidates.value.length, count => {
         <ListEnd v-else :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" :title="t('agent.backlog')" aria-hidden="true" />
         <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
         <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
-        <AgentActor v-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
+        <McpActorBadge v-if="input.author.via" :actor="input.author" />
+        <AgentActor v-else-if="showActor(input)" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
         <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
         <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
         <UiButton variant="ghost" size="icon" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>

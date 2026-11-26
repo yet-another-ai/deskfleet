@@ -51,7 +51,9 @@ export class AgentMcp {
     }
     if (!this.#endpoint) throw new Error("Agent MCP is unavailable")
     const token = randomBytes(32).toString("hex")
-    this.#grants.set(token, { actor: structuredClone(actor), scope: { sessionId, ...(workspaceId ? { workspaceId } : {}), ...(superAgent ? { superAgent: true } : {}) } })
+    // The grant carries the user's authority. Each call records its own origin.
+    const { via: _via, ...principal } = actor
+    this.#grants.set(token, { actor: structuredClone(principal), scope: { sessionId, ...(workspaceId ? { workspaceId } : {}), ...(superAgent ? { superAgent: true } : {}) } })
     const launch = adapterProcess(DESKFLEET_MCP_ARGUMENT)
     const env = Object.entries(launch.env ?? {}).flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
     return {

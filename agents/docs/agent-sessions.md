@@ -597,7 +597,14 @@ the daemon reconciles those same receipts against durable Session outcomes.
 Every mutation has a client-generated UUID `operationId` and a daemon-assigned
 command ID. Its actor comes from the authenticated connection, never request
 parameters or `_meta`. The actor contains `kind`, optional `userId`, an optional
-qualified `sourceMachine`, and optional `deviceId`. Input authors and the people selecting
+qualified `sourceMachine`, and optional `deviceId`. For Session creation and
+prompt submission through local or remote MCP tools, the target daemon marks
+the actor with `via: "mcp"` for a regular Agent or `via: "super_agent_mcp"`
+for a Super Agent. The issuing Session determines this attribution. The
+Session's `createdBy` records the creator
+even when creation has no initial prompt. Each input records its own author,
+so a human and an Agent can send messages under the same account in one Session.
+Earlier records can lack provenance. Input authors and the people selecting
 those inputs for steering are recorded separately. Default backlog dispatch is
 a system action. The target machine is the daemon's catalog identity.
 

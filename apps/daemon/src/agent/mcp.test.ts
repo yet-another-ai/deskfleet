@@ -44,7 +44,7 @@ test("delegation is reauthorized per call, bound to its originating scope and re
   await gateway.init()
   t.after(() => gateway.close())
   assert.deepEqual(gateway.lease("2", "3", { kind: "local_token" }).servers, [])
-  const lease = gateway.lease("2", "3", actor)
+  const lease = gateway.lease("2", "3", { ...actor, via: "super_agent_mcp" })
   const call = invoke(lease)
   assert.equal(await call("deskfleet_context", {}), "ok")
   assert.equal(checks, 1)
@@ -210,15 +210,26 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   assert.equal(localCreated.session.workspaceId, localWorkspace.id)
   assert.equal(localCreated.session.lifecycle, "ready")
   assert.equal(localCreated.inputs.length, 1)
+  const localSender = { ...actor, via: "mcp" }
+  assert.deepEqual(localCreated.session.createdBy, localSender)
+  assert.deepEqual(localCreated.inputs[0]?.author, localSender)
 
   const localSent = await call("deskfleet_session_send", { sessionId: localCreated.session.id, prompt: "Second local message" }) as { sessionId: string; inputId: string }
   assert.equal(localSent.sessionId, localCreated.session.id)
   assert.ok(localSent.inputId)
+  assert.deepEqual((await localSessions.journal.read(localCreated.session.id)).inputs.find(input => input.id === localSent.inputId)?.author, localSender)
+  const manual = await localSessions.handle("_deskfleet/input/submit", {
+    sessionId: localCreated.session.id, operationId: randomUUID(), content: [{ type: "text", text: "My own follow-up" }], delivery: "backlog",
+  }, actor) as { inputId: string }
+  assert.deepEqual((await localSessions.journal.read(localCreated.session.id)).inputs.find(input => input.id === manual.inputId)?.author, actor)
 
   const remoteWorkspaceCreated = await call("deskfleet_remote_session_create", { machineId: "2", workspaceId: remoteWorkspace.id, provider: "codex", title: "Remote workspace task", prompt: "Run remote checks" }) as AgentSnapshot
   assert.equal(remoteWorkspaceCreated.session.workspaceId, remoteWorkspace.id)
   assert.equal(remoteWorkspaceCreated.session.lifecycle, "ready")
   assert.equal(remoteWorkspaceCreated.inputs.length, 1)
+  const remoteSender = { ...localSender, sourceMachine: { id: "1", originId: "source-origin" } }
+  assert.deepEqual(remoteWorkspaceCreated.session.createdBy, remoteSender)
+  assert.deepEqual(remoteWorkspaceCreated.inputs[0]?.author, remoteSender)
 
   const remoteHomeCreated = await call("deskfleet_remote_session_create", { machineId: "2", provider: "codex", title: "Remote home task", prompt: "Inspect remote home" }) as AgentSnapshot
   assert.equal(remoteHomeCreated.session.workspaceId, undefined)
@@ -229,6 +240,7 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   const remoteSent = await call("deskfleet_remote_session_send", { machineId: "2", sessionId: remoteHomeCreated.session.id, prompt: "Follow up on remote home" }) as { sessionId: string; inputId: string }
   assert.equal(remoteSent.sessionId, remoteHomeCreated.session.id)
   assert.ok(remoteSent.inputId)
+  assert.deepEqual((await remoteSessions.journal.read(remoteHomeCreated.session.id)).inputs.find(input => input.id === remoteSent.inputId)?.author, remoteSender)
   assert.notEqual(parent.session.id, localCreated.session.id)
 
   await assert.rejects(call("deskfleet_workspace_create", { name: "Blocked from workspace", directories: [{ path: newLocalDir }] }), /outside/)
@@ -241,8 +253,23 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   assert.equal(localNewWorkspace.name, "Local Created Workspace")
   const delegatedIntoCreated = await machineCall("deskfleet_session_create", { workspaceId: localNewWorkspace.id, provider: "codex", title: "Created workspace task" }) as AgentSnapshot
   assert.equal(delegatedIntoCreated.session.workspaceId, localNewWorkspace.id)
+  assert.deepEqual(delegatedIntoCreated.session.createdBy, localSender)
   assert.equal(delegatedIntoCreated.session.yolo, undefined)
   assert.notEqual(machineSession.session.id, delegatedIntoCreated.session.id)
+
+  const superSession = await localSessions.handle("_deskfleet/session/create", {
+    workspaceId: localWorkspace.id, operationId: randomUUID(), provider: "codex", context: "directory", superAgent: true,
+  }, actor) as AgentSnapshot
+  const superCall = invoke({ servers: localProvider.servers.at(-1)!, close() {} })
+  const child = await superCall("deskfleet_session_create", { workspaceId: localWorkspace.id, provider: "codex", prompt: "Review" }) as AgentSnapshot
+  const superSender = { ...actor, via: "super_agent_mcp" }
+  assert.deepEqual(child.session.createdBy, superSender)
+  assert.deepEqual(child.inputs[0]?.author, superSender)
+  const childCall = invoke({ servers: localProvider.servers.at(-1)!, close() {} })
+  const reply = await childCall("deskfleet_session_send", { sessionId: superSession.session.id, prompt: "Reviewed" }) as { inputId: string }
+  assert.deepEqual((await localSessions.journal.read(superSession.session.id)).inputs.find(input => input.id === reply.inputId)?.author, localSender)
+  const followUp = await superCall("deskfleet_session_send", { sessionId: child.session.id, prompt: "Continue" }) as { inputId: string }
+  assert.deepEqual((await localSessions.journal.read(child.session.id)).inputs.find(input => input.id === followUp.inputId)?.author, superSender)
 
   const yoloParent = await localSessions.handle("_deskfleet/session/create", { workspaceId: localWorkspace.id, operationId: randomUUID(), provider: "codex", context: "directory", yolo: true }, actor) as AgentSnapshot
   assert.equal(yoloParent.session.yolo, true)

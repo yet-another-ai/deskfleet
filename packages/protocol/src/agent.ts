@@ -11,6 +11,8 @@ export const AGENT_HISTORY_MAX_EVENTS = 1000
 
 export interface AgentActor {
   kind: "local_token" | "user" | "system"
+  /** A Session Agent or Super Agent acted through MCP using this principal's authority. */
+  via?: "mcp" | "super_agent_mcp"
   userId?: string
   sourceMachine?: { originId: string; id: string }
   deviceId?: string
@@ -57,6 +59,8 @@ export interface AgentSessionRecord {
   yoloActor?: AgentActor
   /** Whether this Session acts as a Team Super Agent with cross-workspace delegation. */
   superAgent?: boolean
+  /** Actor recorded with the creation command. Absent on older Sessions. */
+  createdBy?: AgentActor
   createdAt: string
   updatedAt: string
   capabilities?: { steering: boolean; resume: boolean; fork?: boolean; additionalDirectories?: boolean; promptCapabilities?: AgentPromptCapabilities }

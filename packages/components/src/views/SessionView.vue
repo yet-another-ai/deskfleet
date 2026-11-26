@@ -12,6 +12,7 @@ import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "@deskfleet/protocol/agent"
 import SessionHeader from "../components/session/SessionHeader.vue"
+import McpActorBadge from "../components/session/McpActorBadge.vue"
 import SessionConversationPane from "../components/session/SessionConversationPane.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import { newTerminalWindowKey, windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
@@ -233,6 +234,7 @@ function openInNewWindow(): void {
     <template #actions>
       <div v-if="snapshot || faces.length" data-session-window-actions class="app-no-drag flex items-center gap-1">
         <template v-if="snapshot">
+          <McpActorBadge v-if="snapshot.session.createdBy?.via" :actor="snapshot.session.createdBy" creator class="mr-1" />
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
           <UiButton v-if="newTerminalWindow && !compact" variant="ghost" size="icon" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="compact && !windowedMainWindow && terminalWorktree" variant="ghost" size="icon" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>

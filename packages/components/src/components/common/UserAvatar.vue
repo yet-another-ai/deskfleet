@@ -13,7 +13,11 @@ const props = defineProps<{
 }>()
 const src = ref<string>()
 const failed = ref(false)
-const initials = computed(() => avatarInitials(props.name))
+const initials = computed(() => {
+  const letters = avatarInitials(props.name)
+  // A corner badge has room for one legible initial.
+  return props.size <= 16 ? letters.slice(0, 1) : letters
+})
 const fontSize = computed(() => Math.max(8, Math.round(props.size * (initials.value.length > 1 ? 0.34 : 0.45))))
 
 watchImmediate(() => [props.email, props.size] as const, ([email, size], _, onCleanup) => {

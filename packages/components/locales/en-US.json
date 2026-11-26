@@ -1510,6 +1510,12 @@
       "cost": "Session cost"
     },
     "localUser": "Local user",
+    "mcpAttribution": {
+      "ai": "AI",
+      "sent": "Sent by {sender}",
+      "created": "Session created by {sender}",
+      "authorizedBy": "Authorized by {name}"
+    },
     "presenceHere": "{name} is viewing",
     "presenceVisited": "{name} viewed this session",
     "presenceMore": "{count} more",
