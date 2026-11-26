@@ -86,7 +86,7 @@ ownership and explicit Site Admin boundary.
   A subsequent message resumes the provider where supported; a subsequent
   terminal start creates a new shell and preserves prior terminal history.
 - Expose Session deletion through authenticated APIs and the archived Sessions
-  page's hold confirmation. It removes local Session records and owned resources;
+  page's confirmation dialog. It removes local Session records and owned resources;
   archive retains conversation/tool content and full audit. Central content
   erasure and metadata-only audit are separate work.
 - Treat existing unauthenticated local data as development data. The first
@@ -283,7 +283,7 @@ use starts the needed processes under the
 existing provider resume rules. An ended PTY is not revived; a newly opened
 terminal gets its own identity while old transcripts remain available.
 Archived Sessions still belong to their Workspace and prevent its deletion.
-The archived Sessions page also offers deletion with hold confirmation. This
+The archived Sessions page also offers deletion with explicit confirmation. This
 removes the local Session and Worktree records, remaining generated checkouts,
 retained refs/manifests, attachments, and owned terminal records. Directory
 Session source files are untouched.
@@ -374,7 +374,7 @@ Acceptance also covers:
   identity and history, returns the Session to the active list,
   and starts no processes or backlog dispatch. Subsequent messages or terminal
   use start only the required processes; archived history views never do so.
-- Electron and Web expose deletion on the archived Sessions page with hold
+- Electron and Web expose deletion on the archived Sessions page with explicit
   confirmation. It removes local Session records and owned resources, including
   retained worktree refs, while leaving source directories untouched.
 - PostgreSQL server integration and SQLite daemon behavior are tested at their

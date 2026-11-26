@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { BrowserNotifications, getBrowserNotificationPermission, requestBrowserNotificationPermission } from "./browser-notifications.ts"
+import { browserNotificationChanges } from "./browser-notification-settings.ts"
 import type { NotificationSettings } from "./settings.ts"
 import type { TaskNotification } from "./task-notification-monitor.ts"
 
@@ -50,9 +51,12 @@ function expectReleased(notification: BrowserNotification): void {
 test("requests default permission immediately in the caller's user gesture", async () => {
   BrowserNotification.permission = "default"
   expect(getBrowserNotificationPermission()).toBe("default")
+  const changed = vi.fn()
+  browserNotificationChanges.addEventListener("change", changed, { once: true })
   const result = requestBrowserNotificationPermission()
   expect(BrowserNotification.requestPermission).toHaveBeenCalledOnce()
   expect(await result).toBe("granted")
+  expect(changed).toHaveBeenCalledOnce()
 })
 
 test.each(["granted", "denied"] as const)("does not request permission again when %s", async permission => {

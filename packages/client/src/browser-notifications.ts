@@ -1,4 +1,5 @@
 import type { SettingsApi } from "./settings.ts"
+import { browserNotificationChanges } from "./browser-notification-settings.ts"
 import type { TaskNotification } from "./task-notification-monitor.ts"
 
 export type BrowserNotificationPermission = NotificationPermission | "unsupported"
@@ -11,7 +12,10 @@ export function getBrowserNotificationPermission(): BrowserNotificationPermissio
 /** Call directly from a user gesture, before any asynchronous work. */
 export async function requestBrowserNotificationPermission(): Promise<BrowserNotificationPermission> {
   const permission = getBrowserNotificationPermission()
-  return permission === "default" ? Notification.requestPermission() : permission
+  if (permission !== "default") return permission
+  const result = await Notification.requestPermission()
+  browserNotificationChanges.dispatchEvent(new Event("change"))
+  return result
 }
 
 /** Owns every notification for the current browser page and account. */

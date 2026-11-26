@@ -146,7 +146,6 @@ export function useComposerCompletions(options: {
     options.draft.value = after
   }
   function keydown(event: KeyboardEvent): boolean {
-    if (event.isComposing || composing.value) return true
     if (!trigger.value) return false
     if (event.key === "Escape") { event.preventDefault(); dismissed.value = triggerKey.value; return true }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {

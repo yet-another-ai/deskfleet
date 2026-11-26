@@ -114,6 +114,29 @@ test("late results from a previous query cannot replace current suggestions", as
   expect(wrapper.get("[data-composer-completions]").text()).not.toContain("README.md")
 })
 
+test.each([
+  { draft: "日本語", afterEnter: "日本語", submits: 1 },
+  { draft: "/確認", afterEnter: "/確認する ", submits: 0 },
+])("IME confirmation after compositionend preserves the draft $draft", async ({ draft, afterEnter, submits }) => {
+  const configuration: AgentConfiguration = {
+    provider: { id: "test", name: "Test" }, models: null, modes: null, reasoningEfforts: null,
+    commands: [{ name: "確認する", description: "Confirm" }], skills: [],
+  }
+  const { wrapper, textarea, type } = fixture(configuration)
+  await type(draft)
+  await textarea.trigger("compositionstart")
+  await textarea.trigger("compositionend")
+  await flushPromises()
+
+  await textarea.trigger("keydown", { key: "Enter", keyCode: 229, isComposing: false })
+  expect(wrapper.emitted("submit")).toBeUndefined()
+  expect(wrapper.props("modelValue")).toBe(draft)
+
+  await textarea.trigger("keydown", { key: "Enter", keyCode: 13 })
+  expect(wrapper.props("modelValue")).toBe(afterEnter)
+  expect(wrapper.emitted("submit") ?? []).toHaveLength(submits)
+})
+
 test("Enter waits for pending reference suggestions instead of submitting a literal query", async () => {
   const { wrapper, textarea, type, search } = fixture()
   let finish!: (value: ComposerReferenceResult) => void

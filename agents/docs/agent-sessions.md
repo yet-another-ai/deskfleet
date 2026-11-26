@@ -189,8 +189,10 @@ the resource details panel and retains the last Conversations destination within
 mounted machine scope. A fresh machine scope resets that destination to New session.
 Reading a Session opens its history without restoring it. The restore action confirms
 before restoring and opening the Session; failures retain the confirmation for retry.
-Each archived row also offers Delete, with a hold-to-confirm button. Deletion
-removes the Session from the list; failures remain in the dialog for retry.
+Each archived row offers Delete. Its confirmation dialog initially focuses Cancel.
+Pointer users hold Delete for 1.2 seconds. Keyboard and assistive technology users
+can activate the dialog's Delete button directly. Deletion removes the Session
+from the list. Failures remain in the dialog for retry.
 Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Offline
 history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
@@ -839,6 +841,8 @@ The textarea offers completions at the cursor for `@` files and Sessions, `$`
 skills, and `/` commands at the start of a message. Selected file, Session, and
 skill identities remain associated with their text and appear as removable
 reference chips. Editing a selected token turns it back into ordinary text.
+Enter used to confirm an input method candidate leaves the draft in the
+composer. A subsequent Enter can accept a completion or send the draft.
 References and attachments share prompt serialization before the durable input
 is submitted, including on new-Session creation.
 
@@ -1138,7 +1142,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; reclaim/recreate generated checkouts, preserve history, and require an online daemon |
-| `_deskfleet/session/delete` | Delete local Session records and owned resources, including retained worktree refs; the archived Sessions page requires hold confirmation |
+| `_deskfleet/session/delete` | Delete local Session records and owned resources, including retained worktree refs. The archived Sessions page prompts for confirmation. |
 | `_deskfleet/session/rename` | Rename an active or archived Session through management RPC or ACP; preserve execution and record the customized title |
 
 Conversation ACP notifications, including provider Session IDs, are carried in

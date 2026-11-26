@@ -482,7 +482,7 @@ Administrators cannot remove or demote the owner; the owner must transfer
 ownership to an existing active, verified member before leaving. The former owner
 becomes an administrator. Members can enroll their own machines, configure Providers,
 create or delete Workspaces, and create, archive, restore, or delete Sessions.
-The archived Sessions page exposes deletion after a hold-to-confirm action.
+The archived Sessions page asks for [explicit confirmation before deletion](agent-sessions.md#archive-and-restore-in-the-backend-release).
 Per-Workspace sharing rules are not part of the initial role model. Server and
 daemon authorization still checks the requested action and Team rather than
 treating a connected peer as authority.
@@ -1205,9 +1205,12 @@ from the OS installer package name:
 Web clients use the browser Notifications API for task completion and pending
 input alerts while the page is running. Web and Electron share the account-wide
 task monitor, including its history baseline and event deduplication. The Web
-account shell owns its monitor and live notifications across machine changes;
-leaving the page stops observation, and account changes dismiss existing alerts.
-Returning from the browser's page cache starts a fresh monitor.
+account shell owns its monitor and live notifications across machine changes.
+It observes Sessions only while browser permission is granted, the notification
+switch is on, and at least one alert type is enabled. Losing eligibility or
+leaving the page stops observation and dismisses live alerts. Re-enabling
+alerts or returning from the browser's page cache starts a fresh baseline
+when eligible. Account changes also dismiss existing alerts.
 
 Browser onboarding offers an explicit **Enable notifications** action before
 continuing into the account UI. Only that click, or the corresponding action in
