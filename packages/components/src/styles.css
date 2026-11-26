@@ -611,13 +611,13 @@ span[style*="--shiki-light"] {
   display: block;
   color: var(--ui-color-focus);
 }
-:is(.ui-mermaid [data-mermaid-stage], .ui-preview [data-preview-stage]) svg {
+.ui-preview :is([data-mermaid-stage], [data-preview-stage]) svg {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 0 auto;
 }
-:is([data-mermaid-located="true"], [data-preview-located="true"], [data-conversation-located="true"]) {
+:is([data-preview-located="true"], [data-conversation-located="true"]) {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: 2px;
 }

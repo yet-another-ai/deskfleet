@@ -105,7 +105,7 @@ defineExpose({ items })
       :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
       <ConversationRowContent :observe="canObserve ? observe : undefined" :eager="eager" :heights="readingState.rowHeights" :row-id="entryKey(entry)" :estimate="entry.kind === 'input' ? 80 : 384"
         :pinned="printing || entry === displayedTranscript.at(-1) || (entry.kind === 'response' && entry.live) || located?.rowId === entry.id">
-        <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :disclosure-id="entryKey(entry)" :animate-send="entry.id === lastInputId" :unattributed-label="unattributedUserLabel" />
+        <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :entry-id="entry.id" :disclosure-id="entryKey(entry)" :animate-send="entry.id === lastInputId" :unattributed-label="unattributedUserLabel" />
         <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === displayedTranscript.at(-1)" :fork-disabled="forkDisabled" :locate-entry="located?.rowId === entry.id ? located.entryId : undefined" @fork="emit('fork')" />
       </ConversationRowContent>
     </li>

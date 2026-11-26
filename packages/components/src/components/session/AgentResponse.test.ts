@@ -3,7 +3,7 @@ import { defineComponent, h, type PropType } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
 import type { ConversationResponse, ConversationStep, ConversationTool } from "../../services/agent-conversation.ts"
-import { pendingMermaidLocate } from "../../stores/layout.ts"
+import { pendingPreviewLocate } from "../../stores/previews.ts"
 import { agentElicitation, agentInput, agentPermission } from "../../test/agent.ts"
 import AgentResponse from "./AgentResponse.vue"
 import AgentConversation from "./AgentConversation.vue"
@@ -11,7 +11,7 @@ import AgentConversation from "./AgentConversation.vue"
 const wrappers: VueWrapper[] = []
 afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
-  pendingMermaidLocate.value = null
+  pendingPreviewLocate.value = null
   vi.unstubAllGlobals()
 })
 
@@ -251,11 +251,11 @@ test.each([true, false])("locating a thought diagram opens its response and grou
   })
   wrappers.push(view)
   expect(view.findComponent(AgentResponse).exists()).toBe(false)
-  pendingMermaidLocate.value = { id: 1, sessionId: "another-session", code }
+  pendingPreviewLocate.value = { id: 1, sessionId: "another-session", content: code }
   await flushPromises()
   expect(view.findComponent(AgentResponse).exists()).toBe(false)
 
-  pendingMermaidLocate.value = { id: 2, sessionId: "30", code, ...(withEntryId ? { entryId: "diagram" } : {}) }
+  pendingPreviewLocate.value = { id: 2, sessionId: "30", content: code, ...(withEntryId ? { entryId: "diagram" } : {}) }
   await flushPromises()
 
   expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")

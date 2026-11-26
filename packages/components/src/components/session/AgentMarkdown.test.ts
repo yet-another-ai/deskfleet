@@ -13,7 +13,7 @@ import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appeara
 import { useLayoutStore } from "../../stores/layout.ts"
 import { performPreviewLocateDom } from "../../stores/previews.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
-import MermaidViewer from "./MermaidViewer.vue"
+import PreviewViewer from "./PreviewViewer.vue"
 
 const originalFiles = client.files
 let wrapper: VueWrapper | undefined
@@ -139,8 +139,6 @@ test.each([
   expect(view.get(tag).attributes("controls")).toBeDefined()
   expect((create.mock.calls[0]![0] as Blob).type).toBe(mimeType)
   expect(view.find('[data-preview-action="focus"]').exists()).toBe(true)
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   expect(view.find('[data-preview-action="show-in-right-tab"]').exists()).toBe(true)
   expect(view.find('[data-preview-action="show-in-new-window"]').exists()).toBe(true)
   await view.setProps({ text: "Recording removed" })
@@ -247,58 +245,65 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   const view = render({}, "```mermaid\ngraph TD\n  A --> B\n```\n\n```mermaid\ninvalid diagram\n```\n\n$$\n\\int_0^1 x^2 \\, dx = \\frac{1}{3}\n$$")
   await flushPromises()
 
-  expect(view.find('[data-mermaid="0"] svg[data-test-mermaid="ok"]').exists()).toBe(true)
-  expect(view.get('[data-mermaid="1"] pre code').text()).toBe("invalid diagram")
-  expect(view.find('[data-mermaid-action="locate-message"]').exists()).toBe(false)
+  expect(view.find('[data-preview="mermaid-0"] svg[data-test-mermaid="ok"]').exists()).toBe(true)
+  expect(view.get('[data-preview="mermaid-1"] pre code').text()).toBe("invalid diagram")
+  expect(view.find('[data-preview-action="locate-message"]').exists()).toBe(false)
 
-  const stage = view.get('[data-mermaid="0"] [data-mermaid-stage]')
-  await view.get('[data-mermaid-action="zoom-in"]').trigger("click")
+  const stage = view.get('[data-preview="mermaid-0"] [data-mermaid-stage]')
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="zoom-in"]').trigger("click")
   expect(stage.attributes("style")).toContain("scale(1)")
   await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(1.25)")
-  await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
-  await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="zoom-out"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="zoom-out"]').trigger("click")
   await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(0.75)")
-  await view.get('[data-mermaid-action="reset"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="reset"]').trigger("click")
   await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("translate(0px, 0px) scale(1)")
 
-  await view.get('[data-mermaid-action="focus"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="focus"]').trigger("click")
   await flushPromises()
-  expect(router.currentRoute.value.query.mermaid).toBe("graph TD\n  A --> B")
+  expect(router.currentRoute.value.query.previewText).toBe("graph TD\n  A --> B")
+  expect(router.currentRoute.value.query.previewKind).toBe("mermaid")
 
-  await view.get('[data-mermaid-action="more"]').trigger("click")
-  await flushPromises()
-  await view.get('[data-mermaid-action="copy"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="copy"]').trigger("click")
   await flushPromises()
   expect(writeText).toHaveBeenCalledWith("graph TD\n  A --> B")
 
-  await view.get('[data-mermaid-action="more"]').trigger("click")
-  await flushPromises()
-  expect(view.get('[data-mermaid-action="show-in-right-tab"]').text()).toBe("Show in new tab on the right")
-  await view.get('[data-mermaid-action="show-in-right-tab"]').trigger("click")
+  expect(view.get('[data-preview="mermaid-0"] [data-preview-action="show-in-right-tab"]').attributes("aria-label")).toBe("Show in new tab on the right")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="show-in-right-tab"]').trigger("click")
   expect(useLayoutStore().sessionWindowRequest).toMatchObject({
-    kind: "mermaid",
-    code: "graph TD\n  A --> B",
-    source: { sessionId: "12", diagramId: "0" },
+    kind: "preview",
+    item: {
+      kind: "mermaid",
+      text: "graph TD\n  A --> B",
+      source: { sessionId: "12", itemId: "mermaid-0" },
+    },
   })
 
-  await view.get('[data-mermaid-action="more"]').trigger("click")
-  await flushPromises()
-  await view.get('[data-mermaid-action="show-in-new-window"]').trigger("click")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="show-in-new-window"]').trigger("click")
   expect(openSpy).toHaveBeenCalledOnce()
-  expect(openSpy.mock.calls[0]![0]).toContain("#/mermaid?code=graph+TD%0A++A+--%3E+B&sessionId=12&diagramId=0")
+  expect(openSpy.mock.calls[0]![0]).toContain("#/preview?kind=mermaid&text=graph+TD%0A++A+--%3E+B&sessionId=12&itemId=mermaid-0")
 
-  const inlineDiagram = view.get('[data-mermaid="0"]').element as HTMLElement
+  // Switch inline Mermaid diagram to source and back via the unified segmented switcher.
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="source"]').trigger("click")
+  await flushPromises()
+  expect(view.get('[data-preview="mermaid-0"] pre code').text()).toBe("graph TD\n  A --> B")
+  expect(view.get('[data-preview="mermaid-0"] [data-preview-action="source"]').attributes("aria-pressed")).toBe("true")
+  await view.get('[data-preview="mermaid-0"] [data-preview-action="preview-mermaid"]').trigger("click")
+  await flushPromises()
+  expect(view.find('[data-preview="mermaid-0"] svg[data-test-mermaid="ok"]').exists()).toBe(true)
+
+  const inlineDiagram = view.get('[data-preview="mermaid-0"]').element as HTMLElement
   const scrollIntoView = vi.spyOn(springScroll, "springScrollIntoView")
-  const windowViewer = mount(MermaidViewer, {
+  const windowViewer = mount(PreviewViewer, {
     attachTo: document.body,
-    props: { code: "graph TD\n  A --> B", mode: "window", source: { sessionId: "12", diagramId: "0" } },
+    props: { kind: "mermaid", text: "graph TD\n  A --> B", mode: "window", source: { sessionId: "12", itemId: "mermaid-0" } },
     global: { plugins: [i18n, router] },
   })
   await flushPromises()
-  await windowViewer.get('[data-mermaid-action="locate-message"]').trigger("click")
+  await windowViewer.get('[data-preview-action="locate-message"]').trigger("click")
   await flushPromises()
   expect(scrollIntoView).toHaveBeenCalledWith(inlineDiagram)
-  expect(inlineDiagram.dataset.mermaidLocated).toBe("true")
+  expect(inlineDiagram.dataset.previewLocated).toBe("true")
   windowViewer.unmount()
 
   const copyButton = view.get("[data-math-copy]")

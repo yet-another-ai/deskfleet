@@ -29,7 +29,7 @@ import { computed, inject, onBeforeUnmount, provide, reactive, ref, useId } from
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import { agentMarkdownParseOptions, createAgentMarkdownParser } from "../../services/agent-markdown.ts"
-import { previewKindFromMime } from "../../services/preview.ts"
+import { conversationEntryIdKey, previewKindFromMime } from "../../services/preview.ts"
 import { usePreviewActions } from "../../stores/previews.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
@@ -42,6 +42,7 @@ const parseMarkdown = createAgentMarkdownParser(useId())
 const nodes = computed(() => parseMarkdown(props.text, props.final ?? true))
 const { t } = useI18n()
 const { openResourceFromAction } = usePreviewActions()
+const injectedEntryId = inject(conversationEntryIdKey, computed(() => undefined))
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
 const resource = ref<FileResourceRequest>()
@@ -164,7 +165,7 @@ async function click(event: MouseEvent): Promise<void> {
   if (!files.value || !context.value) { error.value = t("files.resourceUnavailable"); return }
   error.value = undefined
   const uri = link.dataset.resourceLink!
-  const entryId = link.closest<HTMLElement>("[data-conversation-entry]")?.dataset.conversationEntry
+  const entryId = injectedEntryId.value
   const nextResource = resourceRequest(context.value, uri)
   const rawName = uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1)
   let fileName = rawName

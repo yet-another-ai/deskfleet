@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import MermaidViewer from "./MermaidViewer.vue"
+import PreviewViewer from "./PreviewViewer.vue"
 
 const flowchartCode = `flowchart LR
   Client["Desktop Client"] --> Peer["WebRTC DataChannel"]
@@ -8,19 +8,20 @@ const flowchartCode = `flowchart LR
   Daemon --> Git["Git Worktree"]`
 
 const meta = {
-  title: "Domain/Markdown & Diagrams/MermaidViewer",
-  component: MermaidViewer,
+  title: "Domain/Markdown & Diagrams/MermaidPreview",
+  component: PreviewViewer,
   tags: ["autodocs"],
   args: {
-    code: flowchartCode,
+    kind: "mermaid",
+    text: flowchartCode,
     mode: "inline",
     source: {
       sessionId: "sess-1",
       entryId: "message-5",
-      diagramId: "0",
+      itemId: "mermaid-0",
     },
   },
-} satisfies Meta<typeof MermaidViewer>
+} satisfies Meta<typeof PreviewViewer>
 
 export default meta
 type Story = StoryObj<typeof meta>

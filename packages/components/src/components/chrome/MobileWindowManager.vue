@@ -7,13 +7,14 @@ import { truncateGeneratedTitle } from "@deskfleet/protocol/titles"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useMobileViewportSwipe } from "../../composables/useMobileViewportSwipe.ts"
+import { previewDefaultTitle } from "../../services/preview.ts"
 import {
   formatWebPreviewTabTitle,
   isWebPreviewSupported,
   normalizeWebPreviewUrl,
 } from "../../services/web-preview.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
-import { pendingMermaidLocate, useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
+import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { pendingPreviewLocate } from "../../stores/previews.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import ErrorNotice from "../common/ErrorNotice.vue"
@@ -139,15 +140,15 @@ watch(() => layout.detailsOpen, open => {
 })
 watch(() => layout.sessionWindowRequest, request => {
   if (!request) return
-  const title = request.kind === "mermaid" ? t("mermaid.title")
-    : request.kind === "resource" ? (request.item.title || request.item.request.uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1) || request.item.request.uri)
-    : request.item.title || (request.item.kind === "image" ? t("agent.image") : t("agent.contentType", { type: request.item.kind }))
+  const title = request.kind === "resource"
+    ? (request.item.title || request.item.request.uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1) || request.item.request.uri)
+    : request.item.title || previewDefaultTitle(request.item.kind, t)
   const id = `preview:${request.id}`
   previews.value.push({ id, kind: "preview", title, request })
   selectId(id)
 })
-watch([pendingPreviewLocate, pendingMermaidLocate], requests => {
-  if (requests.some(request => request && (!request.sessionId || request.sessionId === props.sessionId))) selectId("chat")
+watch(pendingPreviewLocate, request => {
+  if (request && (!request.sessionId || request.sessionId === props.sessionId)) selectId("chat")
 }, { flush: "sync" })
 
 if (!terminals.loaded) void terminals.refresh()

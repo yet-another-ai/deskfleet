@@ -48,7 +48,7 @@ const detailsOpen = useConversationDisclosure(() => `remote:${props.disclosureId
       </div>
     </header>
     <div v-if="remote.images.length" class="flex flex-col gap-2 px-3 pb-3">
-      <PreviewViewer v-for="(image, index) in remote.images" :key="index" class="remote-mcp-preview" :data-preview="`remote-image-${index}`" kind="image" :content="`data:${image.mimeType};base64,${image.data}`" :mime-type="image.mimeType" :title="t('agent.remoteMcp.screenshot', { machine: machineName, action })" mode="inline" />
+      <PreviewViewer v-for="(image, index) in remote.images" :key="index" class="remote-mcp-preview" :source="{ itemId: `remote-image-${index}` }" kind="image" :content="`data:${image.mimeType};base64,${image.data}`" :mime-type="image.mimeType" :title="t('agent.remoteMcp.screenshot', { machine: machineName, action })" mode="inline" />
     </div>
     <CollapsibleRoot :open="detailsOpen ?? false" @update:open="detailsOpen = $event" class="border-t border-ui-border">
       <CollapsibleTrigger type="button" data-remote-mcp-details class="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-xs text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text">

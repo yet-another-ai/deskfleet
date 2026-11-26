@@ -36,7 +36,7 @@ const meta = {
     components: { PreviewViewer },
     setup() {
       // Vite asset paths are browser URLs, not paths on the session's machine.
-      const content = computed(() => new URL(args.content, window.location.href).href)
+      const content = computed(() => args.content ? new URL(args.content, window.location.href).href : undefined)
       const frameStyle = computed(() => ({
         width: "100%",
         maxWidth: args.mode === "focus" ? "none" : args.mode === "inline" ? "640px" : "800px",

@@ -47,12 +47,8 @@ test.each(["docx", "xlsx", "pptx"] as const)("routes remote %s bytes to Office p
   expect(view.find("pre").exists()).toBe(false)
   expect(createUrl).toHaveBeenCalledOnce()
 
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   await view.get('[data-preview-action="download"]').trigger("click")
   expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe(name)
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   await view.get('[data-preview-action="show-in-new-window"]').trigger("click")
   const url = String(open.mock.calls[0]![0])
   const params = new URLSearchParams(url.split("?")[1])
@@ -79,8 +75,6 @@ test("loads an Office resource in a reopened preview using the existing scoped f
   await vi.waitFor(() => expect(view.findComponent(OfficePreview).exists()).toBe(true))
   expect(readResource).toHaveBeenCalledExactlyOnceWith(request)
   expect(view.getComponent(OfficePreview).props()).toMatchObject({ kind: "pptx", src: "blob:slides", data, mode: "window" })
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
   await view.get('[data-preview-action="open"]').trigger("click")
   expect(openResource).toHaveBeenCalledExactlyOnceWith(request)
@@ -102,17 +96,13 @@ test.each(["dialog", "tab"] as const)("opens and reveals local Office files with
   const view = mount(AgentResourceViewer, { props: { api, request, mode }, global, attachTo: document.body })
   await flushPromises()
   await vi.waitFor(() => expect(view.findComponent(OfficePreview).exists()).toBe(true))
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
   const actions = view.findAll('[data-preview-action="open"]')
   const reveals = view.findAll('[data-preview-action="reveal"]')
-  expect(actions).toHaveLength(mode === "dialog" ? 2 : 1)
-  expect(reveals).toHaveLength(mode === "dialog" ? 2 : 1)
+  expect(actions).toHaveLength(1)
+  expect(reveals).toHaveLength(1)
   for (const action of actions) await action.trigger("click")
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
-  for (const reveal of view.findAll('[data-preview-action="reveal"]')) await reveal.trigger("click")
+  for (const reveal of reveals) await reveal.trigger("click")
   expect(openResource).toHaveBeenCalledTimes(actions.length)
   expect(openResource).toHaveBeenCalledWith(request)
   expect(revealResource).toHaveBeenCalledTimes(reveals.length)
@@ -140,8 +130,6 @@ test("Markdown Office embeds retain their scoped request and native Open action"
   await flushPromises()
   await vi.waitFor(() => expect(view.findComponent(OfficePreview).exists()).toBe(true))
   expect(readResource).toHaveBeenCalledExactlyOnceWith(selected)
-  await view.get('[data-preview-action="more"]').trigger("click")
-  await flushPromises()
   expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
   await view.get('[data-preview-action="open"]').trigger("click")
   await flushPromises()
@@ -151,17 +139,14 @@ test("Markdown Office embeds retain their scoped request and native Open action"
 })
 
 test.each([
-  { content: "https://example.test/preview.docx", host: "resource-0", data: undefined, expected: "https://example.test/preview.docx" },
-  { content: "blob:document", host: "/work/preview.docx", data: new Uint8Array([0x50, 0x4b]), expected: "/work/preview.docx" },
-])("preserves the Office source $expected when opening an inline preview separately", async ({ content, host, data, expected }) => {
+  { content: "https://example.test/preview.docx", itemId: "resource-0", data: undefined, resourceRequest: undefined, expected: "https://example.test/preview.docx" },
+  { content: "blob:document", itemId: "/work/preview.docx", data: new Uint8Array([0x50, 0x4b]), resourceRequest: { ...request, uri: "/work/preview.docx" }, expected: "/work/preview.docx" },
+])("preserves the Office source $expected when opening an inline preview separately", async ({ content, itemId, data, resourceRequest, expected }) => {
   const open = vi.spyOn(window, "open").mockReturnValue(null)
   const view = mount(PreviewViewer, {
-    props: { kind: "docx", content, data },
-    attrs: { "data-preview": host },
+    props: { kind: "docx", content, data, resourceRequest, source: { itemId } },
     global, attachTo: document.body,
   })
-  await flushPromises()
-  await view.get('[data-preview-action="more"]').trigger("click")
   await flushPromises()
   await view.get('[data-preview-action="show-in-new-window"]').trigger("click")
   expect(new URLSearchParams(String(open.mock.calls[0]![0]).split("?")[1]).get("content")).toBe(expected)

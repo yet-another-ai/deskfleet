@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import SpringSurface from "../common/SpringSurface.ts"
-import { Download, Ellipsis, ExternalLink, FolderOpen, LocateFixed, Maximize2, PanelRight } from "@lucide/vue"
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
-import { ref } from "vue"
+import { AppWindow, Download, ExternalLink, Eye, FileCode, FolderOpen, LocateFixed, Maximize2, PanelRight } from "@lucide/vue"
+import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { revealResourceLabel } from "../../services/agent-resources.ts"
-import type { PreviewMode, PreviewToolbarAction } from "../../services/preview.ts"
+import type { PreviewMode, PreviewToolbarAction, PreviewView } from "../../services/preview.ts"
 import UiButton from "../common/UiButton.vue"
 
-defineProps<{
+const props = withDefaults(defineProps<{
   mode: PreviewMode
-  actions: PreviewToolbarAction[]
+  title?: string
+  titleTooltip?: string
+  actions?: PreviewToolbarAction[]
+  views?: readonly PreviewView[]
+  activeView?: PreviewView
+  canFocus?: boolean
   canDownload?: boolean
   canOpen?: boolean
   canReveal?: boolean
-  rightTabLabel: string
-}>()
+  canShowInRightTab?: boolean
+  canShowInNewWindow?: boolean
+  canLocateMessage?: boolean
+  rightTabLabel?: string
+}>(), {
+  actions: () => [],
+  views: () => [],
+})
 
 const emit = defineEmits<{
+  selectView: [view: PreviewView]
   focus: []
   download: []
   open: []
@@ -30,50 +40,73 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const client = usePlatformClient()
-const menuOpen = ref(false)
-
-function select(action: () => void): void {
-  menuOpen.value = false
-  action()
-}
+const showViewSwitch = computed(() => props.views.length > 1)
+const showFocus = computed(() => Boolean(props.canFocus && props.mode === "inline"))
+const showLocate = computed(() => Boolean(props.canLocateMessage && props.mode !== "inline" && props.mode !== "dialog"))
+const showRightTab = computed(() => Boolean(props.canShowInRightTab && props.mode !== "tab" && props.mode !== "dialog"))
+const showNewWindow = computed(() => Boolean(props.canShowInNewWindow && props.mode !== "window" && props.mode !== "dialog"))
+const showDownload = computed(() => Boolean(!props.canOpen && !props.canReveal && props.canDownload && props.mode !== "dialog"))
+const showReveal = computed(() => Boolean(props.canReveal && props.mode !== "dialog"))
+const showOpen = computed(() => Boolean(props.canOpen && props.mode !== "dialog"))
+const hasChromeActions = computed(() =>
+  showFocus.value || showLocate.value || showRightTab.value || showNewWindow.value || showReveal.value || showOpen.value || showDownload.value,
+)
+const revealLabel = computed(() => revealResourceLabel(client.platform, t))
+const viewLabel = (view: PreviewView) => t(view === "source" ? "files.viewSource" : "files.preview")
+const viewActionId = (view: PreviewView) => view === "source" ? "source" : `preview-${view}`
 </script>
 
 <template>
-  <div data-preview-toolbar class="app-no-drag absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-ui-border bg-ui-canvas/90 p-0.5 shadow-ui-card backdrop-blur-xs">
-    <UiButton
-      v-for="action in actions"
-      :key="action.id"
-      variant="ghost"
-      size="icon"
-      :label="action.label"
-      :data-preview-action="action.id"
-      @click="action.onClick"
-    ><component :is="action.icon" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-    <UiButton v-if="mode === 'inline'" variant="ghost" size="icon" :label="t('mermaid.focus')" data-preview-action="focus" @click="emit('focus')"><Maximize2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-    <DropdownMenuRoot v-model:open="menuOpen" :modal="false">
-      <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('mermaid.more')" data-preview-action="more"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
-      <DropdownMenuPortal>
-        <DropdownMenuContent :as="SpringSurface" align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex min-w-44 flex-col" loop>
-          <DropdownMenuItem v-if="canOpen" as="button" type="button" class="ui-menu-item" data-preview-action="open" @select="select(() => emit('open'))">
-            <ExternalLink :size="14" aria-hidden="true" />{{ t('files.openResource') }}
-          </DropdownMenuItem>
-          <DropdownMenuItem v-if="canReveal" as="button" type="button" class="ui-menu-item" data-preview-action="reveal" @select="select(() => emit('reveal'))">
-            <FolderOpen :size="14" aria-hidden="true" />{{ revealResourceLabel(client.platform, t) }}
-          </DropdownMenuItem>
-          <DropdownMenuItem v-if="!canOpen && !canReveal && canDownload" as="button" type="button" class="ui-menu-item" data-preview-action="download" @select="select(() => emit('download'))">
-            <Download :size="14" aria-hidden="true" />{{ t('files.downloadResource') }}
-          </DropdownMenuItem>
-          <DropdownMenuItem v-if="mode !== 'tab'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-right-tab" @select="select(() => emit('showInRightTab'))">
-            <PanelRight :size="14" aria-hidden="true" />{{ rightTabLabel }}
-          </DropdownMenuItem>
-          <DropdownMenuItem v-if="mode !== 'window'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-new-window" @select="select(() => emit('showInNewWindow'))">
-            <ExternalLink :size="14" aria-hidden="true" />{{ t('mermaid.showInNewWindow') }}
-          </DropdownMenuItem>
-          <DropdownMenuItem v-if="mode !== 'inline'" as="button" type="button" class="ui-menu-item" data-preview-action="locate-message" @select="select(() => emit('locateMessage'))">
-            <LocateFixed :size="14" aria-hidden="true" />{{ t('mermaid.locateMessage') }}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenuPortal>
-    </DropdownMenuRoot>
-  </div>
+  <header
+    v-if="mode !== 'dialog' || actions.length || showViewSwitch"
+    data-preview-toolbar
+    class="flex shrink-0 items-center justify-between gap-2"
+    :class="mode === 'window'
+      ? ['app-drag titlebar-overlay-inset h-12 border-b border-ui-border pr-3', client.platform === 'darwin' ? 'pl-20' : 'pl-4']
+      : mode === 'dialog'
+        ? 'mb-2 justify-end'
+        : 'min-h-9 border-b border-ui-border px-3 py-1'"
+  >
+    <h1 v-if="mode === 'window'" class="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ui-text" :title="titleTooltip ?? title">{{ title }}</h1>
+    <span v-else-if="mode !== 'dialog'" class="min-w-0 flex-1 truncate text-xs font-medium text-ui-text-muted" :title="titleTooltip ?? title">{{ title }}</span>
+
+    <div role="toolbar" :aria-label="title || t('files.preview')" class="app-no-drag flex shrink-0 items-center gap-0.5">
+      <UiButton
+        v-for="action in actions"
+        :key="action.id"
+        variant="ghost"
+        size="icon"
+        :label="action.label"
+        :aria-pressed="action.pressed !== undefined ? String(action.pressed) : undefined"
+        :data-preview-action="action.id"
+        :class="action.pressed && 'ui-nav-active'"
+        @click="action.onClick"
+      ><component :is="action.icon" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+
+      <span v-if="actions.length && (showViewSwitch || hasChromeActions)" role="separator" aria-orientation="vertical" class="mx-1 h-3.5 border-l border-ui-border" />
+
+      <div v-if="showViewSwitch" role="group" :aria-label="t('files.preview')" data-preview-view-switch class="ui-segmented shrink-0 p-0.5">
+        <button
+          v-for="view in views"
+          :key="view"
+          type="button"
+          :aria-pressed="activeView === view ? 'true' : 'false'"
+          :data-preview-action="viewActionId(view)"
+          class="ui-segment inline-flex min-h-6 min-w-6 items-center gap-1 border-0 bg-transparent px-2 py-0.5 font-medium"
+          :class="activeView === view && 'ui-segment-active'"
+          @click="emit('selectView', view)"
+        ><component :is="view === 'source' ? FileCode : Eye" :size="13" :stroke-width="1.75" aria-hidden="true" /><span>{{ viewLabel(view) }}</span></button>
+      </div>
+
+      <span v-if="showViewSwitch && hasChromeActions" role="separator" aria-orientation="vertical" class="mx-1 h-3.5 border-l border-ui-border" />
+
+      <UiButton v-if="showFocus" variant="ghost" size="icon" :label="t('mermaid.focus')" data-preview-action="focus" @click="emit('focus')"><Maximize2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showLocate" variant="ghost" size="icon" :label="t('mermaid.locateMessage')" data-preview-action="locate-message" @click="emit('locateMessage')"><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showRightTab" variant="ghost" size="icon" :label="rightTabLabel || t('mermaid.showInRightTab')" data-preview-action="show-in-right-tab" @click="emit('showInRightTab')"><PanelRight :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showNewWindow" variant="ghost" size="icon" :label="t('mermaid.showInNewWindow')" data-preview-action="show-in-new-window" @click="emit('showInNewWindow')"><AppWindow :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showReveal" variant="ghost" size="icon" :label="revealLabel" data-preview-action="reveal" @click="emit('reveal')"><FolderOpen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showOpen" variant="ghost" size="icon" :label="t('files.openResource')" data-preview-action="open" @click="emit('open')"><ExternalLink :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton v-if="showDownload" variant="ghost" size="icon" :label="t('files.downloadResource')" data-preview-action="download" @click="emit('download')"><Download :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    </div>
+  </header>
 </template>
