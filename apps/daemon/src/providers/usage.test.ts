@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { runJsonLineExchange } from "../agent/usage.ts"
-import { parseAntigravityUsage } from "@deskfleet/agent-antigravity"
 import { parseClaudeCodeUsage } from "@deskfleet/agent-claude-code"
 import { parseCodexUsage } from "@deskfleet/agent-codex"
 import { parseOmpUsage } from "@deskfleet/agent-omp"
@@ -54,35 +53,6 @@ test("runJsonLineExchange drives a stdio JSON-line exchange, terminates lingerin
     }),
     /timed out after 40ms/,
   )
-})
-
-test("parseAntigravityUsage clamps remaining fractions and surfaces command errors", () => {
-  const stdout = JSON.stringify({
-    status: "SUCCESS",
-    command: {
-      data: {
-        groups: [
-          {
-            name: "Gemini Models",
-            buckets: [
-              { id: "gemini-weekly", name: "Weekly Limit Remaining", remaining_fraction: 0.316, reset_time: "2026-11-14T05:07:24Z" },
-              { id: "gemini-5h", name: "Five Hour Limit Remaining", remaining_fraction: 1.2 },
-            ],
-          },
-          {
-            name: "Claude and GPT models",
-            buckets: [{ id: "3p-5h", name: "Five Hour Limit Remaining", remaining_fraction: -0.1 }],
-          },
-        ],
-      },
-    },
-  })
-  assert.deepEqual(parseAntigravityUsage(stdout), [
-    { id: "gemini-weekly", label: "Weekly Limit Remaining", group: "Gemini Models", remaining: 0.316, resetsAt: "2026-11-14T05:07:24Z" },
-    { id: "gemini-5h", label: "Five Hour Limit Remaining", group: "Gemini Models", remaining: 1 },
-    { id: "3p-5h", label: "Five Hour Limit Remaining", group: "Claude and GPT models", remaining: 0 },
-  ])
-  assert.throws(() => parseAntigravityUsage(JSON.stringify({ status: "ERROR", error: "Not signed in" })), /Not signed in/)
 })
 
 test("parseCodexUsage maps single and multi-bucket rate-limit windows", () => {

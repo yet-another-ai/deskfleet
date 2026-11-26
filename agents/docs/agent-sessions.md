@@ -479,6 +479,13 @@ Antigravity CLI 1.5.15 and later keep `session/prompt` open natively while
 non-daemon background tasks and subagents run. Earlier CLI versions can complete
 a turn before those background tasks finish.
 
+Users can check their account quota with `/usage` in the Antigravity CLI.
+DeskFleet omits the Antigravity quota menu because Google does not support
+wrapping `agy -p` in third-party applications on consumer plans. The former
+menu used this headless mode to run `/usage` when the user opened the agent
+selector. See the [Antigravity FAQ](https://antigravity.google/docs/faq/)
+and [Additional Terms of Service, section 6](https://antigravity.google/terms).
+
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
 default binary. Blank paths use the template default. Overrides are added to the

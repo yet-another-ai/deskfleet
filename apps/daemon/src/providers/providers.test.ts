@@ -99,6 +99,7 @@ test("templates resolve their own binary defaults and cannot change after creati
   assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret", DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "deepseek-harness", ".credentials.yaml") } })
   const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
   assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
+  assert.equal(registry.resolve(antigravity.id).provider.readUsage, undefined)
   assert.equal(registry.snapshot().templates.find(template => template.id === "antigravity")?.defaultBinaryPath, "agy")
   assert.deepEqual(registry.resolve(antigravity.id).config, { name: "Antigravity", binaryPath: "agy", env: { GEMINI_HOME: "/account/antigravity" } })
   assert.throws(() => registry.update(custom.id, { template: "codex", name: "Changed", env: {} } as AgentProviderSettings), /template is fixed/u)

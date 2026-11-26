@@ -105,7 +105,7 @@ export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
   { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" },
   { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp", supportsUsage: true },
   { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
-  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy", supportsUsage: true },
+  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
   { id: "codebuddy", name: "CodeBuddy Code", defaultBinaryPath: "codebuddy" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
