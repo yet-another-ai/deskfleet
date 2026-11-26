@@ -276,7 +276,8 @@ Native media builds use locked CMake 4.4 to compile bundled Opus, plus the host 
 toolchain. CMake 4.2 or newer is required for the Visual Studio 18 2026 generator
 on current GitHub-hosted Windows runners. Opus 0.4 uses `opusic-sys` with its
 default bundled static library; its CMake 3.16 baseline works with CMake 4.
-On macOS install the Xcode command-line tools. Building the GPUI native desktop
+On Apple Silicon, use Xcode 27 for the macOS and iOS SDKs. CI uses Xcode 27.2
+for iOS device and simulator builds. Building the GPUI native desktop
 viewer also requires full Xcode and its Metal Toolchain component. If the active
 developer directory points at CommandLineTools, select Xcode for the command:
 

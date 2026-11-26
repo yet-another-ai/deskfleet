@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
+        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"xcode-27","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
     steps:
       # Rust tests can exhaust low-disk hosted images. Reclaim the unused
       # Android SDK only when the root volume has less than 45 GB free.
@@ -237,8 +237,10 @@ jobs:
       ${{ inputs.run_ios && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
         with:

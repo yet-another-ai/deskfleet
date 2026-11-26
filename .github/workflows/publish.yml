@@ -379,10 +379,10 @@ jobs:
     name: Publish to TestFlight
     needs: [validate, test, build, nix, aur, linux_packages]
     if: ${{ !cancelled() && needs.validate.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.validate.outputs.skip_test == 'true')) && needs.build.result == 'success' && needs.nix.result == 'success' && needs.aur.result == 'success' && needs.linux_packages.result == 'success' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     environment: production
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     timeout-minutes: 30
     permissions:
       contents: read

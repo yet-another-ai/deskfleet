@@ -14,9 +14,8 @@ inputs:
     default: ""
   install-native-deps:
     description: >-
-      Whether to install Linux native desktop viewer dev libraries and locate
-      Windows LLVM libclang. Disable for jobs that do not compile native desktop
-      Rust targets.
+      Install the platform dependencies for native desktop Rust targets, including
+      the macOS Metal compiler, Linux viewer libraries, and Windows LLVM libclang.
     required: false
     default: "true"
   rust-cache:
@@ -53,6 +52,15 @@ runs:
           throw 'NVENC bindings require LLVM with libclang.dll'
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Set up the Metal compiler for the macOS viewer
+      if: runner.os == 'macOS' && inputs.install-native-deps == 'true'
+      shell: bash
+      run: |
+        if ! xcrun --sdk macosx metal --version; then
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --sdk macosx metal --version
+        fi
 
     - name: Install native viewer build libraries
       if: runner.os == 'Linux' && inputs.install-native-deps == 'true'

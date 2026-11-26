@@ -159,14 +159,15 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   the CI mise environment and retries the install once after a transient
   failure: hosted macOS runners have SIGKILL'd rustup during the first attempt.
 - `.github/actions/setup-build/action.yml` calls setup-mise with each job's
-  required tool subset (`tools`), skips Linux desktop viewer dev packages and
-  Windows LLVM lookup when `install-native-deps` is `false`, installs the
-  workspace, and configures shared Cargo caches for the Test and Build workflows.
+  required tool subset (`tools`), installs the workspace, and configures shared
+  Cargo caches for the Test and Build workflows. Native desktop jobs also set up
+  the macOS Metal compiler, Linux viewer libraries, or Windows LLVM libclang.
   It writes a cache restore summary for each job.
 
 The build matrix covers Linux x64/arm64, macOS arm64/x64, and Windows x64. The
-Intel macOS job uses the native `macos-26-intel` runner and the same build and
-packaging steps as Apple Silicon. Each server/daemon archive, such as
+Apple Silicon builds and platform tests use the Xcode 27 SDKs on the
+`xcode-27` runner. Intel packages build natively on `macos-26-intel` with Xcode 26.6
+because Xcode 27 requires an Apple Silicon host. Each server/daemon archive, such as
 `deskfleet-macos-x64.tar.gz`, contains `deskfleet-server` and `deskfleet-daemon`
 (`.exe` on Windows).
 Separate desktop artifacts contain macOS arm64/x64 DMG/ZIP, Windows x64 NSIS, and
@@ -397,8 +398,9 @@ they expire, are revoked, or the required entitlements change.
 both archive and export. Profiles apply only to their owning application targets,
 not SwiftPM libraries. Xcode receives no API credentials or permission to create
 signing assets. Local Debug signing remains automatic, while ordinary CI builds
-without signing. iOS packaging and TestFlight upload select Xcode 26.6 explicitly
-on `macos-26`; changing the pinned toolchain requires a reviewed workflow change.
+without signing. iOS simulator tests, device archives, and TestFlight uploads all
+select Xcode 27.2 on the `xcode-27` runner. The app and its broadcast extension
+build with the iOS 27.2 SDK and target iOS 16 or later.
 Credentials and the installed profiles are removed even when a step fails.
 Failed builds retain the archive result bundle and build/export logs in the
 `deskfleet-ios-diagnostics` artifact for seven days; private keys, keychains,

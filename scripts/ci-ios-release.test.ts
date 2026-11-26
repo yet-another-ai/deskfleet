@@ -47,16 +47,23 @@ test("only profile preparation receives API credentials in the iOS build", () =>
   assert.doesNotMatch(diagnostics, /App\.xcarchive|\.p12|\.p8|mobileprovision/)
 })
 
-test("TestFlight consumes the signed artifact after all release gates using the build's Xcode", () => {
-  const ios = job(workflow("build"), "ios")
+test("the iOS simulator, archive, and TestFlight jobs share the pinned Xcode toolchain", () => {
+  const archive = job(workflow("build"), "ios")
+  const developerDir = archive.match(/DEVELOPER_DIR: (.+)/)?.[1]
+  assert.match(developerDir ?? "", /^\/Applications\/Xcode_27\.\d+(?:\.\d+)?\.app\/Contents\/Developer$/)
+  for (const source of [archive, job(workflow("test"), "ios"), job(workflow("publish"), "testflight")]) {
+    assert.match(source, /^    runs-on: xcode-27$/m)
+    assert.equal(source.match(/DEVELOPER_DIR: (.+)/)?.[1], developerDir)
+  }
+})
+
+test("TestFlight consumes the signed artifact after all release gates", () => {
   const publish = job(workflow("publish"), "testflight")
   assert.match(publish, /needs: \[validate, test, build, nix, aur, linux_packages\]/)
   assert.match(publish, /environment: production/)
   assert.match(publish, /actions\/download-artifact@/)
   assert.match(publish, /name: deskfleet-ios/)
   assert.match(publish, /scripts\/publish-ios-release\.ts ios-release/)
-  assert.equal(publish.match(/DEVELOPER_DIR: (.+)/)?.[1], ios.match(/DEVELOPER_DIR: (.+)/)?.[1])
-  assert.equal(publish.match(/runs-on: (.+)/)?.[1], ios.match(/runs-on: (.+)/)?.[1])
   assert.match(step(publish, "Remove App Store Connect API key"), /always\(\)/)
 })
 
