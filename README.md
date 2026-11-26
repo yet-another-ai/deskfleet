@@ -33,6 +33,10 @@
 </p>
 
 <p align="center">
+  <a href="https://www.producthunt.com/products/deskfleet?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-deskfleet" target="_blank" rel="noopener noreferrer"><img alt="DeskFleet - Run coding agents together across your team’s machines | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1330907&amp;theme=neutral&amp;t=1795705572626"></a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/content/public/demo-desktop-dark.png" />
     <source media="(prefers-color-scheme: light), (prefers-color-scheme: no-preference)" srcset="docs/content/public/demo-desktop-light.png" />
