@@ -63,6 +63,8 @@ export interface AccountSession {
   takeSessionDestination(machineId: string): string | undefined
   createTeam(name: string): Promise<void>
   joinTeam(code: string): Promise<void>
+  /** Deletes the selected Team and opens another one, or onboarding when it was the last. */
+  deleteTeam(): Promise<void>
   renameTeam(name: string): Promise<void>
   /** Registers this computer under the given name, or its hostname. */
   enrollLocal(name?: string): Promise<void>
@@ -319,6 +321,31 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       }
       teams.value = await user.teams()
       await selectTeam(joined.id)
+    },
+    async deleteTeam() {
+      const selected = teamId.value
+      const actor = account.value.user
+      if (!selected) return
+      await user.deleteTeam(selected)
+      if (!actor || account.value.user?.id !== actor.id) return
+      teams.value = teams.value.filter(value => value.id !== selected)
+      if (teamId.value !== selected) return
+      searchPath.value = "/search"
+      machineDestination = undefined
+      const next = teams.value[0]
+      teamId.value = next?.id
+      machineId.value = undefined
+      machines.value = []
+      members.value = []
+      void refreshSuperAgentAvailability()
+      if (!next) {
+        ++machinesRevision
+        machineRosterVersion.value = undefined
+        ++membersRevision
+        void router.push({ name: "new-session" })
+        return
+      }
+      await background(async () => { await Promise.all([loadMachines(undefined, user), loadMembers(user)]) })
     },
     async renameTeam(name) {
       if (!teamId.value) return

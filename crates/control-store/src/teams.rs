@@ -1,8 +1,11 @@
 use crate::billing::{Plan, plan_limits, team_limits};
 use crate::entities::{
-    cp_billing_profiles as billing, cp_checkout_attempts as checkouts, cp_invites as invites,
-    cp_machine_registrations as registrations, cp_members as members, cp_site_settings as settings,
-    cp_teams as teams, cp_users as users,
+    cp_billing_profiles as billing, cp_catalogs as catalogs, cp_checkout_attempts as checkouts,
+    cp_commands as commands, cp_events as events, cp_invites as invites,
+    cp_machine_registrations as registrations, cp_members as members, cp_peers as peers,
+    cp_schedule_snapshots as schedule_snapshots, cp_schedules as schedules,
+    cp_search_documents as documents, cp_session_admissions as admissions, cp_sessions as sessions,
+    cp_site_settings as settings, cp_teams as teams, cp_users as users,
 };
 use crate::policies::{
     TeamAction, TeamCreationAction, TeamCreationPolicy, TeamPolicy, TeamScope, authorize,
@@ -129,6 +132,16 @@ impl ControlStore {
             role: policy.role().ok_or(Error::Forbidden)?.as_str().into(),
         })
     }
+    /// Delete a Team after its owner removes every active machine.
+    ///
+    /// Revoked registrations may remain from a prior machine removal, so their
+    /// machine-scoped records are removed here before the Team itself. Public
+    /// machine identities are retained because they may be enrolled in another
+    /// Team.
+    ///
+    /// # Errors
+    /// Returns an error for non-owners, active registrations, retained billing
+    /// records, missing Teams, or database failures.
     pub async fn delete_team(&self, user_id: &str, team_id: &str) -> Result<()> {
         self.authorize_team(user_id, team_id, TeamAction::Delete)
             .await?;
@@ -175,11 +188,72 @@ impl ControlStore {
         }
         if registrations::Entity::find()
             .filter(registrations::Column::TeamId.eq(id))
+            .filter(registrations::Column::Revoked.eq(false))
             .one(&tx)
             .await?
             .is_some()
         {
             return Err(Error::Conflict("team still owns machine records"));
+        }
+        // Revoked registrations intentionally keep their catalogs and history for
+        // re-enrollment, but nothing survives a Team deletion. Sessions cascade to
+        // AI turns and search state; events must go first because that foreign key
+        // has no delete action.
+        let registration_ids: Vec<i64> = registrations::Entity::find()
+            .filter(registrations::Column::TeamId.eq(id))
+            .select_only()
+            .column(registrations::Column::Id)
+            .lock_exclusive()
+            .into_tuple()
+            .all(&tx)
+            .await?;
+        if !registration_ids.is_empty() {
+            let registration_id_values = || registration_ids.iter().copied();
+            tx.execute(Query::delete().from_table(events::Entity).and_where(
+                Expr::col(events::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(sessions::Entity).and_where(
+                Expr::col(sessions::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(catalogs::Entity).and_where(
+                Expr::col(catalogs::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(commands::Entity).and_where(
+                Expr::col(commands::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(peers::Entity).and_where(
+                Expr::col(peers::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(admissions::Entity).and_where(
+                Expr::col(admissions::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(Query::delete().from_table(documents::Entity).and_where(
+                Expr::col(documents::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            tx.execute(
+                Query::delete()
+                    .from_table(schedule_snapshots::Entity)
+                    .and_where(
+                        Expr::col(schedule_snapshots::Column::RegistrationId)
+                            .is_in(registration_id_values()),
+                    ),
+            )
+            .await?;
+            tx.execute(Query::delete().from_table(schedules::Entity).and_where(
+                Expr::col(schedules::Column::RegistrationId).is_in(registration_id_values()),
+            ))
+            .await?;
+            registrations::Entity::delete_many()
+                .filter(registrations::Column::TeamId.eq(id))
+                .exec(&tx)
+                .await?;
         }
         teams::Entity::delete_by_id(id).exec(&tx).await?;
         tx.commit().await?;

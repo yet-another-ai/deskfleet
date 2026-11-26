@@ -127,6 +127,71 @@ async fn postgres_http_owner_controls_billing_and_transfers_authority() {
         call!(delete, &base, admin_token, &json!({})).status(),
         StatusCode::FORBIDDEN
     );
+    let disposable: Value = test::read_body_json(call!(
+        post,
+        "/api/teams",
+        owner_token,
+        &json!({"name":"Disposable team"})
+    ))
+    .await;
+    let disposable_id = disposable["id"].as_str().unwrap();
+    assert_eq!(
+        call!(
+            delete,
+            &format!("/api/teams/{disposable_id}"),
+            owner_token,
+            &json!({})
+        )
+        .status(),
+        StatusCode::OK
+    );
+    let remaining: Value =
+        test::read_body_json(call!(get, "/api/teams", owner_token, &json!({}))).await;
+    assert!(
+        remaining
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|team| team["id"] != disposable_id)
+    );
+    // Removing a machine leaves a revoked registration; deleting the Team must
+    // still succeed without an explicit registration purge endpoint.
+    let machine_team: Value = test::read_body_json(call!(
+        post,
+        "/api/teams",
+        owner_token,
+        &json!({"name":"Removed machine team"})
+    ))
+    .await;
+    let machine_team_id = machine_team["id"].as_str().unwrap();
+    let (machine, _) = state
+        .store
+        .enroll(
+            &owner.id,
+            machine_team_id,
+            "Removed machine",
+            &uuid::Uuid::new_v4().to_string(),
+            "1",
+            json!({}),
+            &deskfleet_control_store::secret(),
+        )
+        .await
+        .unwrap();
+    state
+        .store
+        .revoke_machine(&owner.id, &machine.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        call!(
+            delete,
+            &format!("/api/teams/{machine_team_id}"),
+            owner_token,
+            &json!({})
+        )
+        .status(),
+        StatusCode::OK
+    );
     for token in [admin_token, member_token] {
         assert_eq!(
             call!(

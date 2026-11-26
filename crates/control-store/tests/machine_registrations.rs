@@ -488,6 +488,115 @@ async fn migration_preserves_legacy_machine_history_and_bootstraps_identity_proo
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn deleting_a_team_clears_its_removed_machines_records() {
+    let fixture = Fixture::new().await;
+    let store = &fixture.store;
+    let owner = store
+        .verified_user("delete-team@test.invalid", "Owner")
+        .await
+        .unwrap();
+    let team = store.create_team(&owner.id, "Team").await.unwrap();
+    let (registration, _) = register(store, &owner.id, &team.id, &secret()).await;
+    history(store, &registration.id, "removed with team").await;
+    store
+        .sync_history(
+            &registration.id,
+            "1",
+            json!({
+                "session":{"id":"1","title":"removed with team","archiveState":"active","lastEventSeq":"1"},
+                "entries":[],"inputs":[],"turns":[],"permissions":[],"elicitations":[]
+            }),
+            vec![json!({"sessionId":"1","seq":"1","kind":"acp","payload":{"text":"event 1"}})],
+            vec![],
+        )
+        .await
+        .unwrap();
+    store
+        .reserve_session(
+            &registration.id,
+            &uuid::Uuid::new_v4().to_string(),
+            "create",
+            None,
+        )
+        .await
+        .unwrap();
+    peer(store, &registration, &owner.id).await;
+    let node = uuid::Uuid::new_v4().to_string();
+    store.register_node(&node).await.unwrap();
+    store
+        .claim_machine_route(&registration.id, &node, "connection")
+        .await
+        .unwrap();
+
+    // An active registration still requires an explicit machine removal.
+    assert!(matches!(
+        store.delete_team(&owner.id, &team.id).await,
+        Err(Error::Conflict("team still owns machine records"))
+    ));
+
+    store
+        .revoke_machine(&owner.id, &registration.id)
+        .await
+        .unwrap();
+    store.delete_team(&owner.id, &team.id).await.unwrap();
+
+    assert!(store.teams(&owner.id).await.unwrap().is_empty());
+    let remaining = store
+        .database()
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT
+             (SELECT COUNT(*) FROM cp_machine_registrations) AS registrations,
+             (SELECT COUNT(*) FROM cp_catalogs) AS catalogs,
+             (SELECT COUNT(*) FROM cp_sessions) AS sessions,
+             (SELECT COUNT(*) FROM cp_events) AS events,
+             (SELECT COUNT(*) FROM cp_commands) AS commands,
+             (SELECT COUNT(*) FROM cp_peers) AS peers,
+             (SELECT COUNT(*) FROM cp_peer_negotiations) AS negotiations,
+             (SELECT COUNT(*) FROM cp_session_admissions) AS admissions,
+             (SELECT COUNT(*) FROM cp_realtime_routes) AS routes,
+             (SELECT COUNT(*) FROM cp_ai_turns) AS turns,
+             (SELECT COUNT(*) FROM cp_search_documents) AS documents,
+             (SELECT COUNT(*) FROM cp_search_entries) AS entries,
+             (SELECT COUNT(*) FROM cp_search_progress) AS progress,
+             (SELECT COUNT(*) FROM cp_schedule_snapshots) AS snapshots,
+             (SELECT COUNT(*) FROM cp_schedules) AS schedules,
+             (SELECT COUNT(*) FROM cp_machines) AS identities"
+                .to_owned(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    for table in [
+        "registrations",
+        "catalogs",
+        "sessions",
+        "events",
+        "commands",
+        "peers",
+        "negotiations",
+        "admissions",
+        "routes",
+        "turns",
+        "documents",
+        "entries",
+        "progress",
+        "snapshots",
+        "schedules",
+    ] {
+        assert_eq!(
+            remaining.try_get::<i64>("", table).unwrap(),
+            0,
+            "{table} must not survive Team deletion"
+        );
+    }
+    // A public machine identity may be enrolled in another Team.
+    assert_eq!(remaining.try_get::<i64>("", "identities").unwrap(), 1);
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn reactivation_retains_admissions_and_competes_atomically_for_team_capacity() {
     let fixture = Fixture::new().await;
     let store = &fixture.store;
