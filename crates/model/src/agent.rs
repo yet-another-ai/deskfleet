@@ -29,6 +29,10 @@ states!(ActorKind {
     User => "user",
     System => "system",
 });
+states!(ActorVia {
+    Mcp => "mcp",
+    SuperAgentMcp => "super_agent_mcp",
+});
 states!(
     /// Sessions recorded before the execution context was selectable used a worktree.
     #[derive(Default)]
@@ -131,6 +135,9 @@ pub struct MachineReference {
 #[serde(rename_all = "camelCase")]
 pub struct AgentActor {
     pub kind: ActorKind,
+    /// When set, an Agent used this principal's authority through MCP.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<ActorVia>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -217,6 +224,9 @@ pub struct AgentSessionRecord {
     /// Whether this Session acts as a Team Super Agent with cross-workspace delegation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub super_agent: bool,
+    /// Actor recorded with the creation command. Absent on older Sessions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<AgentActor>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]

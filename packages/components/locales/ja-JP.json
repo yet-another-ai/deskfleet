@@ -1205,6 +1205,12 @@
       "cost": "セッションの費用"
     },
     "localUser": "ローカルユーザー", "system": "システム",
+    "mcpAttribution": {
+      "ai": "AI",
+      "sent": "{sender} が送信",
+      "created": "{sender} が作成したセッション",
+      "authorizedBy": "{name} が承認"
+    },
     "presenceHere": "{name} が閲覧中", "presenceVisited": "{name} が閲覧しました",
     "presenceMore": "他 {count} 人",
     "sourceMachine": "マシン {id}", "image": "エージェントの画像",

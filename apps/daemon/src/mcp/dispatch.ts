@@ -121,29 +121,35 @@ function resolveChildYolo(requested: boolean | undefined, parentYolo: boolean | 
   return undefined
 }
 
-export async function createMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
+function mcpSender(actor: AgentActor, sourceSuperAgent: boolean | undefined): AgentActor {
+  return { ...actor, via: sourceSuperAgent ? "super_agent_mcp" : "mcp" }
+}
+
+export async function createMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor, sourceSuperAgent: boolean | undefined): Promise<unknown> {
   const { workspaceId, provider, context, title, prompt, baseBranch, yolo, configuration } = validateSessionCreate(params)
+  const sender = mcpSender(actor, sourceSuperAgent)
   const snapshot = await agents.handle("_deskfleet/session/create", {
     ...(workspaceId ? { workspaceId } : {}), operationId: randomUUID(), ...(title ? { title } : {}),
     provider, context, ...(baseBranch ? { baseBranch } : {}), ...(yolo ? { yolo: true } : {}), ...configuration,
-  }, actor) as AgentSnapshot
+  }, sender) as AgentSnapshot
   if (snapshot.session?.lifecycle && snapshot.session.lifecycle !== "ready") throw new Error(snapshot.session.error ?? "Session provisioning failed")
   if (snapshot.session?.error) throw new Error(snapshot.session.error)
   if (prompt === undefined) return snapshot
-  await agents.handle("_deskfleet/input/submit", { sessionId: snapshot.session.id, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery: "backlog" }, actor)
+  await agents.handle("_deskfleet/input/submit", { sessionId: snapshot.session.id, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery: "backlog" }, sender)
   return agents.handle("_deskfleet/session/subscribe", { sessionId: snapshot.session.id }, actor)
 }
 
-export async function sendMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
+export async function sendMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor, sourceSuperAgent: boolean | undefined): Promise<unknown> {
   const { sessionId, prompt, delivery, turnId, provider, configuration } = validateSessionSend(params)
+  const sender = mcpSender(actor, sourceSuperAgent)
   if (provider !== undefined) {
-    const switched = await agents.handle("_deskfleet/session/switch-agent", { sessionId, operationId: randomUUID(), provider }, actor) as AgentSnapshot | undefined
+    const switched = await agents.handle("_deskfleet/session/switch-agent", { sessionId, operationId: randomUUID(), provider }, sender) as AgentSnapshot | undefined
     if (switched?.session?.error) throw new Error(switched.session.error)
   }
   if (hasConfigurationSelection(configuration)) {
-    await agents.handle("_deskfleet/session/configure", { sessionId, operationId: randomUUID(), ...configuration }, actor)
+    await agents.handle("_deskfleet/session/configure", { sessionId, operationId: randomUUID(), ...configuration }, sender)
   }
-  return agents.handle("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery, ...(turnId ? { turnId } : {}) }, actor)
+  return agents.handle("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), content: [{ type: "text", text: prompt }], delivery, ...(turnId ? { turnId } : {}) }, sender)
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -220,7 +226,7 @@ export async function dispatchMcp(
     if (typeof params.sessionId !== "string") throw new Error("A Session ID is required")
     const snapshot = await operations.agents.journal.read(params.sessionId)
     if (!sameDelegation(snapshot.session, scope, crossWorkspace)) throw new Error("Session is outside this MCP delegation")
-    return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
+    return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor, source.session.superAgent) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
     if (!crossWorkspace && params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) {
@@ -240,7 +246,7 @@ export async function dispatchMcp(
         throw new Error(`Unknown Workspace: ${parsed.workspaceId}`)
       }
     }
-    return createMcpSession(operations.agents, normalized, actor)
+    return createMcpSession(operations.agents, normalized, actor, source.session.superAgent)
   }
   if (method === "providerList") return operations.providers.metadata()
   if (method === "_deskfleet/agent/configuration") {

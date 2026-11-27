@@ -41,6 +41,9 @@ async fn command(local: &LocalCatalog, session: Option<AgentSessionId>) -> Agent
     }))
 }
 async fn create(local: &LocalCatalog) -> AgentCreatedSession {
+    create_as(local, None).await
+}
+async fn create_as(local: &LocalCatalog, actor: Option<AgentActor>) -> AgentCreatedSession {
     let workspace = local
         .create_workspace(
             "workspace",
@@ -52,6 +55,9 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
         .await
         .unwrap();
     let mut command = command(local, None).await;
+    if let Some(actor) = actor {
+        command.actor = actor;
+    }
     command.method = "session/create".into();
     local
         .agent_create_session(AgentCreateSession {
@@ -121,6 +127,10 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
         Some(json!({"sessionId": created.session.id}))
     );
     assert_eq!(created.command.session_id, Some(created.session.id));
+    assert_eq!(
+        created.session.created_by.as_ref(),
+        Some(&created.command.actor)
+    );
     assert_eq!(created.session.lifecycle, SessionLifecycle::Provisioning);
     assert_eq!(created.session.last_event_seq.as_i64(), 0);
     assert_eq!(
@@ -190,8 +200,10 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
 async fn state_and_ordered_events_commit_atomically_and_replay_after_restart() {
     let file = File::new();
     let local = LocalCatalog::open(&file.0, "host").await.unwrap();
-    let created = create(&local).await;
-    let command = command(&local, Some(created.session.id)).await;
+    let creator = json!({"kind": "user", "userId": "alice", "via": "super_agent_mcp"});
+    let created = create_as(&local, Some(parse(creator.clone()))).await;
+    let mut command = command(&local, Some(created.session.id)).await;
+    command.actor = parse(json!({"kind": "user", "userId": "alice", "via": "mcp"}));
     let input = input(&local, &command, 2).await;
     let run = run(created.session.id, 1);
     let mut commit = transaction(&created.session);
@@ -220,6 +232,11 @@ async fn state_and_ordered_events_commit_atomically_and_replay_after_restart() {
     );
     assert_eq!(result.events[2].event.payload["lastEventSeq"], "3");
     assert_eq!(result.events[2].event.payload["lifecycle"], "ready");
+    assert_eq!(result.events[2].event.payload["createdBy"], creator);
+    assert_eq!(
+        result.events[1].event.payload["author"],
+        json!({"kind": "user", "userId": "alice", "via": "mcp"})
+    );
     assert_eq!(result.session.as_ref().unwrap().last_event_seq.as_i64(), 3);
     assert!(matches!(
         local.agent_commit(commit).await,
@@ -670,6 +687,7 @@ async fn session_context_is_recorded_at_creation_and_immutable() {
         SessionContext::Worktree,
         "records without a context used a worktree"
     );
+    assert!(stored.created_by.is_none());
     local.close().await.unwrap();
 }
 
@@ -693,6 +711,7 @@ async fn archive_state_and_browser_audit_persist_without_losing_the_owned_contex
     archive.method = "_deskfleet/session/archive".into();
     archive.actor = AgentActor {
         kind: ActorKind::User,
+        via: None,
         user_id: Some("alice".into()),
         device_id: Some("browser".into()),
         source_machine: None,

@@ -102,9 +102,9 @@ export class RemoteMcp {
           limit: z.number().int().min(1).max(200).optional(),
         }).parse(params), actor)
       case "sessionCreate":
-        return createMcpSession(this.#operations.agents, params, actor)
+        return createMcpSession(this.#operations.agents, params, actor, source.kind === "superAgent")
       case "sessionSend":
-        return sendMcpSession(this.#operations.agents, params, actor)
+        return sendMcpSession(this.#operations.agents, params, actor, source.kind === "superAgent")
       case "workspaceCreate":
         return createMcpWorkspace(this.#operations.catalog, params)
       case "mcpServers":

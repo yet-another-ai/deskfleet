@@ -329,6 +329,7 @@ impl LocalCatalog {
             yolo: request.yolo,
             yolo_actor: request.yolo_actor,
             super_agent: request.super_agent,
+            created_by: Some(request.command.actor.clone()),
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),
             capabilities: None,

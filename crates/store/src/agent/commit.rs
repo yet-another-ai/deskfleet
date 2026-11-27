@@ -62,6 +62,7 @@ impl LocalCatalog {
                         || next.workspace_id != current.workspace_id
                         || next.context != current.context
                         || next.super_agent != current.super_agent
+                        || next.created_by != current.created_by
                         || next.created_at != current.created_at
                         || next.inherited_turn_count != current.inherited_turn_count
                     {

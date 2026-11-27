@@ -210,7 +210,10 @@ test("a hosted Super Agent dispatches Sessions under the initiating user and liv
   assert.equal(method, "_deskfleet/input/submit")
   assert.equal(params.sessionId, "created-session")
   assert.deepEqual(params.content, [{ type: "text", text: "Run the checks" }])
-  assert.deepEqual(author, user)
+  const hostedSender = { ...user, via: "super_agent_mcp" }
+  assert.deepEqual(author, hostedSender)
+  await call("sessionSend", { sessionId: "created-session", prompt: "Check again" })
+  assert.deepEqual((f.calls.at(-1) as unknown[])[2], hostedSender)
 
   assert.deepEqual(await call("workspaceCreate", { name: "Hosted repo", directories: [{ path: "/srv/repo" }] }), {
     id: "created-workspace", name: "Hosted repo", directories: [{ path: "/srv/repo" }],
@@ -227,6 +230,8 @@ test("a hosted Super Agent dispatches Sessions under the initiating user and liv
   const byoa = { ...source, kind: "superAgent" as const }
   await writeRemoteAgentSettings(f.directory, { ...noAccess, allowSuperAgent: true })
   assert.deepEqual(await f.service.handle("remoteMcpDiscover", byoa, actor, target), fullAccess)
+  await f.service.handle("remoteMcp", { source: byoa, operation: "sessionSend", arguments: { sessionId: "session", prompt: "Run checks" } }, actor, target)
+  assert.deepEqual((f.calls.at(-1) as unknown[])[2], { ...actor, via: "super_agent_mcp" })
   assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), noAccess)
   await writeRemoteAgentSettings(f.directory, { ...noAccess, allowRead: true, allowSuperAgent: false })
   assert.deepEqual(await f.service.handle("remoteMcpDiscover", byoa, actor, target), { ...noAccess, allowRead: true })
