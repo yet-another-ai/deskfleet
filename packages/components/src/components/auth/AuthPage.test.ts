@@ -553,18 +553,18 @@ test("email confirmation retries desktop approval in place and keeps failures op
   expect(assign).toHaveBeenCalledExactlyOnceWith("http://127.0.0.1:19091/callback#loginCode=approved")
 })
 
-test("desktop approval leaves custom-scheme callbacks to an explicit app link", async () => {
+test("desktop approval still navigates custom schemes and keeps an explicit app link", async () => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
     if (path === "/api/auth/config") return { registrationEnabled: true }
-    if (path === "/api/auth/desktop/complete") return { returnTo: "deskfleet://auth/callback?loginCode=approved" }
+    if (path === "/api/auth/desktop/complete") return { returnTo: "ai.yetanother.deskfleet://auth/callback#loginCode=approved" }
     return {}
   }, { id: "u1", name: "Ada", email: "ada@example.test" })
   await flushPromises()
   await view!.get("form").trigger("submit"); await flushPromises()
-  expect(assign).not.toHaveBeenCalled()
+  expect(assign).toHaveBeenCalledExactlyOnceWith("ai.yetanother.deskfleet://auth/callback#loginCode=approved")
   const link = view!.findAll("a").find(value => value.text() === i18n.global.t("auth.openDesktop"))!
-  expect(link.attributes("href")).toBe("deskfleet://auth/callback?loginCode=approved")
+  expect(link.attributes("href")).toBe("ai.yetanother.deskfleet://auth/callback#loginCode=approved")
   expect(view!.text()).toContain(i18n.global.t("auth.openDesktopHint"))
 })
 

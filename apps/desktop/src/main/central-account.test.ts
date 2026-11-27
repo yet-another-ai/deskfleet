@@ -298,13 +298,52 @@ test("the macOS desktop scheme delivers its code to the pending login", async ()
   const client = await installCentralAccount({
     authCallback: "scheme",
     openAuthorization: async () => {
-      expect(returnTo).toBe("deskfleet://auth/callback")
-      receiveAuthCallback(`deskfleet://auth/callback?loginCode=${encodeURIComponent(loginCode)}`)
+      expect(returnTo).toBe("ai.yetanother.deskfleet://auth/callback")
+      receiveAuthCallback(`ai.yetanother.deskfleet://auth/callback#loginCode=${encodeURIComponent(loginCode)}`)
     },
   })
   clients.push(client)
   await client.login()
   expect(f.fetch).toHaveBeenCalledTimes(2)
+})
+
+test("an older desktop login close keeps a newer pending callback", async () => {
+  const f = await setup()
+  const loginCode = "second-login-code"
+  let starts = 0
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    const body = await request.json()
+    if (request.url.endsWith("/api/auth/start")) {
+      starts++
+      return Response.json({ authorizationUrl: `https://fleet.example/auth/authorize?login=${starts}`, loginVerifier: `verifier-${starts}` })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(body).toEqual({ code: loginCode, loginVerifier: "verifier-2" })
+    return Response.json({ token: "new-token", user })
+  })
+  let rejectFirst!: (error: Error) => void
+  let secondOpened!: () => void
+  const secondReady = new Promise<void>(resolve => { secondOpened = resolve })
+  let opened = 0
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: () => {
+      if (++opened === 1) return new Promise((_, reject) => { rejectFirst = reject })
+      secondOpened()
+      return Promise.resolve()
+    },
+  })
+  clients.push(client)
+  const first = client.login().catch(error => error)
+  await vi.waitFor(() => expect(opened).toBe(1))
+  const second = client.login()
+  await secondReady
+  rejectFirst(new Error("first login aborted"))
+  expect(await first).toBeInstanceOf(Error)
+  receiveAuthCallback(`ai.yetanother.deskfleet://auth/callback#loginCode=${encodeURIComponent(loginCode)}`)
+  await expect(second).resolves.toBeUndefined()
+  expect(f.fetch).toHaveBeenCalledTimes(3)
 })
 
 test("a desktop scheme callback without a code fails immediately", async () => {
@@ -318,41 +357,11 @@ test("a desktop scheme callback without a code fails immediately", async () => {
   })
   const client = await installCentralAccount({
     authCallback: "scheme",
-    openAuthorization: async () => { receiveAuthCallback("deskfleet://auth/callback") },
+    openAuthorization: async () => { receiveAuthCallback("ai.yetanother.deskfleet://auth/callback") },
   })
   clients.push(client)
   await expect(client.login()).rejects.toThrow("did not return a login code")
   expect(f.fetch).toHaveBeenCalledTimes(1)
-})
-
-test("a server that rejects the desktop scheme falls back to loopback", async () => {
-  const f = await setup()
-  const loginCode = "one-use+code&value"
-  let returnTo = ""
-  f.fetch.mockImplementation(async input => {
-    const request = input as Request
-    const body = await request.json()
-    if (request.url.endsWith("/api/auth/start")) {
-      returnTo = body.returnTo
-      if (returnTo.startsWith("deskfleet:")) return new Response(JSON.stringify({ message: "login return URL is not allowed" }), { status: 400 })
-      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
-    }
-    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
-    expect(body).toEqual({ code: loginCode, loginVerifier: "private-verifier" })
-    return Response.json({ token: "new-token", user })
-  })
-  const client = await installCentralAccount({
-    authCallback: "scheme",
-    openAuthorization: async () => {
-      expect(returnTo).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/)
-      const origin = new URL(returnTo).origin
-      const accepted = await networkFetch(`${origin}/auth/complete`, { method: "POST", headers: { Origin: origin }, body: new URLSearchParams({ code: loginCode }) })
-      expect(accepted.status).toBe(200)
-    },
-  })
-  clients.push(client)
-  await client.login()
-  expect(f.fetch).toHaveBeenCalledTimes(3)
 })
 
 test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {

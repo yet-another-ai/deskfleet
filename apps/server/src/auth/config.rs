@@ -61,7 +61,6 @@ impl AuthConfig {
             return_to: vec![
                 "http://127.0.0.1:*/auth/callback".into(),
                 "ai.yetanother.deskfleet://auth/callback".into(),
-                "deskfleet://auth/callback".into(),
             ],
             rp_id: origin
                 .as_ref()
@@ -143,7 +142,6 @@ impl AuthConfig {
             return_to: vec![
                 "http://127.0.0.1:*/auth/callback".into(),
                 "ai.yetanother.deskfleet://auth/callback".into(),
-                "deskfleet://auth/callback".into(),
             ],
             rp_id: env::var("DESKFLEET_WEBAUTHN_RP_ID")
                 .unwrap_or_else(|_| parsed.host_str().unwrap_or("localhost").into()),

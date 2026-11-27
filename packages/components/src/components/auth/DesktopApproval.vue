@@ -19,8 +19,8 @@ const recent = useRecentAuthentication()
 const pending = ref(false)
 const error = ref<string>()
 const completedReturnTo = ref<string>()
-// Safari blocks custom-scheme navigations after async work, so the app link
-// must stay a real user gesture.
+// Safari may block custom-scheme navigation after async work, so keep a real
+// user-gesture link as the fallback; iOS and Android still return in one tap.
 const customScheme = computed(() => {
   const value = completedReturnTo.value
   return !!value && !/^https?:/i.test(value)
@@ -35,7 +35,7 @@ async function run(action: () => Promise<void>): Promise<void> {
 }
 function approve(): void {
   if (completedReturnTo.value) {
-    if (!customScheme.value) location.assign(completedReturnTo.value)
+    location.assign(completedReturnTo.value)
     return
   }
   void run(async () => {
@@ -44,7 +44,6 @@ function approve(): void {
       : undefined
     const { returnTo } = await recent.confirmed(() => props.account.completeDesktop(props.attempt!, telemetryConsent))
     completedReturnTo.value = returnTo
-    if (!/^https?:/i.test(returnTo)) return
     location.assign(returnTo)
   })
 }

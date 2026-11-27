@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, powerMonitor, safeStorage, shell } from "e
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
-import { HttpCentralClient, HttpError, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
+import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
 import { CENTRAL_METHODS, centralIpcFailure } from "@deskfleet/client/central-bridge"
 import type { CentralEvent } from "@deskfleet/client/central"
 import { setPeerTelemetrySink } from "@deskfleet/client/peer-telemetry"
@@ -49,8 +49,8 @@ async function saveAccount(path: string, account: SavedAccount): Promise<void> {
   await writeFile(path, JSON.stringify({ serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined } satisfies StoredAccount), { mode: 0o600 })
 }
 
-const DESKTOP_SCHEME = "deskfleet"
-const DESKTOP_CALLBACK = "deskfleet://auth/callback"
+const DESKTOP_SCHEME = "ai.yetanother.deskfleet"
+const DESKTOP_CALLBACK = "ai.yetanother.deskfleet://auth/callback"
 const LOGIN_TIMEOUT_MS = 5 * 60_000
 const MISSING_LOGIN_CODE = "Sign-in failed. The browser did not return a login code."
 // The same-origin forms carry the code or the failure reason. A missing code is
@@ -87,7 +87,7 @@ export function receiveAuthCallback(value: string): void {
   try { url = new URL(value) } catch { return }
   if (url.protocol !== `${DESKTOP_SCHEME}:` || url.host !== "auth" || url.pathname !== "/callback"
     || url.username || url.password) return
-  const code = url.searchParams.get("loginCode") ?? new URLSearchParams(url.hash.slice(1)).get("loginCode") ?? undefined
+  const code = new URLSearchParams(url.hash.slice(1)).get("loginCode") ?? undefined
   pendingAuthCallback?.(code)
 }
 
@@ -106,8 +106,10 @@ function deferredCode(): { code: Promise<string>; complete(code: string): void; 
 /** Safari blocks HTTP loopback navigation under HTTPS-Only, so macOS hands the custom scheme to the running app. */
 function schemeReceiver(): AuthReceiver {
   const { code, complete, fail } = deferredCode()
-  pendingAuthCallback = value => value ? complete(value) : fail(new Error(MISSING_LOGIN_CODE))
-  return { returnTo: DESKTOP_CALLBACK, code, fail, close: () => { pendingAuthCallback = undefined } }
+  const handler = (value: string | undefined) => value ? complete(value) : fail(new Error(MISSING_LOGIN_CODE))
+  pendingAuthCallback = handler
+  // A newer login may have replaced the handler before this attempt closes.
+  return { returnTo: DESKTOP_CALLBACK, code, fail, close: () => { if (pendingAuthCallback === handler) pendingAuthCallback = undefined } }
 }
 
 async function loopbackReceiver(): Promise<AuthReceiver> {
@@ -162,22 +164,11 @@ async function finishLogin(client: HttpCentralClient, openAuthorization: (url: s
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Invalid authorization URL")
     await openAuthorization(url.toString())
     await client.exchange(await receiver.code, started.loginVerifier)
-  } finally { clearTimeout(timeout); receiver.close() }
+  } finally { clearTimeout(timeout) }
 }
 
 async function authorize(client: HttpCentralClient, openAuthorization: (url: string) => Promise<unknown>, callback: AuthCallback): Promise<void> {
-  if (callback === "scheme") {
-    const receiver = schemeReceiver()
-    // A server from before the scheme allowlist rejects the return URL; fall
-    // back to loopback rather than leaving the user unable to sign in.
-    const started = await client.authorizationUrl(receiver.returnTo).catch(error => {
-      receiver.close()
-      if (error instanceof HttpError && error.status === 400) return undefined
-      throw error
-    })
-    if (started) { await finishLogin(client, openAuthorization, receiver, started); return }
-  }
-  const receiver = await loopbackReceiver()
+  const receiver = callback === "scheme" ? schemeReceiver() : await loopbackReceiver()
   try {
     const started = await client.authorizationUrl(receiver.returnTo)
     await finishLogin(client, openAuthorization, receiver, started)

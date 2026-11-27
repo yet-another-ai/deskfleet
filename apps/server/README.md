@@ -47,11 +47,9 @@ unrelated cross-site Web/API hosting is unsupported. SMTP uses mandatory STARTTL
 (default port 587). The local mail-file sink is available only on localhost.
 
 Electron opens the system browser at the trusted Web origin. Approval returns a
-60-second one-use `loginCode` to `http://127.0.0.1:<port>/auth/callback` (in the
-fragment) or to the packaged macOS app's `deskfleet://auth/callback` (in the
-query, because LaunchServices may drop fragments). The main process exchanges
-it with its private verifier. Other callback hosts, paths, queries and
-credentials are rejected at start.
+60-second one-use `#loginCode` to `http://127.0.0.1:<port>/auth/callback`; the
+main process exchanges it with its private verifier. Other callback hosts,
+paths, queries and credentials are rejected.
 
 | Variable | Meaning |
 | --- | --- |
