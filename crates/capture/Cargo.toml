@@ -32,7 +32,14 @@ objc2-foundation = { workspace = true, features = [
     "NSObjCRuntime",
 ] }
 objc2-core-foundation = { workspace = true }
-objc2-core-graphics = { workspace = true, features = ["CGColorSpace", "CGDirectDisplay", "CGWindow"] }
+objc2-core-graphics = { workspace = true, features = [
+    "CGColorSpace",
+    "CGDirectDisplay",
+    "CGDisplayConfiguration",
+    "CGError",
+    "CGWindow",
+] }
+objc2-io-kit = { workspace = true, features = ["pwr_mgt"] }
 objc2-io-surface = { workspace = true, features = [
     "IOSurfaceRef",
     "IOSurfaceTypes",

@@ -3,19 +3,40 @@
 //! CGDisplayBounds and CGEvent use logical desktop coordinates, independently
 //! of the capture stream's Retina pixel dimensions. The daemon requests
 //! Accessibility consent at startup; remote connections only check that access.
+//! Remote control and input events also declare remote user activity through
+//! IOKit Power Management so `UserIsActive` transitions to active for display
+//! wake and lock-screen authentication.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use objc2_core_foundation::{CFRetained, CGPoint, CGRect};
+use objc2_core_foundation::{CFRetained, CFString, CGPoint, CGRect};
 use objc2_core_graphics::{
     CGDisplayBounds, CGDisplayIsOnline, CGEvent, CGEventField, CGEventFlags, CGEventSource,
     CGEventSourceStateID, CGEventTapLocation, CGEventType, CGMouseButton,
     CGPreflightPostEventAccess, CGScrollEventUnit,
 };
+use objc2_io_kit::{
+    IOPMAssertionDeclareUserActivity, IOPMAssertionID, IOPMUserActiveType, IOReturn,
+    kIOPMNullAssertionID, kIOReturnSuccess,
+};
 
 use crate::{InputError, Result};
 
 use crate::macos_keys as keys;
+
+/// Minimum interval between IOKit remote user-activity declarations while input
+/// is arriving. Short enough to recover well inside `loginwindow`'s 5-second
+/// unlock activity wait without spamming `powerd` on high-rate pointer motion.
+const USER_ACTIVITY_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Assertion name reported to IOKit Power Management (`<= 128` characters).
+const USER_ACTIVITY_NAME: &str = "DeskFleet remote desktop input";
+
+/// Process-wide assertion ID passed back to `IOPMAssertionDeclareUserActivity`
+/// so repeated calls and reconnected control sessions refresh one `UserIsActive`
+/// assertion in `powerd` rather than accumulating entries.
+static SHARED_ACTIVITY_ASSERTION: AtomicU32 = AtomicU32::new(kIOPMNullAssertionID);
 
 pub(super) struct PlatformInput {
     display_id: u32,
@@ -27,6 +48,64 @@ pub(super) struct PlatformInput {
     scroll_remainder: [f64; 2],
     clicks: [Option<Click>; 5],
     clipboard: crate::macos_clipboard::MacOsClipboard,
+    user_activity: UserActivity,
+}
+
+struct UserActivity {
+    name: CFRetained<CFString>,
+    last_declared: Option<Instant>,
+}
+
+impl UserActivity {
+    fn new() -> Self {
+        Self {
+            name: CFString::from_static_str(USER_ACTIVITY_NAME),
+            last_declared: None,
+        }
+    }
+
+    fn declare(&mut self) {
+        let mut assertion_id = SHARED_ACTIVITY_ASSERTION.load(Ordering::Acquire);
+        self.declare_at(
+            Instant::now(),
+            &mut assertion_id,
+            declare_remote_user_activity,
+        );
+        SHARED_ACTIVITY_ASSERTION.store(assertion_id, Ordering::Release);
+    }
+
+    fn declare_at(
+        &mut self,
+        now: Instant,
+        assertion_id: &mut IOPMAssertionID,
+        declare: impl FnOnce(&CFString, &mut IOPMAssertionID) -> IOReturn,
+    ) {
+        if self
+            .last_declared
+            .is_some_and(|last| now.saturating_duration_since(last) < USER_ACTIVITY_INTERVAL)
+        {
+            return;
+        }
+        self.last_declared = Some(now);
+        let status = declare(&self.name, assertion_id);
+        if status != kIOReturnSuccess {
+            *assertion_id = kIOPMNullAssertionID;
+            tracing::warn!(status, "failed to declare remote user activity");
+        }
+    }
+}
+
+#[allow(unsafe_code)]
+fn declare_remote_user_activity(name: &CFString, assertion_id: &mut IOPMAssertionID) -> IOReturn {
+    // SAFETY: `name` is a valid non-null `CFString` reference and `assertion_id`
+    // is a valid, aligned writable pointer to an initialized `IOPMAssertionID`.
+    unsafe {
+        IOPMAssertionDeclareUserActivity(
+            Some(name),
+            IOPMUserActiveType::Remote,
+            std::ptr::from_mut(assertion_id),
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -44,6 +123,8 @@ impl PlatformInput {
             .ok_or_else(|| InputError::Platform("cannot create Quartz input source".into()))?;
         let caps_lock = CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState)
             .contains(CGEventFlags::MaskAlphaShift);
+        let mut user_activity = UserActivity::new();
+        user_activity.declare();
         Ok(Self {
             display_id,
             source,
@@ -54,6 +135,7 @@ impl PlatformInput {
             scroll_remainder: [0.0; 2],
             clicks: [None; 5],
             clipboard: crate::macos_clipboard::MacOsClipboard::new(),
+            user_activity,
         })
     }
 
@@ -81,7 +163,8 @@ impl PlatformInput {
             CGEventField::MouseEventDeltaY,
             position.y - self.position.y,
         );
-        self.post(&event, self.flags())?;
+        let flags = self.flags();
+        self.post(&event, flags)?;
         self.position = position;
         Ok(())
     }
@@ -106,7 +189,8 @@ impl PlatformInput {
             CGEventField::MouseEventClickState,
             click.count,
         );
-        self.post(&event, self.flags())?;
+        let flags = self.flags();
+        self.post(&event, flags)?;
         self.buttons[usize::from(button)] = pressed;
         self.clicks[usize::from(button)] = Some(click);
         Ok(())
@@ -127,7 +211,8 @@ impl PlatformInput {
             )
             .ok_or_else(event_creation_error)?;
             CGEvent::set_location(Some(&event), self.position);
-            self.post(&event, self.flags())?;
+            let flags = self.flags();
+            self.post(&event, flags)?;
         }
         self.scroll_remainder = [
             totals[0] - f64::from(pixels[0]),
@@ -170,10 +255,11 @@ impl PlatformInput {
         modifier_flags(&self.modifiers, self.caps_lock)
     }
 
-    fn post(&self, event: &CGEvent, flags: CGEventFlags) -> Result<()> {
+    fn post(&mut self, event: &CGEvent, flags: CGEventFlags) -> Result<()> {
         // CGEventPost has no return value. Preflight avoids silently accepting
         // commands after Accessibility access has been revoked.
         check_permission()?;
+        self.user_activity.declare();
         CGEvent::set_flags(Some(event), flags);
         CGEvent::post(CGEventTapLocation::HIDEventTap, Some(event));
         Ok(())
@@ -355,5 +441,58 @@ mod tests {
             .count,
             1
         );
+    }
+
+    #[test]
+    fn user_activity_throttles_reuses_and_resets_assertion_id_on_error() {
+        let mut activity = UserActivity::new();
+        let mut assertion_id = kIOPMNullAssertionID;
+        let mut seen = Vec::new();
+        let start = Instant::now();
+
+        activity.declare_at(start, &mut assertion_id, |_, id| {
+            seen.push(*id);
+            *id = 42;
+            kIOReturnSuccess
+        });
+        assert_eq!(assertion_id, 42);
+
+        // Inside the throttle window, IOKit is not called again.
+        activity.declare_at(
+            start + USER_ACTIVITY_INTERVAL - Duration::from_millis(1),
+            &mut assertion_id,
+            |_, id| {
+                seen.push(*id);
+                *id = 99;
+                kIOReturnSuccess
+            },
+        );
+        assert_eq!(assertion_id, 42);
+        assert_eq!(seen, [kIOPMNullAssertionID]);
+
+        // After the interval, the previous ID is reused; an error resets it to null.
+        activity.declare_at(
+            start + USER_ACTIVITY_INTERVAL,
+            &mut assertion_id,
+            |_, id| {
+                seen.push(*id);
+                -1
+            },
+        );
+        assert_eq!(assertion_id, kIOPMNullAssertionID);
+        assert_eq!(seen, [kIOPMNullAssertionID, 42]);
+
+        // Next eligible call starts cleanly from a null ID.
+        activity.declare_at(
+            start + USER_ACTIVITY_INTERVAL * 2,
+            &mut assertion_id,
+            |_, id| {
+                seen.push(*id);
+                *id = 88;
+                kIOReturnSuccess
+            },
+        );
+        assert_eq!(assertion_id, 88);
+        assert_eq!(seen, [kIOPMNullAssertionID, 42, kIOPMNullAssertionID]);
     }
 }

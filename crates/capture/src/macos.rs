@@ -5,20 +5,28 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{AnyThread, DefinedClass, Message, define_class, msg_send};
-use objc2_core_graphics::{CGDisplayCopyDisplayMode, CGDisplayMode, kCGColorSpaceSRGB};
+use objc2_core_foundation::CFString;
+use objc2_core_graphics::{
+    CGDisplayCopyDisplayMode, CGDisplayIsAsleep, CGDisplayMode, CGError, CGGetOnlineDisplayList,
+    kCGColorSpaceSRGB,
+};
 use objc2_core_media::{CMSampleBuffer, CMTime, CMTimeFlags};
 use objc2_core_video::{
     CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight, CVPixelBufferGetIOSurface,
     CVPixelBufferGetWidth,
 };
 use objc2_foundation::{NSArray, NSError, NSObjectProtocol};
+use objc2_io_kit::{
+    IOPMAssertionDeclareUserActivity, IOPMAssertionID, IOPMUserActiveType, kIOPMNullAssertionID,
+    kIOReturnSuccess,
+};
 use objc2_screen_capture_kit::{
     SCContentFilter, SCDisplay, SCShareableContent, SCStream, SCStreamConfiguration,
     SCStreamDelegate, SCStreamOutput, SCStreamOutputType, SCWindow,
@@ -41,9 +49,109 @@ type SharedVideo = Arc<LatestFrame<Frame>>;
 /// Shared, closable sender handle for audio frames.
 type SharedAudioSender = Arc<Mutex<Option<mpsc::SyncSender<AudioFrame>>>>;
 
+/// Maximum time to wait for sleeping displays to become capturable after
+/// declaring remote user activity through IOKit Power Management.
+const DISPLAY_WAKE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Polling interval while waiting for woken displays to appear in
+/// `ScreenCaptureKit`.
+const DISPLAY_WAKE_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Assertion name reported to IOKit Power Management (`<= 128` characters).
+const DISPLAY_WAKE_ACTIVITY_NAME: &str = "DeskFleet remote desktop capture";
+
+/// Process-wide assertion ID passed back to `IOPMAssertionDeclareUserActivity`
+/// so repeated display-wake probes reuse one `UserIsActive` assertion in
+/// `powerd` rather than accumulating entries.
+static WAKE_ACTIVITY_ASSERTION: Mutex<IOPMAssertionID> = Mutex::new(kIOPMNullAssertionID);
+
 /// List available displays by synchronously querying `SCShareableContent`.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+///
+/// When macOS has put all online displays to sleep, `SCShareableContent`
+/// returns an empty list even though displays are attached. In that case,
+/// declare remote user activity via IOKit Power Management so the display wakes
+/// and becomes capturable for remote desktop discovery and connection.
 pub fn displays() -> Result<Vec<Display>, CaptureError> {
+    let displays = query_sc_displays()?;
+    if !displays.is_empty() || !has_asleep_online_display() {
+        return Ok(displays);
+    }
+    wake_asleep_displays_and_query(
+        DISPLAY_WAKE_TIMEOUT,
+        DISPLAY_WAKE_POLL_INTERVAL,
+        declare_display_wake,
+        query_sc_displays,
+    )
+}
+
+fn has_asleep_online_display() -> bool {
+    let mut count = 0u32;
+    // SAFETY: Passing a null display buffer queries the online display count.
+    let status = unsafe { CGGetOnlineDisplayList(0, std::ptr::null_mut(), &raw mut count) };
+    if status != CGError::Success || count == 0 {
+        return false;
+    }
+    let mut ids = vec![0u32; count as usize];
+    let mut actual = 0u32;
+    // SAFETY: `ids` has capacity for `count` display IDs and `actual` is a valid out pointer.
+    let status = unsafe { CGGetOnlineDisplayList(count, ids.as_mut_ptr(), &raw mut actual) };
+    status == CGError::Success
+        && ids[..actual as usize]
+            .iter()
+            .any(|&id| CGDisplayIsAsleep(id))
+}
+
+fn declare_display_wake() -> bool {
+    let name = CFString::from_static_str(DISPLAY_WAKE_ACTIVITY_NAME);
+    let mut assertion_id = WAKE_ACTIVITY_ASSERTION
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // SAFETY: `name` is a valid non-null `CFString` reference and `assertion_id`
+    // is a valid, aligned writable pointer to an initialized `IOPMAssertionID`.
+    let status = unsafe {
+        IOPMAssertionDeclareUserActivity(
+            Some(&name),
+            IOPMUserActiveType::Remote,
+            std::ptr::from_mut(&mut *assertion_id),
+        )
+    };
+    if status == kIOReturnSuccess {
+        true
+    } else {
+        *assertion_id = kIOPMNullAssertionID;
+        tracing::warn!(
+            status,
+            "failed to declare remote user activity for display wake"
+        );
+        false
+    }
+}
+
+fn wake_asleep_displays_and_query(
+    timeout: Duration,
+    poll_interval: Duration,
+    declare_wake: impl FnOnce() -> bool,
+    mut query: impl FnMut() -> Result<Vec<Display>, CaptureError>,
+) -> Result<Vec<Display>, CaptureError> {
+    if !declare_wake() {
+        return Ok(Vec::new());
+    }
+    let deadline = Instant::now() + timeout;
+    loop {
+        let displays = query()?;
+        if !displays.is_empty() {
+            return Ok(displays);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(Vec::new());
+        }
+        std::thread::sleep(remaining.min(poll_interval));
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn query_sc_displays() -> Result<Vec<Display>, CaptureError> {
     let (tx, rx) = mpsc::channel::<Result<Vec<Display>, CaptureError>>();
 
     let handler = RcBlock::new(
@@ -553,8 +661,19 @@ fn timestamp_ns(time: CMTime) -> u64 {
 }
 
 #[cfg(test)]
-mod timestamp_tests {
+mod tests {
     use super::*;
+
+    fn sample_display() -> Display {
+        Display {
+            id: 1,
+            name: None,
+            display_number: None,
+            width: 1920,
+            height: 1200,
+            refresh_rate_hz: 60.0,
+        }
+    }
 
     #[test]
     fn nanosecond_timebase_does_not_wrap_after_seconds() {
@@ -565,5 +684,61 @@ mod timestamp_tests {
             epoch: 0,
         };
         assert_eq!(timestamp_ns(time), 60_000_000_000);
+    }
+
+    #[test]
+    fn wake_asleep_displays_polls_until_ready_and_propagates_errors() {
+        let mut queries = 0usize;
+        let displays = wake_asleep_displays_and_query(
+            Duration::from_millis(200),
+            Duration::from_millis(1),
+            || true,
+            || {
+                queries += 1;
+                Ok(if queries < 2 {
+                    Vec::new()
+                } else {
+                    vec![sample_display()]
+                })
+            },
+        )
+        .expect("wake query succeeds");
+        assert_eq!(displays.len(), 1);
+        assert_eq!(queries, 2);
+
+        let err = wake_asleep_displays_and_query(
+            Duration::from_millis(50),
+            Duration::from_millis(1),
+            || true,
+            || Err(CaptureError::Platform("permission denied".into())),
+        )
+        .expect_err("query error propagates");
+        assert!(matches!(err, CaptureError::Platform(msg) if msg == "permission denied"));
+    }
+
+    #[test]
+    fn wake_asleep_displays_returns_empty_on_failed_wake_or_timeout() {
+        let mut queries = 0usize;
+        let failed = wake_asleep_displays_and_query(
+            Duration::from_millis(50),
+            Duration::from_millis(1),
+            || false,
+            || {
+                queries += 1;
+                Ok(vec![sample_display()])
+            },
+        )
+        .expect("failed wake returns empty");
+        assert!(failed.is_empty());
+        assert_eq!(queries, 0);
+
+        let timed_out = wake_asleep_displays_and_query(
+            Duration::from_millis(5),
+            Duration::from_millis(1),
+            || true,
+            || Ok(Vec::new()),
+        )
+        .expect("timeout returns empty");
+        assert!(timed_out.is_empty());
     }
 }

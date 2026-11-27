@@ -29,6 +29,7 @@ objc2.workspace = true
 objc2-core-graphics.workspace = true
 objc2-core-foundation.workspace = true
 objc2-foundation = { workspace = true, features = ["NSString"] }
+objc2-io-kit = { workspace = true, features = ["pwr_mgt"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 deskfleet-linux-desktop.workspace = true
