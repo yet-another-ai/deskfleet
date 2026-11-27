@@ -1638,6 +1638,7 @@
     "linkInvalidDescription": "リンクが不完全か、すでに使用済みの可能性があります。新しいメールをリクエストして続けてください。", "requestNewLink": "新しいリンクをリクエスト",
     "desktopTitle": "DeskFleet Desktop に進む", "desktopDescription": "このページを開いたデスクトップアプリに、このアカウントでログインします。",
     "desktopAttemptMissing": "デスクトップアプリからログインをやり直してください。", "continueDesktop": "デスクトップアプリに進む",
+    "openDesktop": "DeskFleet を開く", "openDesktopHint": "DeskFleet を開いてログインを完了してください。完了後はこのタブを閉じられます。",
     "differentAccount": "別のアカウントを使用", "confirmEmailTitle": "新しいメールアドレスを確認",
     "confirmEmailDescription": "{email} でログイン中です。確認すると、ログイン用のメールアドレスが新しいものに置き換わります。", "confirmEmail": "メールアドレスを確認",
     "emailChanged": "メールアドレスを更新しました", "emailChangedDescription": "以前のメールアドレスに通知を送りました。新しいアドレスで再度ログインしてください。",

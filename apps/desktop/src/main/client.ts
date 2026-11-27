@@ -1,4 +1,4 @@
-import { installCentralAccount } from "./central-account.ts"
+import { installCentralAccount, installDesktopProtocol } from "./central-account.ts"
 import { installFiles } from "./files.ts"
 import { installPorts } from "./ports.ts"
 import { installLocalChannels } from "./local-channels.ts"
@@ -49,6 +49,8 @@ import { installApplication } from "./application.ts"
 import { installGoogleTag } from "./google-tag.ts"
 
 function start(): void {
+  // Register before Electron is ready so a launch URL is not missed.
+  installDesktopProtocol()
   const linuxKeyringPath = join(app.getPath("userData"), "linux-keyring.json")
   const { appliedUseSystemKeyring, overriddenExternally } = configureLinuxPasswordStore({
     platform: process.platform,

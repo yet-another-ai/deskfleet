@@ -49,12 +49,71 @@ async function saveAccount(path: string, account: SavedAccount): Promise<void> {
   await writeFile(path, JSON.stringify({ serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined } satisfies StoredAccount), { mode: 0o600 })
 }
 
-/** A one-shot loopback callback receives the code; the verifier remains in the main process. */
-async function authorize(client: HttpCentralClient, openAuthorization: (url: string) => Promise<unknown>): Promise<void> {
+const DESKTOP_SCHEME = "ai.yetanother.deskfleet"
+const DESKTOP_CALLBACK = "ai.yetanother.deskfleet://auth/callback"
+const LOGIN_TIMEOUT_MS = 5 * 60_000
+const MISSING_LOGIN_CODE = "Sign-in failed. The browser did not return a login code."
+// The same-origin forms carry the code or the failure reason. A missing code is
+// reported instead of only changing the page text, so the app stops waiting.
+const CALLBACK_PAGE = `<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">Signing in…</p><form method="post" action="/auth/complete"><input type="hidden" name="code"></form><form method="post" action="/auth/failed"><input type="hidden" name="reason"></form><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');const forms=document.querySelectorAll('form');if(code){forms[0].elements.code.value=code;forms[0].submit();}else{forms[1].elements.reason.value='missing_code';forms[1].submit();}</script></body></html>`
+
+type AuthCallback = "loopback" | "scheme"
+
+/** A one-shot callback receives the code; the verifier remains in the main process. */
+interface AuthReceiver {
+  returnTo: string
+  code: Promise<string>
+  fail(error: Error): void
+  close(): void
+}
+
+let pendingAuthCallback: ((code: string | undefined) => void) | undefined
+
+/** Registers the packaged macOS deep link before Electron becomes ready. */
+export function installDesktopProtocol(): void {
+  if (process.platform !== "darwin") return
+  app.on("open-url", (event, url) => {
+    event.preventDefault()
+    receiveAuthCallback(url)
+  })
+  if (!app.isPackaged) return
+  try { app.setAsDefaultProtocolClient(DESKTOP_SCHEME) }
+  catch (error) { console.warn("Could not register the DeskFleet sign-in scheme", error) }
+}
+
+/** macOS delivers custom-scheme callbacks through `open-url`; only our path is accepted. */
+export function receiveAuthCallback(value: string): void {
+  let url: URL
+  try { url = new URL(value) } catch { return }
+  if (url.protocol !== `${DESKTOP_SCHEME}:` || url.host !== "auth" || url.pathname !== "/callback"
+    || url.username || url.password) return
+  const code = new URLSearchParams(url.hash.slice(1)).get("loginCode") ?? undefined
+  pendingAuthCallback?.(code)
+}
+
+function deferredCode(): { code: Promise<string>; complete(code: string): void; fail(error: Error): void } {
   let complete!: (code: string) => void
   let fail!: (error: Error) => void
-  const code = new Promise<string>((resolve, reject) => { complete = resolve; fail = reject })
+  let settled = false
+  const code = new Promise<string>((resolve, reject) => {
+    complete = value => { if (!settled) { settled = true; resolve(value) } }
+    fail = error => { if (!settled) { settled = true; reject(error) } }
+  })
   void code.catch(() => {})
+  return { code, complete, fail }
+}
+
+/** Safari blocks HTTP loopback navigation under HTTPS-Only, so macOS hands the custom scheme to the running app. */
+function schemeReceiver(): AuthReceiver {
+  const { code, complete, fail } = deferredCode()
+  const handler = (value: string | undefined) => value ? complete(value) : fail(new Error(MISSING_LOGIN_CODE))
+  pendingAuthCallback = handler
+  // A newer login may have replaced the handler before this attempt closes.
+  return { returnTo: DESKTOP_CALLBACK, code, fail, close: () => { if (pendingAuthCallback === handler) pendingAuthCallback = undefined } }
+}
+
+async function loopbackReceiver(): Promise<AuthReceiver> {
+  const { code, complete, fail } = deferredCode()
   const server = createServer(async (request, response) => {
     const address = server.address()
     if (!address || typeof address === "string") { response.writeHead(503).end(); return }
@@ -62,17 +121,27 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
     if (request.method === "GET" && request.url?.startsWith("/auth/callback")) {
       // A same-origin form needs its real Origin header; no-referrer makes it null.
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; form-action 'self'" })
-      response.end(`<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">Signing in…</p><form method="post" action="/auth/complete"><input type="hidden" name="code"></form><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code){const form=document.querySelector('form');form.elements.code.value=code;form.submit();}else document.getElementById('status').textContent='Sign-in failed.';</script></body></html>`)
+      response.end(CALLBACK_PAGE)
       return
     }
-    if (request.method !== "POST" || request.url !== "/auth/complete" || request.headers.origin !== origin) { response.writeHead(404).end(); return }
+    if (request.method !== "POST" || request.headers.origin !== origin) { response.writeHead(404).end(); return }
     try {
       let body = ""
       for await (const chunk of request) { body += String(chunk); if (body.length > 8192) throw new Error("Invalid login response") }
-      const loginCode = new URLSearchParams(body).get("code")
-      if (!loginCode) throw new Error("Missing login code")
-      response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Signed in. You can close this tab.")
-      complete(loginCode)
+      if (request.url === "/auth/complete") {
+        const loginCode = new URLSearchParams(body).get("code")
+        if (!loginCode) throw new Error("Missing login code")
+        response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Signed in. You can close this tab.")
+        complete(loginCode)
+        return
+      }
+      if (request.url === "/auth/failed") {
+        response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Sign-in failed. Return to DeskFleet and try again.")
+        const reason = new URLSearchParams(body).get("reason")
+        fail(new Error(reason === "missing_code" ? MISSING_LOGIN_CODE : "Sign-in failed. Return to DeskFleet and try again."))
+        return
+      }
+      response.writeHead(404).end()
     } catch (error) {
       response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Sign-in failed.")
       fail(error instanceof Error ? error : new Error("Invalid login response"))
@@ -80,15 +149,30 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
   })
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve) })
   const address = server.address()
-  if (!address || typeof address === "string") throw new Error("Could not start login callback")
-  const timeout = setTimeout(() => fail(new Error("Sign-in timed out")), 5 * 60_000)
+  if (!address || typeof address === "string") { server.close(); throw new Error("Could not start login callback") }
+  return {
+    returnTo: `http://127.0.0.1:${address.port}/auth/callback`,
+    code, fail,
+    close: () => { server.close(); server.closeAllConnections() },
+  }
+}
+
+async function finishLogin(client: HttpCentralClient, openAuthorization: (url: string) => Promise<unknown>, receiver: AuthReceiver, started: { authorizationUrl: string; loginVerifier: string }): Promise<void> {
+  const timeout = setTimeout(() => receiver.fail(new Error("Sign-in timed out. Return to DeskFleet and try again.")), LOGIN_TIMEOUT_MS)
   try {
-    const result = await client.authorizationUrl(`http://127.0.0.1:${address.port}/auth/callback`)
-    const url = new URL(result.authorizationUrl)
+    const url = new URL(started.authorizationUrl)
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Invalid authorization URL")
     await openAuthorization(url.toString())
-    await client.exchange(await code, result.loginVerifier)
-  } finally { clearTimeout(timeout); server.close(); server.closeAllConnections() }
+    await client.exchange(await receiver.code, started.loginVerifier)
+  } finally { clearTimeout(timeout) }
+}
+
+async function authorize(client: HttpCentralClient, openAuthorization: (url: string) => Promise<unknown>, callback: AuthCallback): Promise<void> {
+  const receiver = callback === "scheme" ? schemeReceiver() : await loopbackReceiver()
+  try {
+    const started = await client.authorizationUrl(receiver.returnTo)
+    await finishLogin(client, openAuthorization, receiver, started)
+  } finally { receiver.close() }
 }
 
 async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment" | "centralEnroll">(method: M, params: ControlMethods[M]["params"]): Promise<ControlMethods[M]["result"]> {
@@ -97,10 +181,11 @@ async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment"
   finally { client.close() }
 }
 
-export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<HttpCentralClient> {
+export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown>; authCallback?: AuthCallback } = {}): Promise<HttpCentralClient> {
   const path = join(app.getPath("userData"), "account.json")
+  const authCallback = options.authCallback ?? (process.platform === "darwin" && app.isPackaged ? "scheme" : "loopback")
   let suspendEpoch = 0
-  const client = new HttpCentralClient({ ...desktopCentralTransport, suspendEpoch: () => suspendEpoch, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
+  const client = new HttpCentralClient({ ...desktopCentralTransport, suspendEpoch: () => suspendEpoch, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal, authCallback), openExternal: shell.openExternal })
   const localEnrollment = () => daemonCall("centralStatus", {})
   const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,

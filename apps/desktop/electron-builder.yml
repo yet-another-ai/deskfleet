@@ -55,6 +55,13 @@ files:
   - package.json
 
 mac:
+  # Safari's HTTPS-Only mode blocks HTTP loopback, so packaged macOS sign-in
+  # returns through the scheme shared with the mobile apps. Restrict this to
+  # mac: Windows and Linux do not handle callback URLs from second-instance.
+  protocols:
+    - name: DeskFleet
+      schemes:
+        - ai.yetanother.deskfleet
   # Apple's 824-on-1024 grid; full-bleed icon.png looks oversized in Dock/Finder (#652).
   icon: build/icon-mac.png
   extraResources:

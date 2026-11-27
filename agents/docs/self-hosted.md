@@ -358,9 +358,12 @@ browser storage cannot change it.
 
 Electron opens the trusted Web authentication page in the system browser. An
 explicit approval returns a 60-second code to a temporary
-`http://127.0.0.1:<port>/auth/callback`; the main process exchanges its private
-verifier and persists the resulting opaque token using platform secure storage.
-The renderer never receives the token. Desktop attempts expire in ten minutes.
+`http://127.0.0.1:<port>/auth/callback`, or on packaged macOS through the
+`ai.yetanother.deskfleet://auth/callback` scheme already shared with the mobile
+apps (Safari's HTTPS-Only mode blocks HTTP loopback). The main process exchanges
+its private verifier and persists the resulting opaque token using platform
+secure storage. The renderer never receives the token. Desktop attempts expire
+in ten minutes.
 
 Password/email changes and recovery revoke login sessions and existing peer
 grants atomically. They preserve Machine registration and accepted work.

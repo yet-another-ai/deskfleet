@@ -20,7 +20,7 @@ vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
 import { app, BrowserWindow, ipcMain, net, powerMonitor, safeStorage } from "electron"
-import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
+import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount, receiveAuthCallback } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
 const serverUrl = "https://fleet.example"
@@ -252,6 +252,116 @@ test("the browser login callback submits its code as a same-origin form", async 
   expect(net.WebSocket).toHaveBeenCalledExactlyOnceWith("wss://fleet.example/api/client/ws", { useSessionCookies: false })
   expect(sentRequest(f.fetch).credentials).toBe("omit")
   expect(JSON.parse(await readFile(f.path, "utf8")).encryptedToken).toBe(Buffer.from("encrypted-new-token").toString("base64"))
+})
+
+test("the callback page reports a missing login code instead of waiting for the timeout", async () => {
+  const f = await setup()
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = (await request.json()).returnTo
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    throw new Error("exchange must not run without a login code")
+  })
+  const client = await installCentralAccount({ openAuthorization: async () => {
+    const page = await networkFetch(returnTo)
+    const html = await page.text()
+    expect(html).toContain('<form method="post" action="/auth/failed">')
+    const origin = new URL(returnTo).origin
+    const rejected = await networkFetch(`${origin}/auth/failed`, { method: "POST", headers: { Origin: "https://other.example" }, body: new URLSearchParams({ reason: "missing_code" }) })
+    expect(rejected.status).toBe(404)
+    const accepted = await networkFetch(`${origin}/auth/failed`, { method: "POST", headers: { Origin: origin }, body: new URLSearchParams({ reason: "missing_code" }) })
+    expect(accepted.status).toBe(200)
+    expect(await accepted.text()).toBe("Sign-in failed. Return to DeskFleet and try again.")
+  } })
+  clients.push(client)
+  await expect(client.login()).rejects.toThrow("did not return a login code")
+  expect(f.fetch).toHaveBeenCalledTimes(1)
+})
+
+test("the macOS desktop scheme delivers its code to the pending login", async () => {
+  const f = await setup()
+  const loginCode = "one-use+code&value"
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = (await request.json()).returnTo
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(await request.json()).toEqual({ code: loginCode, loginVerifier: "private-verifier" })
+    return Response.json({ token: "new-token", user })
+  })
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: async () => {
+      expect(returnTo).toBe("ai.yetanother.deskfleet://auth/callback")
+      receiveAuthCallback(`ai.yetanother.deskfleet://auth/callback#loginCode=${encodeURIComponent(loginCode)}`)
+    },
+  })
+  clients.push(client)
+  await client.login()
+  expect(f.fetch).toHaveBeenCalledTimes(2)
+})
+
+test("an older desktop login close keeps a newer pending callback", async () => {
+  const f = await setup()
+  const loginCode = "second-login-code"
+  let starts = 0
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    const body = await request.json()
+    if (request.url.endsWith("/api/auth/start")) {
+      starts++
+      return Response.json({ authorizationUrl: `https://fleet.example/auth/authorize?login=${starts}`, loginVerifier: `verifier-${starts}` })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(body).toEqual({ code: loginCode, loginVerifier: "verifier-2" })
+    return Response.json({ token: "new-token", user })
+  })
+  let rejectFirst!: (error: Error) => void
+  let secondOpened!: () => void
+  const secondReady = new Promise<void>(resolve => { secondOpened = resolve })
+  let opened = 0
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: () => {
+      if (++opened === 1) return new Promise((_, reject) => { rejectFirst = reject })
+      secondOpened()
+      return Promise.resolve()
+    },
+  })
+  clients.push(client)
+  const first = client.login().catch(error => error)
+  await vi.waitFor(() => expect(opened).toBe(1))
+  const second = client.login()
+  await secondReady
+  rejectFirst(new Error("first login aborted"))
+  expect(await first).toBeInstanceOf(Error)
+  receiveAuthCallback(`ai.yetanother.deskfleet://auth/callback#loginCode=${encodeURIComponent(loginCode)}`)
+  await expect(second).resolves.toBeUndefined()
+  expect(f.fetch).toHaveBeenCalledTimes(3)
+})
+
+test("a desktop scheme callback without a code fails immediately", async () => {
+  const f = await setup()
+  f.fetch.mockImplementation(async input => {
+    const request = input as Request
+    if (request.url.endsWith("/api/auth/start")) {
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    throw new Error("exchange must not run without a login code")
+  })
+  const client = await installCentralAccount({
+    authCallback: "scheme",
+    openAuthorization: async () => { receiveAuthCallback("ai.yetanother.deskfleet://auth/callback") },
+  })
+  clients.push(client)
+  await expect(client.login()).rejects.toThrow("did not return a login code")
+  expect(f.fetch).toHaveBeenCalledTimes(1)
 })
 
 test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {
