@@ -183,8 +183,9 @@ The Team conversation list includes active and archived Super Agent Sessions.
 For hosted conversations, the Team binding records the archive flag. Archive
 requests cancellation in Eve and preserves read access. Restore reopens the
 same conversation. Delete ends the Eve Session and tombstones its Team binding.
-The tombstone blocks transcript access and operation replay while allowing
-the meter to settle previously accepted work. Eve retains its workflow data.
+The tombstone acknowledges repeated deletion by the owning Team and blocks
+transcript access and replay of create and message receipts. The meter can
+still settle previously accepted work. Eve retains its workflow data.
 For BYOA conversations the owning Machine executes archive, restore, and
 delete. The Team list reads archive state from that registration's synchronized
 Session summary and observes deletions from its inventory.

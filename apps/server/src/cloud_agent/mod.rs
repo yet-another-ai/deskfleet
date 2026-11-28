@@ -207,6 +207,14 @@ fn validate_session_id(session: &str) -> Result<()> {
     Ok(())
 }
 
+async fn require_session(state: &AppState, team: &str, session: &str) -> Result<()> {
+    validate_session_id(session)?;
+    if !state.store.owns_cloud_session(team, session).await? {
+        return Err(deskfleet_control_store::Error::NotFound.into());
+    }
+    Ok(())
+}
+
 async fn require_active_session(state: &AppState, team: &str, session: &str) -> Result<()> {
     validate_session_id(session)?;
     Ok(state
@@ -314,7 +322,7 @@ async fn message(
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     let actor = authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
-    require_active_session(&state, &team, &session).await?;
+    require_session(&state, &team, &session).await?;
     let body: MessageRequest = read_body(&req, body).await?;
     body.message.validate()?;
     let key = request_key(&actor.user.id, &team, &body.operation_id)?;
@@ -349,40 +357,46 @@ async fn deliver(
         .await?;
     let delivery = match saved {
         Some(delivery) => delivery,
-        None => {
-            // Schedule usage collection before delivery: eve may accept the
-            // message even when the HTTP acknowledgement is lost.
-            state.store.wake_cloud_meter(team, session).await?;
-            let guard = state.store.lock_cloud_session(team, session).await?;
-            guard.require_active()?;
-            let sender = json!({"id": actor.user.id, "name": actor.user.name});
-            let response = client::send(
-                eve.post(&["eve", "v1", "session", session])?
-                    .header(SENDER_HEADER, URL_SAFE_NO_PAD.encode(sender.to_string()))
-                    .header("x-deskfleet-team-id", team)
-                    .header("x-deskfleet-login-id", &actor.id)
-                    .header("x-deskfleet-session-id", session)
-                    .json(&EveDelivery {
-                        message,
-                        idempotency_key: key,
-                    }),
-            )
-            .await?;
-            let sent: Delivered = response.json().await.map_err(|_| client::unavailable())?;
-            guard.finish().await?;
-            if sent.delivery_id.is_empty() {
-                return Err(client::unavailable());
-            }
-            state
-                .store
-                .finish_cloud_agent_request(key, &sent.delivery_id)
-                .await?
-        }
+        None => dispatch_message(state, eve, team, session, actor, key, message).await?,
     };
     if let Some(title) = message.title() {
         state.store.name_cloud_session(team, session, title).await?;
     }
     Ok(delivery)
+}
+
+async fn dispatch_message(
+    state: &AppState,
+    eve: &EveClient,
+    team: &str,
+    session: &str,
+    actor: &AuthSession,
+    key: &str,
+    message: &Message,
+) -> Result<String> {
+    let guard = state.store.lock_cloud_session(team, session).await?;
+    if let Some(delivery) = guard.message_receipt(key).await? {
+        return Ok(delivery);
+    }
+    guard.require_active()?;
+    let sender = json!({"id": actor.user.id, "name": actor.user.name});
+    let response = client::send(
+        eve.post(&["eve", "v1", "session", session])?
+            .header(SENDER_HEADER, URL_SAFE_NO_PAD.encode(sender.to_string()))
+            .header("x-deskfleet-team-id", team)
+            .header("x-deskfleet-login-id", &actor.id)
+            .header("x-deskfleet-session-id", session)
+            .json(&EveDelivery {
+                message,
+                idempotency_key: key,
+            }),
+    )
+    .await?;
+    let sent: Delivered = response.json().await.map_err(|_| client::unavailable())?;
+    if sent.delivery_id.is_empty() {
+        return Err(client::unavailable());
+    }
+    Ok(guard.finish_delivery(key, &sent.delivery_id).await?)
 }
 
 async fn cancel_turn(
@@ -419,10 +433,7 @@ async fn stream(
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     authorize(&req, &state, &team, TeamAction::Read).await?;
-    validate_session_id(&session)?;
-    if !state.store.owns_cloud_session(&team, &session).await? {
-        return Err(deskfleet_control_store::Error::NotFound.into());
-    }
+    require_session(&state, &team, &session).await?;
     let response = client::send(
         runtime(&state)?
             .get(&["eve", "v1", "session", &session, "stream"])?

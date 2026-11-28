@@ -104,9 +104,9 @@ async fn hosted_lifecycle_orders_archive_after_delivery_and_preserves_the_tombst
     };
     let action = |suffix: &str| request(Method::POST, &format!("{path}/{suffix}")).to_request();
     let create = json!({"operationId":uuid::Uuid::new_v4()});
-    let send = || {
+    let send = |operation_id: uuid::Uuid| {
         request(Method::POST, &format!("{path}/messages"))
-            .set_json(json!({"operationId":uuid::Uuid::new_v4(),"message":"hello"}))
+            .set_json(json!({"operationId":operation_id,"message":"hello"}))
             .to_request()
     };
 
@@ -150,8 +150,12 @@ async fn hosted_lifecycle_orders_archive_after_delivery_and_preserves_the_tombst
         runtime.release.notify_one();
         archive.await
     };
+    let delivered_operation = uuid::Uuid::new_v4();
     let (sent, archived) = tokio::time::timeout(Duration::from_secs(10), async {
-        futures_util::join!(test::call_service(&app, send()), send_and_archive)
+        futures_util::join!(
+            test::call_service(&app, send(delivered_operation)),
+            send_and_archive
+        )
     })
     .await
     .unwrap();
@@ -165,8 +169,16 @@ async fn hosted_lifecycle_orders_archive_after_delivery_and_preserves_the_tombst
     let listed: Value =
         test::call_and_read_body_json(&app, request(Method::GET, &base).to_request()).await;
     assert_eq!(listed[0]["archived"], true);
+    let replay: Value = test::call_and_read_body_json(
+        &app,
+        request(Method::POST, &base).set_json(&create).to_request(),
+    )
+    .await;
+    assert_eq!(replay, json!({"sessionId":"lifecycle"}));
     assert_eq!(
-        test::call_service(&app, send()).await.status(),
+        test::call_service(&app, send(uuid::Uuid::new_v4()))
+            .await
+            .status(),
         StatusCode::CONFLICT
     );
     let history = request(Method::GET, &format!("{path}/stream")).to_request();
@@ -203,16 +215,28 @@ async fn hosted_lifecycle_orders_archive_after_delivery_and_preserves_the_tombst
             .await
             .unwrap()
     );
+    // Concurrent attempts share the committed deletion, including a later retry
+    // by a client that lost its response.
+    let (first, second) = futures_util::join!(
+        test::call_service(&app, delete()),
+        test::call_service(&app, delete()),
+    );
+    assert_eq!(first.status(), StatusCode::NO_CONTENT);
+    assert_eq!(second.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         test::call_service(&app, delete()).await.status(),
         StatusCode::NO_CONTENT
     );
+    assert_eq!(runtime.ends.load(Ordering::SeqCst), 3);
     let listed: Value =
         test::call_and_read_body_json(&app, request(Method::GET, &base).to_request()).await;
     assert_eq!(listed, json!([]));
     for missing in [
-        send(),
+        send(delivered_operation),
+        action("archive"),
         action("restore"),
+        request(Method::DELETE, &cross_team).to_request(),
+        request(Method::DELETE, &format!("{base}/missing")).to_request(),
         request(Method::GET, &format!("{path}/stream")).to_request(),
         request(Method::POST, &base).set_json(create).to_request(),
     ] {

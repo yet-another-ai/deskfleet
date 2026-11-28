@@ -2,18 +2,12 @@ use super::{
     AppState, HttpRequest, HttpResponse, Result, TeamAction, authorize, client::SessionControl,
     runtime, validate_session_id, web,
 };
-use deskfleet_control_store::CloudSessionGuard;
 
 type SessionPath = web::Path<(String, String)>;
 
-async fn lock(
-    req: &HttpRequest,
-    state: &AppState,
-    path: &SessionPath,
-) -> Result<CloudSessionGuard> {
+async fn authorize_session(req: &HttpRequest, state: &AppState, path: &SessionPath) -> Result<()> {
     authorize(req, state, &path.0, TeamAction::UseSuperAgent).await?;
-    validate_session_id(&path.1)?;
-    Ok(state.store.lock_cloud_session(&path.0, &path.1).await?)
+    validate_session_id(&path.1)
 }
 
 pub(super) async fn archive(
@@ -21,7 +15,8 @@ pub(super) async fn archive(
     state: web::Data<AppState>,
     path: SessionPath,
 ) -> Result<HttpResponse> {
-    let guard = lock(&req, &state, &path).await?;
+    authorize_session(&req, &state, &path).await?;
+    let guard = state.store.lock_cloud_session(&path.0, &path.1).await?;
     if !guard.archived {
         // A guardless Eve cancel also stops background tasks between turns.
         runtime(&state)?
@@ -37,7 +32,9 @@ pub(super) async fn restore(
     state: web::Data<AppState>,
     path: SessionPath,
 ) -> Result<HttpResponse> {
-    lock(&req, &state, &path).await?.set_archived(false).await?;
+    authorize_session(&req, &state, &path).await?;
+    let guard = state.store.lock_cloud_session(&path.0, &path.1).await?;
+    guard.set_archived(false).await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -46,10 +43,16 @@ pub(super) async fn delete(
     state: web::Data<AppState>,
     path: SessionPath,
 ) -> Result<HttpResponse> {
-    let guard = lock(&req, &state, &path).await?;
-    runtime(&state)?
-        .stop_session(&path.1, SessionControl::End)
-        .await?;
-    guard.delete().await?;
+    authorize_session(&req, &state, &path).await?;
+    if let Some(guard) = state
+        .store
+        .lock_cloud_session_for_delete(&path.0, &path.1)
+        .await?
+    {
+        runtime(&state)?
+            .stop_session(&path.1, SessionControl::End)
+            .await?;
+        guard.delete().await?;
+    }
     Ok(HttpResponse::NoContent().finish())
 }

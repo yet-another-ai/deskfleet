@@ -156,7 +156,7 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 | POST `/sessions/{sessionId}/cancel` | Send `{turnId}` to request cancellation of that turn. Returns HTTP 204 when the runtime accepts the request. |
 | POST `/sessions/{sessionId}/archive` | Request cancellation of hosted work and archive the conversation. Returns HTTP 204. |
 | POST `/sessions/{sessionId}/restore` | Return a hosted conversation to the active list. Returns HTTP 204. |
-| DELETE `/sessions/{sessionId}` | End the hosted Session and remove its entry and transcript access from DeskFleet. Returns HTTP 204. |
+| DELETE `/sessions/{sessionId}` | End the hosted Session and remove its entry and transcript access from DeskFleet. A successful deletion and its retries by the owning Team return HTTP 204. Unknown IDs and IDs belonging to another Team return HTTP 404. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
 | GET `/usage` | Read the effective plan, billing period, credit allowance (`includedCredits`, an integer or `null` for unlimited), credits charged (`usedCredits`, a decimal string), raw model tokens (`usedTokens`), runtime availability and admission decision. `includedTokens` is the legacy name for the allowance. |
 
@@ -218,7 +218,10 @@ zero-based position of the last stored line, or `-1` for an empty stream.
 The API polls eve independently of the viewer and records usage at its source
 timestamp. At the monthly allowance, new requests receive HTTP 429. Work
 accepted before usage arrives can take the recorded total above the allowance.
-A retry can retrieve the saved receipt for an already accepted operation.
+Retrying a completed create or message with the same operation ID and payload
+returns the saved receipt, even after the Session is archived. Restore the
+Session to send a new message. After deletion, create and message retries for
+that Session return HTTP 404.
 
 Self-hosted eve replays sessions on the same eve version. A framework version
 change can strand older conversations even when their history remains readable.
