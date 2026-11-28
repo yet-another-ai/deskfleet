@@ -883,6 +883,7 @@
     "fullDiskAccessError": "无法请求完全磁盘访问权限。请重新启动运行本地 Agent 的应用或可执行文件以重试。",
     "accessibilityRequesting": "正在请求用于鼠标和键盘控制的辅助功能权限…",
     "accessibilityDenied": "请在 macOS 系统设置 → 隐私与安全性 → 辅助功能中允许鼠标和键盘控制，然后完全退出并重新打开 DeskFleet。",
+    "accessibilityRestartRequired": "辅助功能权限已授予。请重启 DeskFleet 以启用鼠标和键盘控制。",
     "accessibilityError": "无法请求用于鼠标和键盘控制的辅助功能权限。请完全退出并重新打开 DeskFleet 后重试。",
     "agents": "Agents"
   },
@@ -2009,6 +2010,7 @@
       "granted": "权限已开启",
       "not-required": "无需额外权限",
       "denied": "尚未开启权限",
+      "restart-required": "权限已授予。请重启 DeskFleet 以应用。",
       "error": "无法检查权限"
     },
     "windowsDesktopService": {

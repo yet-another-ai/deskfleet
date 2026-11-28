@@ -8,7 +8,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use deskfleet_input::InputSession;
-pub use deskfleet_input::{InputError, InputEvent};
+pub use deskfleet_input::{AccessibilityAccess, InputError, InputEvent};
 use tokio::sync::{mpsc, oneshot};
 
 type Result<T> = std::result::Result<T, InputError>;
@@ -105,28 +105,29 @@ fn service_error(error: crate::media::MediaError) -> InputError {
 ///
 /// # Errors
 /// Returns an error if the permission worker fails.
-pub async fn check_accessibility_access() -> Result<Option<bool>> {
+pub async fn check_accessibility_access() -> Result<Option<AccessibilityAccess>> {
     tokio::task::spawn_blocking(deskfleet_input::check_accessibility_access)
         .await
         .map_err(|error| InputError::Platform(error.to_string()))
 }
 
 /// Request this process's Accessibility permission without opening input.
-/// Opens the macOS privacy pane when access remains denied.
+/// Opens the macOS privacy pane when access has not been granted yet. A grant
+/// that landed after launch needs a restart instead, so settings stay closed.
 ///
 /// Returns `None` on platforms without an upfront permission request.
 ///
 /// # Errors
 /// Returns an error if the permission worker or System Settings fails.
-pub async fn request_accessibility_access() -> Result<Option<bool>> {
+pub async fn request_accessibility_access() -> Result<Option<AccessibilityAccess>> {
     tokio::task::spawn_blocking(|| {
-        let granted = deskfleet_input::request_accessibility_access();
+        let access = deskfleet_input::request_accessibility_access();
         #[cfg(target_os = "macos")]
-        if granted == Some(false) {
+        if access == Some(AccessibilityAccess::Denied) {
             crate::permission_settings::open("Privacy_Accessibility")
                 .map_err(|error| InputError::Platform(error.to_string()))?;
         }
-        Ok(granted)
+        Ok(access)
     })
     .await
     .map_err(|error| InputError::Platform(error.to_string()))?

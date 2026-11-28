@@ -32,10 +32,11 @@ pub use media::{
 pub use nat::{NatFiltering, NatMapping, NatTestResult, NatTestStatus, test_nat};
 pub use network_cost::is_network_metered;
 pub use permissions::{
-    LocalNetworkAccessRequest, NotificationPermission, check_accessibility_access,
-    check_full_disk_access, check_notification_access, check_screen_capture_access,
-    open_local_network_settings, request_accessibility_access, request_full_disk_access,
-    request_local_network_access, request_notification_access, request_screen_capture_access,
+    AccessibilityAccess, LocalNetworkAccessRequest, NotificationPermission,
+    check_accessibility_access, check_full_disk_access, check_notification_access,
+    check_screen_capture_access, open_local_network_settings, request_accessibility_access,
+    request_full_disk_access, request_local_network_access, request_notification_access,
+    request_screen_capture_access,
 };
 pub use rtc::{
     IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,

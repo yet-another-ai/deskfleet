@@ -43,13 +43,14 @@ const auv = computed(() => permission.value === "auv")
 const sharedScreens = computed(() => wayland.value && permission.value === "screenCapture")
 const currentPermission = computed(() => permission.value && permission.value !== "localNetwork" && permission.value !== "windowsDesktopService" && permission.value !== "auv" ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))
+const restartRequired = computed(() => currentPermission.value?.status === "restart-required")
 const requesting = computed(() => currentPermission.value?.status === "requesting" || wayland.value
   && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
 const canRequest = computed(() => auv.value
   ? permissions.value.auv?.status !== "requesting"
   : windowsService.value
     ? permissions.value.windowsDesktopService?.available === true && !permissions.value.windowsDesktopService.running
-    : (!granted.value || sharedScreens.value) && !requesting.value && (!wayland.value
+    : (!granted.value || sharedScreens.value) && !requesting.value && !restartRequired.value && (!wayland.value
       || !refreshing.value && currentPermission.value?.status !== "checking"))
 const canRestart = computed(() => props.host.platform === "darwin" && !!props.host.application)
 const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
@@ -282,10 +283,10 @@ onBeforeUnmount(() => { unsubscribe?.() })
               </template>
               <template v-else>
                 <UiButton v-if="sharedScreens" :variant="granted ? 'default' : 'primary'" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(`welcome.wayland.screenCapture.${granted ? 'reselect' : 'choose'}`) }}</UiButton>
-                <UiButton variant="primary" v-else-if="!granted" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+                <UiButton variant="primary" v-else-if="!granted && !restartRequired" type="button" :disabled="pending || refreshing || !canRequest" @click="requestPermission(permission)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
                 <UiButton type="button" :disabled="pending || refreshing" @click="refreshPermissions">{{ t(refreshing ? "welcome.checking" : "welcome.checkAgain") }}</UiButton>
               </template>
-              <UiButton v-if="canRestart" type="button" :disabled="pending || refreshing" @click="restartApplication"><RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}</UiButton>
+              <UiButton v-if="canRestart" :variant="restartRequired ? 'primary' : 'default'" type="button" :disabled="pending || refreshing" @click="restartApplication"><RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}</UiButton>
               <UiButton variant="primary" v-if="localNetwork || granted" type="button" class="ml-auto" :disabled="pending || refreshing" @click="advancePermission(permission)">{{ t("welcome.continue") }}<ChevronRight :size="15" aria-hidden="true" /></UiButton>
             </div>
             <template v-if="!granted">

@@ -7,7 +7,7 @@ import { checkAccessibilityAccess, checkFullDiskAccess, checkScreenCaptureAccess
 import { PeerSessions } from "./peers/peer-sessions.ts"
 import { startControlServer } from "./control/server.ts"
 import { daemonControlDirectory } from "./control/discovery.ts"
-import { DesktopPermissions } from "./desktop/permissions.ts"
+import { DesktopPermissions, type PermissionResult } from "./desktop/permissions.ts"
 import { LinuxDesktopPermissions, type LinuxDesktopPermissionApi } from "./desktop/linux-permissions.ts"
 import type { AgentProvider } from "./acp/connection.ts"
 import type { DaemonCatalog } from "./machine/catalog.ts"
@@ -15,10 +15,10 @@ import type { DaemonCatalog } from "./machine/catalog.ts"
 export async function startDaemon(port = 0, options: {
   controlDirectory?: string
   requestScreenCaptureAccess?: () => Promise<boolean | null>
-  requestAccessibilityAccess?: () => Promise<boolean | null>
+  requestAccessibilityAccess?: () => Promise<PermissionResult>
   requestFullDiskAccess?: () => Promise<boolean | null>
   checkScreenCaptureAccess?: () => Promise<boolean | null>
-  checkAccessibilityAccess?: () => Promise<boolean | null>
+  checkAccessibilityAccess?: () => Promise<PermissionResult>
   checkFullDiskAccess?: () => Promise<boolean | null>
   /** macOS welcome setup guides requests over IPC; Wayland always authorizes at startup. */
   permissionMode?: "automatic" | "guided"

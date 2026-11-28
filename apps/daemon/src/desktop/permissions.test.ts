@@ -98,6 +98,40 @@ test("guided initialization checks silently and coalesces pending requests witho
   await settled.promise
 })
 
+test("accessibility granted after launch reports that a restart is required", async () => {
+  const permissions = new DesktopPermissions()
+  const access = {
+    fullDiskAccess: async () => true,
+    screenCapture: async () => true,
+    accessibility: async () => "restart-required" as const,
+  }
+  permissions.initialize(access, access, "guided")
+  assert.deepEqual(await permissions.refresh(), {
+    fullDiskAccessPermission: { status: "granted" },
+    screenCapturePermission: { status: "granted" },
+    accessibilityPermission: { status: "restart-required" },
+  })
+  assert.equal(permissions.requestPermission("accessibility").accessibilityPermission.status, "requesting")
+  const changed = deferred<void>()
+  permissions.onChange(state => { if (state.accessibilityPermission.status === "restart-required") changed.resolve() })
+  await changed.promise
+  assert.equal(permissions.state.accessibilityPermission.status, "restart-required")
+})
+
+test("native accessibility grant and denial strings map to their statuses", async () => {
+  const permissions = new DesktopPermissions()
+  const access = {
+    fullDiskAccess: async () => null,
+    screenCapture: async () => null,
+    accessibility: async () => "granted" as const,
+  }
+  permissions.initialize(access, access, "guided")
+  assert.equal((await permissions.refresh()).accessibilityPermission.status, "granted")
+  const denied = new DesktopPermissions()
+  denied.initialize(access, { ...access, accessibility: async () => "denied" as const }, "guided")
+  assert.equal((await denied.refresh()).accessibilityPermission.status, "denied")
+})
+
 test("a stale permission check cannot overwrite a request completed after that check started", async () => {
   const permissions = new DesktopPermissions()
   const stale = deferred<boolean | null>()

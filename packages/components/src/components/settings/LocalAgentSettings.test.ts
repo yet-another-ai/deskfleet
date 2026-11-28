@@ -150,6 +150,15 @@ test("groups independent screen and input permission changes without changing Ag
   expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 
+test("an Accessibility grant from this session asks for a restart without an error alert", async () => {
+  vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, accessibilityPermission: { status: "restart-required" } })
+  const view = render()
+  await flushPromises()
+  const notice = view.get('[data-accessibility-permission="restart-required"]')
+  expect(notice.attributes("role")).toBe("status")
+  expect(notice.text()).toBe("Accessibility access is granted. Restart DeskFleet to finish enabling mouse and keyboard control.")
+})
+
 test("Linux permission notices describe desktop consent without macOS settings or system audio", async () => {
   platformClient.platform = "linux"
   vi.mocked(platformClient.settings.get).mockResolvedValue({ ...running, linuxDesktopBackend: "wayland", screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })

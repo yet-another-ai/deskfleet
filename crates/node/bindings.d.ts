@@ -72,6 +72,8 @@ export declare class NativeTerminal {
   close(): Promise<void>
 }
 
+export type AccessibilityAccess = 'granted' | 'denied' | 'restart-required'
+
 /** Power direction reported by a battery controller. */
 export type BatteryState = 'unknown' | 'charging' | 'discharging' | 'empty' | 'full' | 'paused'
 
@@ -119,7 +121,7 @@ export interface CatalogWorktree {
  * Check Accessibility access without prompting or initializing input.
  * Resolves with null on platforms without an upfront permission request.
  */
-export declare function checkAccessibilityAccess(): Promise<boolean | null>
+export declare function checkAccessibilityAccess(): Promise<AccessibilityAccess | null>
 
 /**
  * Check this process's Full Disk Access without opening macOS settings.
@@ -289,7 +291,7 @@ export interface PeerEvent {
  * Request this process's Accessibility access without initializing input.
  * Resolves with null on platforms without an upfront permission request.
  */
-export declare function requestAccessibilityAccess(): Promise<boolean | null>
+export declare function requestAccessibilityAccess(): Promise<AccessibilityAccess | null>
 
 /**
  * Check this process's Full Disk Access and open macOS settings when denied.

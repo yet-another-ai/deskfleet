@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, NotificationPermission, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
+import type { AccessibilityAccess, DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, NotificationPermission, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 import type { NatTestResult } from "./bindings.d.ts"
 import type { NativeSpeech, NativeSpeechStatus } from "./bindings.d.ts"
 
@@ -7,7 +7,7 @@ export type { DesktopConfig, DesktopStreamPool, DisplayInfo, IceCandidate, IceSe
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
-export type { LocalNetworkAccessRequest } from "./bindings.d.ts"
+export type { AccessibilityAccess, LocalNetworkAccessRequest } from "./bindings.d.ts"
 export type { NatMapping, NatFiltering, NatTestStatus, NatTestResult } from "./bindings.d.ts"
 export type { NativeSpeech, NativeSpeechEvent, NativeSpeechStatus } from "./bindings.d.ts"
 
@@ -104,7 +104,7 @@ export function checkScreenCaptureAccess(): Promise<boolean | null> {
 }
 
 /** Check Accessibility without prompting or opening an input controller; null elsewhere. */
-export function checkAccessibilityAccess(): Promise<boolean | null> {
+export function checkAccessibilityAccess(): Promise<AccessibilityAccess | null> {
   return (bindings ??= loadBindings()).checkAccessibilityAccess()
 }
 
@@ -119,7 +119,7 @@ export function requestScreenCaptureAccess(): Promise<boolean | null> {
 }
 
 /** Request Accessibility in the daemon's process without opening an input controller. */
-export function requestAccessibilityAccess(): Promise<boolean | null> {
+export function requestAccessibilityAccess(): Promise<AccessibilityAccess | null> {
   return (bindings ??= loadBindings()).requestAccessibilityAccess()
 }
 

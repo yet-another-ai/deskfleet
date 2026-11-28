@@ -1,7 +1,9 @@
 //! Thin system permission adapters for the calling daemon or desktop client.
 
 use deskfleet_native::{
-    filesystem_permissions, input, local_network, media, notification_permissions,
+    filesystem_permissions,
+    input::{self, AccessibilityAccess as InputAccessibilityAccess},
+    local_network, media, notification_permissions,
 };
 use napi::Result;
 use napi_derive::napi;
@@ -105,13 +107,30 @@ pub async fn check_screen_capture_access() -> Result<Option<bool>> {
         .map_err(native_error)
 }
 
+#[napi(string_enum = "kebab-case")]
+pub enum AccessibilityAccess {
+    Granted,
+    Denied,
+    /// Accessibility is granted, but this process needs a restart to post events.
+    RestartRequired,
+}
+
+fn map_accessibility_access(access: InputAccessibilityAccess) -> AccessibilityAccess {
+    match access {
+        InputAccessibilityAccess::Granted => AccessibilityAccess::Granted,
+        InputAccessibilityAccess::Denied => AccessibilityAccess::Denied,
+        InputAccessibilityAccess::RestartRequired => AccessibilityAccess::RestartRequired,
+    }
+}
+
 /// Check Accessibility access without prompting or initializing input.
 /// Resolves with null on platforms without an upfront permission request.
 #[napi]
-pub async fn check_accessibility_access() -> Result<Option<bool>> {
-    input::check_accessibility_access()
+pub async fn check_accessibility_access() -> Result<Option<AccessibilityAccess>> {
+    Ok(input::check_accessibility_access()
         .await
-        .map_err(native_error)
+        .map_err(native_error)?
+        .map(map_accessibility_access))
 }
 
 /// Check this process's Full Disk Access and open macOS settings when denied.
@@ -135,8 +154,9 @@ pub async fn request_screen_capture_access() -> Result<Option<bool>> {
 /// Request this process's Accessibility access without initializing input.
 /// Resolves with null on platforms without an upfront permission request.
 #[napi]
-pub async fn request_accessibility_access() -> Result<Option<bool>> {
-    input::request_accessibility_access()
+pub async fn request_accessibility_access() -> Result<Option<AccessibilityAccess>> {
+    Ok(input::request_accessibility_access()
         .await
-        .map_err(native_error)
+        .map_err(native_error)?
+        .map(map_accessibility_access))
 }

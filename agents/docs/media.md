@@ -477,6 +477,12 @@ Previously denied access must be enabled in macOS System Settings under Privacy
 & Security → Screen & System Audio Recording or Accessibility as appropriate;
 requests open the relevant settings pane when consent remains denied. Restart
 the app or standalone daemon if macOS requires a restart after granting access.
+`CGPreflightPostEventAccess` caches its launch-time answer for the lifetime of
+the process, while the Accessibility API re-reads TCC. When Accessibility is
+granted after the daemon starts, the Accessibility check therefore reports
+`restart-required` instead of `denied`: the grant landed, but event posting
+stays unavailable until a restart. The desktop app offers a restart action for
+that state and input posting keeps using the cached post-event check.
 Reconnecting a client reads the existing daemon's status without requesting
 again. Tests inject permission checks and requests so ordinary test runs do not
 open OS dialogs.
@@ -1213,6 +1219,9 @@ macOS requires Accessibility permission for the process hosting the daemon.
 The desktop welcome flow requests it after Screen Recording; standalone daemons
 request it during startup. Remote input
 startup still checks current permission and reports denial without opening a consent dialog.
+A grant that arrived after launch reports `restart-required` because macOS keeps
+the post-event denial cached until the process restarts; the UI asks for that
+restart instead of telling the user access is missing.
 Screen Recording permission is separate. Without the optional desktop service,
 Windows injection follows SendInput's integrity restrictions: it cannot control
 elevated applications from a lower integrity process or operate the secure

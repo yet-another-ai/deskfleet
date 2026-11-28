@@ -740,7 +740,7 @@
     "screenCaptureError": "画面とシステムオーディオへのアクセスを要求できませんでした。DeskFleet を完全に終了して再起動し、もう一度お試しください。", "desktopPermissions": "デスクトップの権限",
     "fullDiskAccessRequesting": "ローカルエージェントのフルディスクアクセス権限を要求中…", "fullDiskAccessDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「フルディスクアクセス」で、ローカルエージェントを実行しているアプリまたは実行ファイルにアクセスを許可し、そのアプリまたは実行ファイルを再起動してください。",
     "fullDiskAccessError": "フルディスクアクセスを要求できませんでした。ローカルエージェントを実行しているアプリまたは実行ファイルを再起動して、もう一度お試しください。", "accessibilityRequesting": "マウスとキーボードを操作するためのアクセシビリティ権限を要求中…",
-    "accessibilityDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」でマウスとキーボードの操作を許可してから、DeskFleet を完全に終了して再起動してください。", "accessibilityError": "マウスとキーボードを操作するためのアクセシビリティ権限を要求できませんでした。DeskFleet を完全に終了して再起動し、もう一度お試しください。",
+    "accessibilityDenied": "macOS の「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」でマウスとキーボードの操作を許可してから、DeskFleet を完全に終了して再起動してください。", "accessibilityRestartRequired": "アクセシビリティ権限は許可されています。マウスとキーボードの操作を有効にするには DeskFleet を再起動してください。", "accessibilityError": "マウスとキーボードを操作するためのアクセシビリティ権限を要求できませんでした。DeskFleet を完全に終了して再起動し、もう一度お試しください。",
     "agents": "エージェント"
   },
   "notification": {
@@ -1516,7 +1516,7 @@
     "permissionStatus": {
       "checking": "アクセス権を確認中…", "requesting": "macOS の許可を待っています…",
       "granted": "アクセス許可済み", "not-required": "追加の権限は不要です",
-      "denied": "アクセスはまだ許可されていません", "error": "アクセス権を確認できませんでした"
+      "denied": "アクセスはまだ許可されていません", "restart-required": "アクセスは許可されています。反映するには DeskFleet を再起動してください。", "error": "アクセス権を確認できませんでした"
     },
     "windowsDesktopService": {
       "description": "現在の Windows セッションをロックしても、リモートデスクトップからこのコンピューターを操作できるようにします。",

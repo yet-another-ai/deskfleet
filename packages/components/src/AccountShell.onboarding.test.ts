@@ -88,6 +88,17 @@ test("macOS permission steps offer a complete application restart", async () => 
   expect(view!.findAll("button").map(button => button.text())).not.toContain("Restart DeskFleet")
 })
 
+test("an Accessibility grant from this session asks for a restart instead of opening settings", async () => {
+  const app = setup("accessibility")
+  app.permissions.accessibilityPermission = { status: "restart-required" }
+  app.mount()
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("Access granted. Restart DeskFleet to apply it.")
+  expect(view!.findAll("button").map(button => button.text())).not.toContain("Open System Settings")
+  await click("Restart DeskFleet")
+  expect(app.application.restart).toHaveBeenCalledOnce()
+})
+
 async function click(text: string): Promise<void> {
   const button = view!.findAll("button").find(value => value.text() === text)
   expect(button, `Button ${text}`).toBeDefined()

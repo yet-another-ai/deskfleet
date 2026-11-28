@@ -54,7 +54,8 @@ const permissions = computed(() => {
     const messageKind = platformClient.platform === "linux" && kind !== "fullDiskAccess"
       ? kind === "screenCapture" ? "waylandScreenCapture" : "waylandControl" : kind
     const label = permission.status === "requesting" ? t(`settings.${messageKind}Requesting`)
-      : permission.status === "denied" ? t(`settings.${messageKind}Denied`) : t(`settings.${messageKind}Error`)
+      : permission.status === "restart-required" ? t("settings.accessibilityRestartRequired")
+        : permission.status === "denied" ? t(`settings.${messageKind}Denied`) : t(`settings.${messageKind}Error`)
     return [{ kind, permission, label, needsAction: permission.status === "denied" || permission.status === "error" }]
   })
 })

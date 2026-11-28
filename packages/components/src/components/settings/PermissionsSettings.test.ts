@@ -185,6 +185,20 @@ test("reviews all macOS permissions after welcome and requests them without adva
   expect(app.onboarding.setMachineControlEnabled).not.toHaveBeenCalled()
 })
 
+test("an Accessibility grant from this session asks for a restart instead of another request", async () => {
+  const app = setup()
+  app.permissions.accessibilityPermission = { status: "restart-required" }
+  app.mount()
+  await flushPromises()
+  expect(card("accessibility").get('[role="status"]').text()).toBe("Access granted. Restart DeskFleet to apply it.")
+  expect(card("accessibility").text()).not.toContain("Open System Settings")
+  const restart = card("accessibility").findAll("button").find(button => button.text() === i18n.global.t("common.restartDeskFleet"))
+  expect(restart).toBeDefined()
+  await restart!.trigger("click")
+  expect(app.application.restart).toHaveBeenCalledOnce()
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
 test("local network requests stay explicit and an attempted request is never shown as a grant", async () => {
   const app = setup()
   app.mount()

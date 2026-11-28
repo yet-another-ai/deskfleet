@@ -35,11 +35,12 @@ const details = (kind: SystemPermission) => `welcome.${wayland.value ? "wayland"
 const label = (kind: SystemPermission) => t(kind === "auv" ? "welcome.steps.auv" : wayland.value ? `${details(kind)}.title` : `welcome.steps.${kind}`)
 const desktopPermission = (kind: SystemPermission) => kind === "localNetwork" || kind === "auv" ? undefined : permissions.value[`${kind}Permission`]
 const granted = (kind: SystemPermission) => ["granted", "not-required"].includes(desktopPermission(kind)?.status ?? "")
+const restartRequired = (kind: SystemPermission) => desktopPermission(kind)?.status === "restart-required"
 const sharedScreens = (kind: SystemPermission) => wayland.value && kind === "screenCapture"
 const requesting = (kind: SystemPermission) => kind === "auv"
   ? permissions.value.auv?.status === "requesting"
   : sharedRequest.value || desktopPermission(kind)?.status === "requesting"
-const canRequest = (kind: SystemPermission) => !busy.value && (!granted(kind) || sharedScreens(kind)) && !requesting(kind)
+const canRequest = (kind: SystemPermission) => !busy.value && (!granted(kind) || sharedScreens(kind)) && !requesting(kind) && !restartRequired(kind)
   && (!wayland.value || desktopPermission(kind)?.status !== "checking")
 const canRestart = client.platform === "darwin" && !!client.application
 
@@ -166,7 +167,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
           <p v-if="kind === 'localNetwork'" class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.permissions.localNetwork.instructions") }}</p>
           <p v-else class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t(wayland ? "permissionsSettings.waylandShared" : "permissionsSettings.restart") }}</p>
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p role="status" class="m-0 text-[13px]" :class="granted(kind) ? 'text-ui-success' : 'text-ui-text-muted'">
+            <p role="status" class="m-0 text-[13px]" :class="granted(kind) ? 'text-ui-success' : restartRequired(kind) ? 'text-ui-text' : 'text-ui-text-muted'">
               {{ t(kind === 'localNetwork' ? `welcome.permissions.localNetwork.status.${permissions.localNetwork ?? 'not-requested'}` : wayland && requesting(kind) ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${desktopPermission(kind)?.status ?? 'checking'}`) }}
             </p>
             <div class="flex flex-wrap gap-2">
@@ -175,6 +176,9 @@ onBeforeUnmount(() => { unsubscribe?.() })
                 <UiButton type="button" :disabled="busy" @click="openLocalNetworkSettings">{{ t("welcome.permissions.localNetwork.openSettings") }}</UiButton>
               </template>
               <UiButton v-else-if="sharedScreens(kind)" type="button" :disabled="!canRequest(kind)" @click="requestPermission(kind)">{{ t(`welcome.wayland.screenCapture.${granted(kind) ? 'reselect' : 'choose'}`) }}</UiButton>
+              <UiButton v-else-if="restartRequired(kind)" type="button" :disabled="busy" @click="restartApplication">
+                <RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}
+              </UiButton>
               <UiButton v-else-if="!granted(kind)" type="button" :disabled="!canRequest(kind)" @click="requestPermission(kind)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
             </div>
           </div>

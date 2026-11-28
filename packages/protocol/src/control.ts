@@ -111,7 +111,8 @@ export function desktopStartupCleanupFailure(startupError: unknown, cleanup: unk
 }
 
 export interface DesktopPermission {
-  status: "checking" | "requesting" | "granted" | "denied" | "not-required" | "error"
+  /** `restart-required` means the grant landed after the daemon started. */
+  status: "checking" | "requesting" | "granted" | "denied" | "restart-required" | "not-required" | "error"
   error?: string
 }
 

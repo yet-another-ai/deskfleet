@@ -1,6 +1,9 @@
+import type { AccessibilityAccess } from "@deskfleet/native"
 import { DESKTOP_PERMISSION_KINDS, type DesktopPermission, type DesktopPermissionKind, type DesktopPermissionsState, type LinuxDesktopBackend } from "@deskfleet/protocol/control"
 
-export type PermissionAccess = Record<DesktopPermissionKind, (reselectSources?: boolean) => Promise<boolean | null>>
+/** Native access results. Accessibility can also report a required restart. */
+export type PermissionResult = boolean | AccessibilityAccess | null
+export type PermissionAccess = Record<DesktopPermissionKind, (reselectSources?: boolean) => Promise<PermissionResult>>
 
 /** OS permissions belong to the daemon process that accesses files and controls the desktop. */
 export class DesktopPermissions {
@@ -110,10 +113,14 @@ export class DesktopPermissions {
     } finally { this.#handlingChanges = false }
   }
 
-  async #read(access: () => Promise<boolean | null>): Promise<DesktopPermission> {
+  async #read(access: () => Promise<PermissionResult>): Promise<DesktopPermission> {
     try {
-      const granted = await Promise.resolve().then(access)
-      return { status: granted === null ? "not-required" : granted ? "granted" : "denied" }
+      const result = await Promise.resolve().then(access)
+      if (result === null) return { status: "not-required" }
+      if (result === "restart-required") return { status: "restart-required" }
+      if (result === "granted") return { status: "granted" }
+      if (result === "denied") return { status: "denied" }
+      return { status: result ? "granted" : "denied" }
     } catch (error) { return { status: "error", error: error instanceof Error ? error.message : String(error) } }
   }
 

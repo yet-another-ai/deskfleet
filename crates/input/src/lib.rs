@@ -65,14 +65,28 @@ pub enum InputError {
 /// Result returned by the input backend.
 pub type Result<T> = std::result::Result<T, InputError>;
 
+/// macOS Accessibility consent as observed by the calling process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccessibilityAccess {
+    /// Event posting is available now.
+    Granted,
+    /// macOS has not granted event posting to this process.
+    Denied,
+    /// Accessibility is granted, but this process started before the grant.
+    /// Event posting stays unavailable until the process restarts.
+    RestartRequired,
+}
+
 /// Check Accessibility consent without prompting or initializing input.
 ///
 /// Returns `None` on platforms without an upfront permission request.
 #[must_use]
-pub fn check_accessibility_access() -> Option<bool> {
+pub fn check_accessibility_access() -> Option<AccessibilityAccess> {
     #[cfg(target_os = "macos")]
     {
-        Some(objc2_core_graphics::CGPreflightPostEventAccess())
+        Some(accessibility_access(
+            objc2_core_graphics::CGPreflightPostEventAccess(),
+        ))
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -86,16 +100,73 @@ pub fn check_accessibility_access() -> Option<bool> {
 /// initialize input, enumerate displays, or acquire a controller. Other
 /// platforms return `None` without prompting.
 #[must_use]
-pub fn request_accessibility_access() -> Option<bool> {
+pub fn request_accessibility_access() -> Option<AccessibilityAccess> {
     #[cfg(target_os = "macos")]
     {
         use objc2_core_graphics::{CGPreflightPostEventAccess, CGRequestPostEventAccess};
 
-        Some(CGPreflightPostEventAccess() || CGRequestPostEventAccess())
+        Some(accessibility_access(
+            CGPreflightPostEventAccess() || CGRequestPostEventAccess(),
+        ))
     }
     #[cfg(not(target_os = "macos"))]
     {
         None
+    }
+}
+
+/// Combine the process-cached post-event result with a live Accessibility query.
+///
+/// `CGPreflightPostEventAccess` keeps its launch-time answer for the lifetime of
+/// the process, while the Accessibility API re-reads TCC. When the two disagree
+/// the grant landed after launch, so event posting needs a restart.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)] // The C query takes no references and returns a plain boolean.
+fn accessibility_access(post_event_granted: bool) -> AccessibilityAccess {
+    if post_event_granted {
+        return AccessibilityAccess::Granted;
+    }
+    // The options variant queries TCC instead of a process-cached value. No
+    // options means it never prompts.
+    let ax_trusted = unsafe { objc2_application_services::AXIsProcessTrustedWithOptions(None) };
+    classify(false, ax_trusted)
+}
+
+#[cfg(target_os = "macos")]
+const fn classify(post_event_granted: bool, ax_trusted: bool) -> AccessibilityAccess {
+    match (post_event_granted, ax_trusted) {
+        (true, _) => AccessibilityAccess::Granted,
+        (false, true) => AccessibilityAccess::RestartRequired,
+        (false, false) => AccessibilityAccess::Denied,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::{AccessibilityAccess, classify};
+
+    #[test]
+    fn granted_post_event_access_is_usable_immediately() {
+        assert_eq!(
+            classify(true, false),
+            AccessibilityAccess::Granted,
+            "post-event access is authoritative when macOS already allows it"
+        );
+        assert_eq!(classify(true, true), AccessibilityAccess::Granted);
+    }
+
+    #[test]
+    fn accessibility_granted_after_launch_requires_a_restart() {
+        assert_eq!(
+            classify(false, true),
+            AccessibilityAccess::RestartRequired,
+            "the cached post-event denial clears only when the process restarts"
+        );
+    }
+
+    #[test]
+    fn missing_accessibility_access_is_denied() {
+        assert_eq!(classify(false, false), AccessibilityAccess::Denied);
     }
 }
 

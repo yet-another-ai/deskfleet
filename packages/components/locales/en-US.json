@@ -883,6 +883,7 @@
     "fullDiskAccessError": "Could not request Full Disk Access. Restart the app or executable running the local Agent to retry.",
     "accessibilityRequesting": "Requesting Accessibility access for mouse and keyboard control…",
     "accessibilityDenied": "Allow mouse and keyboard control in macOS System Settings → Privacy & Security → Accessibility, then fully quit and reopen DeskFleet.",
+    "accessibilityRestartRequired": "Accessibility access is granted. Restart DeskFleet to finish enabling mouse and keyboard control.",
     "accessibilityError": "Could not request Accessibility access for mouse and keyboard control. Fully quit and reopen DeskFleet to retry.",
     "agents": "Agents"
   },
@@ -2009,6 +2010,7 @@
       "granted": "Access enabled",
       "not-required": "No additional permission needed",
       "denied": "Access is not enabled yet",
+      "restart-required": "Access granted. Restart DeskFleet to apply it.",
       "error": "Could not check access"
     },
     "windowsDesktopService": {
