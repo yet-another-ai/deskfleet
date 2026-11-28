@@ -79,7 +79,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   }
   // Every machine has a section; expanding it loads its catalog without switching the session.
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
-  const machineToggle = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>(":scope > div > button[aria-expanded]")
+  const machineToggle = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>('[data-sidebar-reorder-group="machines"] > button[aria-expanded]')
   const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
