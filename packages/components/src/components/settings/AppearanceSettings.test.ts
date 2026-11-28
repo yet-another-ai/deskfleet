@@ -379,10 +379,20 @@ test.each(["win32", "web"] as const)("appearance is available without a machine 
   configureClient(api)
   view = mount(AccountShell, { props: { host: api }, attachTo: document.body, global: { plugins: [pinia, i18n, router], stubs } })
   await flushPromises()
+  const settingsNavigation = vi.spyOn(router, "push")
   await view.get('button[aria-label="Settings"]').trigger("click")
-  await vi.waitFor(() => expect(view!.find('nav a[href="#/settings/appearance"]').exists()).toBe(true))
+  expect(settingsNavigation).toHaveBeenCalledExactlyOnceWith({ name: "settings-preferences" })
+  // The first visit loads lazy settings modules; await navigation before checking the rendered page.
+  await settingsNavigation.mock.results[0]!.value
+  settingsNavigation.mockRestore()
+  await flushPromises()
+  const appearanceNavigation = vi.spyOn(router, "replace")
   await view.get('nav a[href="#/settings/appearance"]').trigger("click")
-  await vi.waitFor(() => expect(view!.get("h1").text()).toBe("Appearance"))
+  expect(appearanceNavigation).toHaveBeenCalledExactlyOnceWith({ name: "settings-appearance" })
+  await appearanceNavigation.mock.results[0]!.value
+  appearanceNavigation.mockRestore()
+  await flushPromises()
+  expect(view.get("h1").text()).toBe("Appearance")
   expect(view.get<HTMLInputElement>('#appearance-terminal-font').element.disabled).toBe(false)
   expect(router.currentRoute.value.path).toBe("/settings/appearance")
 })
