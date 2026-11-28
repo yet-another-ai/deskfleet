@@ -151,7 +151,8 @@ test("setup retains home environment provenance while ACP opts into project dote
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-for (const projectKey of [false, true]) test(`real ACP helper selects ${projectKey ? "project API key over stored account" : "the stored account route"} without network or a model prompt`, { timeout: 45_000 }, async () => {
+for (const auth of ["account", "project-key", "desktop"]) test(`real ACP helper resolves ${auth} routes through native model configuration`, { timeout: 45_000 }, async t => {
+  const projectKey = auth === "project-key"
   const home = await mkdtemp(join(tmpdir(), "df-dsh-account-acp-"))
   const runtime = sourceDshRuntime()
   const credentials = join(home, "registration-credentials.yaml")
@@ -162,12 +163,59 @@ for (const projectKey of [false, true]) test(`real ACP helper selects ${projectK
     } },
   } }), { mode: 0o600 })
   if (projectKey) await writeFile(join(home, ".env"), "DEEPSEEK_API_KEY=fixture-project-secret\n")
+  let origin = ""
+  const received: { path: string; model: string; desktopKey: boolean }[] = []
+  if (auth === "desktop") {
+    const server = createServer(async (request, response) => {
+      let raw = ""
+      for await (const chunk of request) raw += chunk.toString()
+      received.push({ path: request.url!, model: JSON.parse(raw).model, desktopKey: request.headers.authorization === "Bearer fixture-desktop-key" })
+      response.writeHead(200, { "Content-Type": "text/event-stream" })
+      for (const [delta, reason] of [[{ role: "assistant", content: "OK" }, null], [{}, "stop"]]) {
+        response.write("data: " + JSON.stringify({ id: "fixture", model: "same-model", object: "chat.completion.chunk", created: 1,
+          choices: [{ index: 0, delta, finish_reason: reason }] }) + "\n\n")
+      }
+      response.end("data: [DONE]\n\n")
+    })
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+    t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections() }))
+    const address = server.address()
+    assert.ok(address && typeof address === "object")
+    origin = `http://127.0.0.1:${address.port}`
+    const desktop = join(home, "harness", "profiles", "desktop")
+    await mkdir(desktop, { recursive: true })
+    const endpoint = { api: "openai-completions", apiKeyEnv: "TEST_RELAY_KEY",
+      models: [{ id: "same-model", name: "Same Model", contextWindow: 16384, maxTokens: 512, input: ["text"] }] }
+    await writeFile(join(home, ".env"), "TEST_RELAY_KEY=fixture-incorrect-project-key\n")
+    await writeFile(join(home, "harness", ".credentials.yaml"), JSON.stringify({ version: 1, refs: { TEST_RELAY_KEY: "fixture-desktop-key" }, records: {} }), { mode: 0o600 })
+    const nativeProfile = join(home, "harness", "profiles", "acp")
+    await mkdir(nativeProfile, { recursive: true })
+    await writeFile(join(nativeProfile, "cordis.patch.yml"), JSON.stringify([
+      { id: "llm-pi-ai", config: { providers: { existing: { ...endpoint, baseURL: origin + "/native", models: [
+        { ...endpoint.models[0], id: "acp-model" },
+      ] } } } },
+    ]))
+    await writeFile(join(desktop, "cordis.patch.yml"), JSON.stringify([
+      { id: "llm-pi-ai", config: { providers: { alpha: { ...endpoint, baseURL: origin + "/alpha" }, beta: { ...endpoint, baseURL: origin + "/beta" },
+        existing: { ...endpoint, baseURL: origin + "/unused" } } } },
+      { id: "agent-default-model", config: { provider: "alpha", model: "same-model" } },
+    ]))
+  }
   // Discovery falls back to its shipped catalog on this synthetic HTTP failure.
   // Deny sockets too, so neither model discovery nor an unexpected plugin can reach the network.
   await writeFile(guard, `
     import { Socket } from 'node:net';
-    Socket.prototype.connect = function () { throw new Error('Network is disabled in this fixture'); };
-    globalThis.fetch = async () => new Response('{}', { status: 503 });
+    const connect = Socket.prototype.connect;
+    Socket.prototype.connect = function (...args) {
+      const opts = Array.isArray(args[0]) ? args[0][0] : args[0];
+      if (opts?.host === '127.0.0.1' && String(opts?.port) === ${JSON.stringify(origin.split(":")[2] ?? "")}) return connect.apply(this, args);
+      throw new Error('Network is disabled in this fixture');
+    };
+    const request = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      return url.origin === ${JSON.stringify(origin)} ? request(input, init) : new Response('{}', { status: 503 });
+    };
   `)
   const env = Object.fromEntries(Object.entries({ ...process.env,
     PATH: "", NODE_OPTIONS: "", NODE_PATH: "", HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home,
@@ -198,10 +246,25 @@ for (const projectKey of [false, true]) test(`real ACP helper selects ${projectK
     const model = session.configOptions?.find(option => option.id === "model")
     assert.ok(model && model.type === "select", "ACP must advertise its selected model")
     const selected = JSON.parse(model.currentValue)
-    if (projectKey) assert.equal(selected[0], "deepseek-official")
+    if (auth === "desktop") {
+      assert.deepEqual(selected, ["alpha", "same-model"])
+      const groups = model.options.flatMap(row => "group" in row ? [row.group] : [])
+      for (const id of ["alpha", "beta", "deepseek-account", "existing"]) assert.ok(groups.includes(id))
+      const existing = model.options.find(row => "group" in row && row.group === "existing")
+      assert.ok(existing && "group" in existing)
+      assert.deepEqual(existing.options.map(choice => JSON.parse(choice.value)), [["existing", "acp-model"]])
+      const value = JSON.stringify(["beta", "same-model"])
+      const changed = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
+        sessionId: session.sessionId, configId: "model", value,
+      })
+      assert.equal(changed.configOptions.find(row => row.id === "model")?.currentValue, value)
+      const reply = await connection.agent.request(acp.methods.agent.session.prompt, { sessionId: session.sessionId, prompt: [{ type: "text", text: "Reply OK." }] })
+      assert.equal(reply.stopReason, "end_turn")
+      assert.deepEqual(received, [{ path: "/beta/chat/completions", model: "same-model", desktopKey: true }])
+    } else if (projectKey) assert.equal(selected[0], "deepseek-official")
     else assert.deepEqual(selected, ["deepseek-account", "deepseek-flash"])
     assert.doesNotMatch(stderr, /fixture-account-token-never-print|fixture-project-secret/)
-  } finally {
+  } catch (error) { throw new Error("DSH ACP fixture failed: " + stderr, { cause: error }) } finally {
     clearTimeout(deadline)
     child.stdin.end()
     connection.close()

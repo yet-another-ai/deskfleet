@@ -10,6 +10,17 @@ import type { ScheduledTask } from "@deskfleet/protocol/schedule"
 import type { RemoteMcpOperation, RemoteMcpRequest } from "@deskfleet/protocol/generated/central-control"
 
 export interface McpScope { sessionId: string; workspaceId?: string; superAgent?: boolean }
+export interface McpScheduleBridge {
+  prepareCreate?(context: { actor: AgentActor; sessionId: string; workspaceId: string; schedule: Record<string, unknown> }): Promise<{
+    duplicateOf?: ScheduledTask
+    operationId?: string
+    scheduleId?: string
+    autoSubscribe?: boolean
+    deliveryPolicy?: "every_run" | "exceptions_only"
+  } | undefined>
+  onCreated?(context: { actor: AgentActor; workspaceId: string; task: ScheduledTask; deliveryPolicy?: "every_run" | "exceptions_only" }): Promise<void>
+  reportFeedback?(context: { actor: AgentActor; sessionId: string; report: Record<string, unknown> }): Promise<unknown>
+}
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
 const configValuesSchema = z.record(nonEmpty, z.union([nonEmpty, z.boolean()]))
@@ -168,6 +179,7 @@ export async function dispatchMcp(
   operations: MachineOperations, method: string, value: unknown, actor: AgentActor, scope: McpScope,
   remote?: (request: RemoteMcpRequest) => Promise<unknown>,
   allowLocalCrossWorkspace?: () => Promise<boolean> | boolean,
+  scheduleBridge?: McpScheduleBridge,
 ): Promise<unknown> {
   const params = object(value)
   const source = await operations.agents.requireActive(scope.sessionId)
@@ -273,7 +285,17 @@ export async function dispatchMcp(
     if (scope.workspaceId === undefined) throw new Error("Schedules require a Workspace")
     const schedule = object(params.schedule)
     if (schedule.workspaceId !== undefined && schedule.workspaceId !== scope.workspaceId) throw new Error("Schedule is outside this MCP delegation")
-    return operations.handle(method, { schedule: { ...schedule, workspaceId: scope.workspaceId } }, actor)
+    const bridged = await scheduleBridge?.prepareCreate?.({ actor, sessionId: scope.sessionId, workspaceId: scope.workspaceId, schedule })
+    if (bridged?.duplicateOf) return bridged.duplicateOf
+    const created = await operations.handle(method, {
+      schedule: { ...schedule, workspaceId: scope.workspaceId },
+      ...(bridged?.operationId ? { operationId: bridged.operationId } : {}),
+      ...(bridged?.scheduleId ? { scheduleId: bridged.scheduleId } : {}),
+    }, actor) as ScheduledTask
+    if (bridged?.autoSubscribe) {
+      await scheduleBridge?.onCreated?.({ actor, workspaceId: scope.workspaceId, task: created, deliveryPolicy: bridged.deliveryPolicy })
+    }
+    return created
   }
   if (["scheduleUpdate", "scheduleDelete", "scheduleRun"].includes(method)) {
     if (scope.workspaceId === undefined) throw new Error("Schedules require a Workspace")
@@ -285,6 +307,10 @@ export async function dispatchMcp(
       if (changes.workspaceId !== undefined && changes.workspaceId !== scope.workspaceId) throw new Error("Schedule is outside this MCP delegation")
     }
     return operations.handle(method, params, actor)
+  }
+  if (method === "_deskfleet/super-agent/workerReport") {
+    if (!scheduleBridge?.reportFeedback) throw new Error("Super Agent reporting is unavailable for this session")
+    return scheduleBridge.reportFeedback({ actor, sessionId: scope.sessionId, report: params })
   }
   throw new Error("This operation is unavailable through session MCP tools")
 }

@@ -314,6 +314,7 @@ test("uploadAttachment pipelines chunks to draftId or sessionId, reports acknowl
     async () => directory,
     async sessionId => join(attachmentsRoot, sessionId),
     async draftId => join(attachmentsRoot, ".drafts", draftId),
+    path => `fixture-read-grant:${path}`,
   )
   const endpoint: FileEndpoint = {
     close: () => service.close(),
@@ -336,6 +337,7 @@ test("uploadAttachment pipelines chunks to draftId or sessionId, reports acknowl
     { onProgress: update => progress.push(update) },
   )
   expect(await readFile(uploaded.path)).toEqual(Buffer.from(payload))
+  expect(uploaded.attachmentGrant).toBe(`fixture-read-grant:${uploaded.path}`)
   expect(uploaded.uri.startsWith("file://")).toBe(true)
   expect(progress[0]).toEqual({ transferredBytes: 0, totalBytes: payload.byteLength })
   expect(progress.at(-1)).toEqual({ transferredBytes: payload.byteLength, totalBytes: payload.byteLength })

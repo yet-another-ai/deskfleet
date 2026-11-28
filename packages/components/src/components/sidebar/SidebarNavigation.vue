@@ -21,6 +21,12 @@ const sections: readonly { id: SidebarPanel; label: string; icon: typeof Message
 
 const activePanel = computed(() => sidebarPanel.panel.value)
 
+/** Machine-local conversation routes that belong under Conversations on initial deep links. */
+const conversationRouteNames = new Set([
+  "new-session", "new-project", "manual-session", "workspace-agent",
+  "session", "worktree", "machine-control", "terminal", "super-agent",
+])
+
 // Keep deep links and browser Back/Forward synced with the sidebar panel without snapping away
 // when the user opens a session or schedule from inside the Search or Remote desktop panels.
 watch(() => route.name, (name, prev) => {
@@ -30,10 +36,7 @@ watch(() => route.name, (name, prev) => {
     sidebarPanel.panel.value = "search"
   } else if (name === "schedules" && sidebarPanel.panel.value !== "search") {
     sidebarPanel.panel.value = "schedules"
-  } else if (
-    prev === undefined
-    && (name === "new-session" || name === "session" || name === "worktree" || name === "terminal" || name === "super-agent")
-  ) {
+  } else if (prev === undefined && conversationRouteNames.has(String(name))) {
     sidebarPanel.panel.value = "conversations"
   }
 }, { immediate: true })

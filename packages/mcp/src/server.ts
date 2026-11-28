@@ -2,18 +2,19 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { apiRequest } from "@deskfleet/client/api-request"
-import { DESKFLEET_TOOLS } from "./tools.ts"
+import { DESKFLEET_SA_WORKER_TOOLS, DESKFLEET_TOOLS } from "./tools.ts"
 
 export type ToolInvoker = (name: string, args: Record<string, unknown>) => Promise<unknown>
 
-export function createMcpServer(invoke: ToolInvoker): Server {
+export function createMcpServer(invoke: ToolInvoker, options: { enableSaReport?: boolean } = {}): Server {
+  const available = options.enableSaReport ? [...DESKFLEET_TOOLS, ...DESKFLEET_SA_WORKER_TOOLS] : DESKFLEET_TOOLS
   const server = new Server({ name: "deskfleet", title: "DeskFleet", version: "0.24.0" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: DESKFLEET_TOOLS.map(({ method: _method, ...tool }) => tool),
+    tools: available.map(({ method: _method, ...tool }) => tool),
   }))
   server.setRequestHandler(CallToolRequestSchema, async request => {
     try {
-      if (!DESKFLEET_TOOLS.some(tool => tool.name === request.params.name)) throw new Error("Unknown DeskFleet tool")
+      if (!available.some(tool => tool.name === request.params.name)) throw new Error("Unknown DeskFleet tool")
       const value = await invoke(request.params.name, request.params.arguments ?? {})
       if (request.params.name === "deskfleet_remote_mcp_call") return CallToolResultSchema.parse(value)
       return { content: [{ type: "text", text: JSON.stringify(value ?? null) }] }
@@ -45,5 +46,5 @@ export function gatewayInvoker(endpoint: string, token: string, request: typeof 
 /** Usable from any ACP implementation or another stdio MCP host. */
 export async function runMcpStdio(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const invoke = gatewayInvoker(env.DESKFLEET_MCP_ENDPOINT ?? "", env.DESKFLEET_MCP_TOKEN ?? "")
-  await createMcpServer(invoke).connect(new StdioServerTransport())
+  await createMcpServer(invoke, { enableSaReport: env.DESKFLEET_SA_REPORT === "1" }).connect(new StdioServerTransport())
 }

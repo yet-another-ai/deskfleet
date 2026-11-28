@@ -15,6 +15,8 @@ import { useRunningSendBehavior } from "../../composables/useRunningSendBehavior
 import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/analytics.ts"
 import UiSelect from "../common/UiSelect.vue"
 import UiSwitch from "../common/UiSwitch.vue"
+import WorkspaceAgentSettings from "./WorkspaceAgentSettings.vue"
+import { supportsWorkspaceNavigation } from "../../services/workspace-agent-navigation.ts"
 import SettingsRow from "./SettingsRow.vue"
 
 const client = usePlatformClient()
@@ -49,6 +51,7 @@ if (client.platform === "web" && client.updates) {
 
 <template>
   <h1 class="ui-page-title mb-6">{{ t("settings.preferences") }}</h1>
+  <WorkspaceAgentSettings v-if="supportsWorkspaceNavigation(client, !!session)" />
   <section class="mb-6" aria-labelledby="input-settings-heading">
     <h2 id="input-settings-heading" class="ui-section-title mb-2">{{ t("dictation.inputSettings") }}</h2>
     <div class="ui-card">

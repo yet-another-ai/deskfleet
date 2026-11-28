@@ -1,10 +1,13 @@
 import { useDebounceFn } from "@vueuse/core"
 import { computed, nextTick, onScopeDispose, ref, watch, type Ref } from "vue"
+import { useI18n } from "vue-i18n"
+import { adhdSkillName } from "@deskfleet/protocol/adhd-command"
 import type { AgentConfiguration } from "@deskfleet/client/agent-configuration"
 import { composerTrigger, reconcileComposerMentions, validComposerMentions, type ComposerMention } from "../../services/composer-mentions.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
+import type { WorkspaceCommandMenu } from "../../composables/useWorkspaceCommands.ts"
 
 export interface ComposerCandidate {
   key: string
@@ -13,6 +16,7 @@ export interface ComposerCandidate {
   description: string
   token: string
   reference?: ComposerMention["reference"]
+  builtIn?: boolean
 }
 
 export function useComposerCompletions(options: {
@@ -21,10 +25,12 @@ export function useComposerCompletions(options: {
   textarea: Readonly<Ref<HTMLTextAreaElement | null>>
   location(): SessionTarget | null
   disabled(): boolean
+  workspace?(): WorkspaceCommandMenu | undefined
   configuration: Ref<AgentConfiguration | null>
   discover(): Promise<void>
 }) {
   const agents = useAgentSessionsStore()
+  const { t } = useI18n()
   const providers = useProvidersStore()
   const focused = ref(false)
   const composing = ref(false)
@@ -38,13 +44,21 @@ export function useComposerCompletions(options: {
   let generation = 0
   let discoveryKey = ""
   let discovery: Promise<void> | undefined
+  const supportsAdhd = computed(() => options.workspace?.()?.supportsAdhdSkill ?? options.configuration.value?.supportsAdhdSkill)
   const targetKey = computed(() => {
+    const workspace = options.workspace?.()
+    if (workspace) return workspace.key
     const target = options.location()
     const provider = target?.session ? agents.sessions[target.session.id]?.provider : providers.selectedId
     return `${target?.machine.id}:${target?.workspace?.id}:${target?.session?.id}:${provider}:${providers.revision}`
   })
-  const detected = computed(() => focused.value && !composing.value && !options.disabled()
-    ? composerTrigger(options.draft.value, caret.value, options.mentions.value) : null)
+  const detected = computed(() => {
+    if (!focused.value || composing.value || options.disabled()) return null
+    const current = composerTrigger(options.draft.value, caret.value, options.mentions.value)
+    const workspace = options.workspace?.()
+    if (workspace && current && current.kind !== "command" && (!workspace.supportsMentions || current.kind === "reference" && !workspace.referenceScope)) return null
+    return current
+  })
   const triggerKey = computed(() => detected.value ? `${targetKey.value}:${JSON.stringify(detected.value)}` : "")
   const trigger = computed(() => triggerKey.value !== dismissed.value ? detected.value : null)
   const candidates = computed<ComposerCandidate[]>(() => {
@@ -53,22 +67,26 @@ export function useComposerCompletions(options: {
     if (current.kind === "reference") return references.value
     const configuration = options.configuration.value
     const query = current.query.toLocaleLowerCase()
-    if (current.kind === "command") return (configuration?.commands ?? []).filter(command => command.name.toLocaleLowerCase().includes(query)).map(command => ({
-      key: `command:${command.name}`, kind: "command", name: `/${command.name}`, description: [command.description, command.inputHint].filter(Boolean).join(" · "), token: `/${command.name}`,
-    }))
-    return (configuration?.skills ?? []).filter(skill => skill.name.toLocaleLowerCase().includes(query)
+    const offerAdhd = supportsAdhd.value && !options.draft.value.slice(0, current.start).trim() && adhdSkillName.includes(query)
+    const token = (current.kind === "command" ? "/" : "$") + adhdSkillName
+    const builtIn: ComposerCandidate[] = offerAdhd ? [{ key: "deskfleet:i-have-adhd", kind: current.kind, name: token, token, builtIn: true, description: t("composer.completions.adhdSkill") }] : []
+    const matches = (name: string) => name.toLowerCase().includes(query) && !(offerAdhd && name.toLowerCase() === adhdSkillName)
+    if (current.kind === "command") return [...builtIn, ...(configuration?.commands ?? []).filter(command => matches(command.name)).map(command => ({
+      key: `command:${command.name}`, kind: "command" as const, name: `/${command.name}`, description: [command.description, command.inputHint].filter(Boolean).join(" · "), token: `/${command.name}`,
+    }))]
+    return [...builtIn, ...(configuration?.skills ?? []).filter(skill => matches(skill.name)
       && (!skill.invocation.startsWith("/") || !options.draft.value.slice(0, current.start).trim())).map(skill => ({
-      key: `skill:${skill.id}`, kind: "skill", name: `$${skill.name}`, description: skill.description, token: `$${skill.name}`,
-      reference: { kind: "skill", id: skill.id, name: skill.name, invocation: skill.invocation, providerId: configuration!.provider.id },
-    }))
+      key: `skill:${skill.id}`, kind: "skill" as const, name: `$${skill.name}`, description: skill.description, token: `$${skill.name}`,
+      reference: { kind: "skill" as const, id: skill.id, name: skill.name, invocation: skill.invocation, providerId: configuration!.provider.id },
+    }))]
   })
 
   const search = useDebounceFn(async (request: number) => {
     const current = trigger.value
     const target = options.location()
     if (request !== generation || current?.kind !== "reference") return
-    if (!target?.session && !target?.workspace) { loading.value = false; return }
-    const scope = target.session ? { sessionId: target.session.id } : { workspaceId: target.workspace!.id }
+    const scope = options.workspace?.()?.referenceScope ?? (target?.session ? { sessionId: target.session.id } : target?.workspace ? { workspaceId: target.workspace.id } : undefined)
+    if (!scope) { loading.value = false; return }
     const results = await Promise.allSettled((["file", "session"] as const).map(kind => agents.composerReferences({ ...scope, kind, query: current.query, limit: 12 })))
     if (request !== generation) return
     references.value = results.flatMap(result => result.status === "fulfilled" ? result.value.items.map(item => ({
@@ -91,6 +109,10 @@ export function useComposerCompletions(options: {
     const current = trigger.value
     if (!current) { loading.value = false; discoveryKey = ""; discovery = undefined; return }
     if (current.kind === "reference") { discoveryKey = ""; discovery = undefined; loading.value = true; void search(request); return }
+    if (candidates.value.some(candidate => candidate.builtIn) && ["adhd", adhdSkillName].includes(current.query.toLowerCase())) {
+      loading.value = false
+      return
+    }
     const key = `${targetKey.value}:${current.kind}`
     if (discoveryKey !== key) {
       discoveryKey = key
@@ -132,6 +154,8 @@ export function useComposerCompletions(options: {
     if (candidate.reference) retained.push({ id: crypto.randomUUID(), start: current.start, end: current.start + candidate.token.length, token: candidate.token, reference: candidate.reference })
     options.draft.value = after
     options.mentions.value = retained
+    if (candidate.kind === "command" && !candidate.builtIn) options.workspace?.()?.select("command", candidate.token.slice(1))
+    if (candidate.reference?.kind === "skill") options.workspace?.()?.select("skill", candidate.reference.id)
     caret.value = current.start + inserted.length
     await nextTick()
     options.textarea.value?.focus()
@@ -153,7 +177,7 @@ export function useComposerCompletions(options: {
       if (candidates.value.length) selected.value = (selected.value + (event.key === "ArrowDown" ? 1 : -1) + candidates.value.length) % candidates.value.length
       return true
     }
-    if (event.key === "Enter" && !event.shiftKey && loading.value) { event.preventDefault(); return true }
+    if (event.key === "Enter" && !event.shiftKey && loading.value && !candidates.value[selected.value]?.builtIn) { event.preventDefault(); return true }
     if ((event.key === "Enter" && !event.shiftKey || event.key === "Tab") && candidates.value.length) { event.preventDefault(); void accept(); return true }
     return false
   }

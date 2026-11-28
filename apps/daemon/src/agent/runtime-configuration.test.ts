@@ -12,6 +12,7 @@ import type { AgentClient, AgentConnection, AgentProvider } from "../acp/connect
 import type { AgentConfiguration, AgentConfigurationSelection } from "@deskfleet/protocol/agent-configuration"
 import type { AgentSnapshot, AgentTurn } from "@deskfleet/protocol/agent"
 import { AgentSessions } from "./sessions.ts"
+import { AgentRuntime } from "./runtime.ts"
 import type { AgentProviders } from "../providers/providers.ts"
 import { DaemonCatalog } from "../machine/catalog.ts"
 
@@ -155,6 +156,46 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   }, actor)
   return { service, catalog, create, sessionId, read, configuration, configure, stop, resume, submit }
 }
+
+for (const running of [false, true]) test(`startup settles its backlog check before configuration (running=${running})`, async t => {
+  let runtime!: AgentRuntime
+  let delivery: Promise<void> | undefined
+  const pump = AgentRuntime.prototype.pump
+  const observe = t.mock.method(AgentRuntime.prototype, "pump", function (this: AgentRuntime) {
+    runtime = this
+    delivery = pump.call(this)
+    return delivery
+  })
+  const f = await setup(t, new ConfigurationProvider())
+  await delivery
+  observe.mock.restore()
+  if (!running) await runtime.stop()
+
+  let entered!: () => void
+  let release!: () => void
+  const scanning = new Promise<void>(resolve => { entered = resolve })
+  const continueScan = new Promise<void>(resolve => { release = resolve })
+  let holdRead = false
+  const read = f.service.journal.read.bind(f.service.journal)
+  t.mock.method(f.service.journal, "read", async (sessionId: string) => {
+    if (holdRead) {
+      holdRead = false
+      entered()
+      await continueScan
+    }
+    return read(sessionId)
+  })
+  t.mock.method(runtime, "pump", () => { holdRead = true; return pump.call(runtime) })
+  let started = false
+  const starting = runtime.start().then(() => { started = true })
+  await scanning
+  // Drain startup's microtasks while the empty backlog read remains blocked.
+  await new Promise<void>(resolve => setImmediate(resolve))
+  try { assert.equal(started, false, "Startup must settle its backlog check before returning") }
+  finally { release() }
+  await starting
+  assert.equal((await f.configure({ model: "second" })).models?.currentValue, "second")
+})
 
 test("session command catalogs update independently of choices and survive daemon restart", async t => {
   const provider = new ConfigurationProvider()

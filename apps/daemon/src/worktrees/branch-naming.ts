@@ -1,9 +1,27 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
+import { adhdToggleOnly } from "@deskfleet/protocol/adhd-command"
 import type { AgentSnapshot } from "@deskfleet/protocol/agent"
 import { executeGit } from "../git/execution.ts"
 import type { WorktreePreferences } from "@deskfleet/protocol/worktree-preferences"
 
-/** Apply the naming preference once, before the first generated-checkout turn. */
+const providerMarker = "deskfleet/composerProvider"
+
+function hasComposerInvocation(content: ContentBlock[]): boolean {
+  return content.some(block => block.type === "text" && typeof block._meta?.[providerMarker] === "string")
+}
+
+/** Queued provider-specific inputs must still target the same provider at delivery. */
+export function providerPromptContent(content: ContentBlock[], provider: string): ContentBlock[] {
+  return content.map(block => {
+    if (block.type !== "text" || !block._meta || !(providerMarker in block._meta)) return block
+    const { [providerMarker]: selectedProvider, ...metadata } = block._meta
+    if (selectedProvider !== provider) throw new Error("The Worker Agent has changed. Select the command or skill again.")
+    const { _meta, ...text } = block
+    return Object.keys(metadata).length ? { ...text, _meta: metadata } : text
+  })
+}
+
+/** Apply the naming preference to the first ordinary task in a generated checkout. */
 export async function prepareWorktreeBranchPrompt(
   snapshot: AgentSnapshot,
   currentTurnId: string,
@@ -13,7 +31,15 @@ export async function prepareWorktreeBranchPrompt(
   prompt: ContentBlock[],
 ): Promise<ContentBlock[]> {
   if (snapshot.session.context !== "worktree" || snapshot.session.inheritedTurnCount
-    || snapshot.turns.some(turn => turn.id !== currentTurnId && turn.consumed !== false)) return prompt
+    || hasComposerInvocation(prompt)) return prompt
+  const turn = snapshot.turns.find(turn => turn.id === currentTurnId)
+  const initial = turn && snapshot.inputs.find(input => input.id === turn.initialInputId)
+  if (initial && adhdToggleOnly(initial.content)) return prompt
+  const completed = snapshot.turns.filter(turn => turn.id !== currentTurnId && turn.consumed !== false)
+  if (completed.length) {
+    const commands = new Set(snapshot.inputs.filter(input => hasComposerInvocation(input.content) || adhdToggleOnly(input.content)).map(input => input.id))
+    if (completed.some(turn => !commands.has(turn.initialInputId))) return prompt
+  }
   const roots = new Set<string>()
   for (const directory of directories) {
     const result = await executeGit(["-C", directory.path, "rev-parse", "--show-toplevel"])

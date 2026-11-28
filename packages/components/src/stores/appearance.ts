@@ -86,6 +86,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
     ? dynamicHue.value
     : (previewHue.value ?? settings.value.themeHue))
   const themeHue = computed<number>(() => activeThemeHue.value ?? DEFAULT_THEME_HUE)
+  const interfaceTextScale = computed(() => settings.value.interfaceTextScale ?? 100)
   const interfaceFont = computed(() => settings.value.interfaceFont.trim() || DEFAULT_INTERFACE_FONT)
   const terminalFont = computed(() => settings.value.terminalFont.trim() || DEFAULT_TERMINAL_FONT)
   const terminalLigatures = computed(() => settings.value.terminalLigatures)
@@ -124,10 +125,11 @@ const defineAppearanceStore = defineStore("appearance", () => {
           pauseDynamicHue()
         }
       }, { immediate: true, flush: "sync" })
-      stopApplying = watch([() => settings.value.theme, isDark, activeThemeHue, interfaceFont, locale, terminalTheme], () => {
+      stopApplying = watch([() => settings.value.theme, isDark, activeThemeHue, interfaceFont, interfaceTextScale, locale, terminalTheme], () => {
         document.documentElement.dataset.theme = isDark.value ? "dark" : "light"
         document.documentElement.style.colorScheme = settings.value.theme === "system" ? "light dark" : settings.value.theme
         applyThemeHueTokens(document.documentElement.style, activeThemeHue.value, isDark.value)
+        host.setInterfaceTextScale?.(interfaceTextScale.value)
         document.documentElement.style.setProperty("--ui-font-interface", interfaceFont.value)
         document.documentElement.style.setProperty("--ui-color-terminal", terminalTheme.value.background)
         document.documentElement.lang = intlLocale(locale.value)
@@ -157,7 +159,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   onScopeDispose(() => { disposed = true; unsubscribe?.(); stopDynamicWatch?.(); stopApplying?.(); pauseDynamicHue() })
   return {
     settings, ready, saving, error, isDark, activeThemeHue, themeHue,
-    interfaceFont, terminalFont, terminalLigatures, terminalTheme,
+    interfaceFont, interfaceTextScale, supportsTextScale: !!host.setInterfaceTextScale, terminalFont, terminalLigatures, terminalTheme,
     initialize, previewThemeHue, set,
   }
 })

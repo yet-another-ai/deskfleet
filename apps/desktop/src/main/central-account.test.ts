@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
@@ -186,6 +186,54 @@ test("a failed async decryption starts signed out without aborting startup or ov
     expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
     expect(await readFile(f.path, "utf8")).toBe(saved)
     expect(warn).toHaveBeenCalledOnce()
+  } finally {
+    warn.mockRestore()
+  }
+})
+
+test("a corrupted account.json starts signed out, preserves the original file, and replaces it atomically on fresh login", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    const f = await setup()
+    const damaged = '{"encryptedToken":'
+    await writeFile(f.path, damaged)
+    const before = await stat(f.path)
+    const client = await f.install()
+    expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+    expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
+    expect(await readFile(f.path, "utf8")).toBe(damaged)
+    expect(warn).toHaveBeenCalledOnce()
+
+    await client.exchange("callback-code", "verifier")
+    const after = await stat(f.path)
+    expect(after.ino).not.toBe(before.ino)
+    if (process.platform !== "win32") expect(after.mode & 0o777).toBe(0o600)
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
+      serverUrl,
+      encryptedToken: Buffer.from("encrypted-new-token").toString("base64"),
+      user,
+    })
+  } finally {
+    warn.mockRestore()
+  }
+})
+
+test("a non-object or unreadable account.json starts signed out without aborting startup", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    const f1 = await setup()
+    await writeFile(f1.path, "null")
+    const c1 = await f1.install()
+    expect(await c1.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+    expect(await readFile(f1.path, "utf8")).toBe("null")
+
+    const f2 = await setup()
+    await rm(f2.path)
+    await mkdir(f2.path)
+    const c2 = await f2.install()
+    expect(await c2.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+    expect((await stat(f2.path)).isDirectory()).toBe(true)
+    expect(warn).toHaveBeenCalledTimes(2)
   } finally {
     warn.mockRestore()
   }

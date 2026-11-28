@@ -1,8 +1,10 @@
+import { useLocalStorage } from "@vueuse/core"
 import { computed, ref, type ComputedRef, type Ref } from "vue"
 import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, LocalMachineStatus, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
+import { workspaceRouteMachine } from "../services/workspace-agent-navigation.ts"
 import { router } from "../router/index.ts"
 import { captureAnalyticsContext, identifyAnalytics, trackEvent } from "../services/analytics.ts"
 
@@ -51,6 +53,8 @@ export interface AccountSession {
   refreshMachines(): Promise<void>
   signIn(): Promise<void>
   signOut(): Promise<void>
+  /** Register an async cleanup hook that runs before credentials are cleared during online sign-out. */
+  onBeforeSignOut?(listener: (context: { serverUrl?: string; userId?: string; teamId?: string }) => Promise<void> | void): () => void
   selectTeam(id: string): Promise<void>
   selectMachine(id: string): void
   /** Selects a Machine before navigating to one of its machine-local resources. */
@@ -77,7 +81,7 @@ export interface AccountSession {
 
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 
-export function createAccountSession(central: CentralApi, initialNotice?: string): AccountSession {
+export function createAccountSession(central: CentralApi, initialNotice?: string, remoteWorkspaceAgent = false, workspaceMode = () => true): AccountSession {
   const hashTarget = typeof window !== "undefined" ? parseSessionWindowHash(window.location.hash) : undefined
   const route = router.currentRoute.value
   const queryTarget = route.name === "session" && route.query.window === "session"
@@ -112,7 +116,14 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   let machinesRevision = 0
   let membersRevision = 0
   let machineDestination: { teamId: string; machineId: string; route: RouteLocationRaw } | undefined
+  const beforeSignOutListeners = new Set<(context: { serverUrl?: string; userId?: string; teamId?: string }) => Promise<void> | void>()
   const resourceScope = () => JSON.stringify([account.value.serverUrl, account.value.user?.id, teamId.value])
+  const recentMachines = remoteWorkspaceAgent
+    ? useLocalStorage<Record<string, string>>("deskfleet.workspace-agent.recent-machines", {}, { writeDefaults: false })
+    : undefined
+  function rememberMachine(id: string): void {
+    if (recentMachines && workspaceMode()) recentMachines.value[resourceScope()] = id
+  }
   const availability = ref<{ scope: string; enabled?: boolean }>()
   let availabilityRevision = 0
   const superAgentEnabled = computed(() => {
@@ -150,10 +161,19 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     if (revision !== machinesRevision) return
     machines.value = list
     machineRosterVersion.value = revision
-    // Keep the current machine; otherwise open this computer, then any reachable machine.
-    const candidates = [preferred, machineId.value, localMachineId.value]
+    // A native cold start can load its roster while the initial lazy route is still resolving.
+    const preferProjects = remoteWorkspaceAgent && workspaceMode()
+    const currentRoute = preferProjects && !router.currentRoute.value.name && window.location.hash.startsWith("#/")
+      ? router.resolve(window.location.hash.slice(1)) : router.currentRoute.value
+    const scopedOwner = preferProjects && !machineId.value && (!currentRoute.query.team || currentRoute.query.team === selected)
+      ? workspaceRouteMachine(currentRoute) : undefined
+    const candidates = [preferred, machineId.value, scopedOwner, preferProjects ? recentMachines?.value[resourceScope()] : undefined, localMachineId.value]
+    const compatible = preferProjects ? list.filter(value => value.capabilities?.superAgent === true) : []
+    // More than one compatible computer needs a choice the first time. A selected
+    // computer stays selected even if it goes offline or temporarily loses its capability.
+    const available = compatible.length ? compatible[0] : (list.find(value => value.online) ?? list[0])
     machineId.value = candidates.find(id => list.some(value => value.id === id))
-      ?? list.find(value => value.online)?.id ?? list[0]?.id
+      ?? (compatible.length > 1 ? undefined : available?.id)
     if (machineDestination?.machineId !== machineId.value) machineDestination = undefined
   }
   function refreshMachines(): Promise<void> {
@@ -205,6 +225,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   function openMachineRoute(targetMachineId: string, route: RouteLocationRaw): void {
     const selectedTeam = teamId.value
     if (!selectedTeam || !machines.value.some(value => value.id === targetMachineId && value.teamId === selectedTeam)) return
+    rememberMachine(targetMachineId)
     if (targetMachineId === machineId.value) {
       // A second click can arrive while the newly selected surface is still mounting.
       if (machineDestination) machineDestination = { teamId: selectedTeam, machineId: targetMachineId, route }
@@ -291,12 +312,24 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     async signIn() { await user.login(); await reload(user) },
     async signOut() {
       machineDestination = undefined
+      const ctx = { serverUrl: account.value.serverUrl, userId: account.value.user?.id, teamId: teamId.value }
+      await Promise.allSettled([...beforeSignOutListeners].map(listener => Promise.resolve(listener(ctx))))
       await user.logout()
       account.value = { serverUrl: account.value.serverUrl, siteAdmin: false }
       await reload(user)
     },
+    onBeforeSignOut(listener) {
+      beforeSignOutListeners.add(listener)
+      return () => { beforeSignOutListeners.delete(listener) }
+    },
     selectTeam,
-    selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
+    selectMachine(id) {
+      machineDestination = undefined
+      if (machines.value.some(value => value.id === id)) {
+        rememberMachine(id)
+        machineId.value = id
+      }
+    },
     openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,
     async createTeam(name) {
       const actor = account.value.user

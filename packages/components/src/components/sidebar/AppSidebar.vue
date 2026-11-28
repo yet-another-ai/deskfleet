@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usesWorkspaceNavigation } from "../../services/workspace-agent-navigation.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import type { Machine } from "@deskfleet/client/central"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
@@ -46,10 +47,11 @@ const filterOptions = computed<{ id: SidebarSessionFilter; label: string; count?
   { id: "unread", label: t("sidebar.filterUnread"), count: sidebarFilter.totalUnread.value },
   { id: "working", label: t("sidebar.filterWorking"), count: sidebarFilter.totalWorking.value },
 ])
-const filterEmpty = computed(() =>
-  sidebarFilter.filter.value === "unread" && sidebarFilter.totalUnread.value === 0
-  || sidebarFilter.filter.value === "working" && sidebarFilter.totalWorking.value === 0,
-)
+const filterEmpty = computed(() => {
+  if (projectHome.value && sidebarFilter.hasUnknown.value) return false
+  return sidebarFilter.filter.value === "unread" && sidebarFilter.totalUnread.value === 0
+    || sidebarFilter.filter.value === "working" && sidebarFilter.totalWorking.value === 0
+})
 const { compact, sidebarWidth } = storeToRefs(useLayoutStore())
 const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
 onMounted(() => {
@@ -65,6 +67,7 @@ const sidebarOrder = useSidebarOrder()
 const accountMachines = computed(() => sidebarOrder.ordered(machineOrderGroup, account?.machines.value ?? []))
 const localMachines = computed(() => sidebarOrder.ordered(machineOrderGroup, machines.value))
 const platform = platformClient.platform
+const projectHome = computed(() => usesWorkspaceNavigation(platformClient, !!account))
 // Each opened machine retains its own catalog and action scope.
 const loaded = (id: string) => machines.value.find(machine => machine.id === id)
 const unopened = (machine: Machine): MachineSummary => ({
@@ -73,7 +76,7 @@ const unopened = (machine: Machine): MachineSummary => ({
   local: machine.id === account?.localMachineId.value,
   online: machine.online,
   lastSeen: machine.lastSeenAt ?? undefined,
-  desktop: machine.capabilities.desktop === true,
+  desktop: machine.capabilities?.desktop === true,
   terminals: [],
   sessions: [],
   workspaces: [],
@@ -100,10 +103,33 @@ function keyResize(event: KeyboardEvent): void {
   event.preventDefault()
 }
 
+const manualRefreshing = ref(false)
+let refreshToken = 0
+const catalogRefreshing = computed(() => projectHome.value ? (catalogLoading.value || manualRefreshing.value) : catalogLoading.value)
+
 function refresh(): void {
-  if (runtimes) for (const runtime of runtimes.opened.values()) runtime.refreshCatalog()
-  else void fleet.refreshLocal()
-  void account?.refreshMachines()
+  if (catalogRefreshing.value) return
+  if (!projectHome.value) {
+    if (runtimes) for (const runtime of runtimes.opened.values()) runtime.refreshCatalog()
+    else void fleet.refreshLocal()
+    void account?.refreshMachines()
+    return
+  }
+  const token = ++refreshToken
+  manualRefreshing.value = true
+  const tasks: Promise<unknown>[] = []
+  if (runtimes) {
+    for (const runtime of runtimes.opened.values()) {
+      const pending = runtime.refreshCatalog()
+      if (pending) tasks.push(Promise.resolve(pending))
+    }
+  } else {
+    tasks.push(Promise.resolve(fleet.refreshLocal()))
+  }
+  if (account) tasks.push(Promise.resolve(account.refreshMachines()))
+  void Promise.allSettled(tasks).finally(() => {
+    if (token === refreshToken) manualRefreshing.value = false
+  })
 }
 </script>
 
@@ -131,7 +157,7 @@ function refresh(): void {
       data-sidebar-panel="conversations"
       class="flex min-h-0 flex-1 flex-col"
     >
-      <div class="app-no-drag shrink-0 px-2 pb-1">
+      <div v-if="!projectHome" class="app-no-drag shrink-0 px-2 pb-1">
         <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
       </div>
 
@@ -139,7 +165,8 @@ function refresh(): void {
         <ToggleGroupRoot :model-value="sidebarFilter.filter.value" type="single" :aria-label="t('sidebar.filterLabel')" class="flex items-center gap-4" @update:model-value="value => value && (sidebarFilter.filter.value = value as SidebarSessionFilter)">
           <ToggleGroupItem v-for="option in filterOptions" :key="option.id" :value="option.id" :data-sidebar-filter="option.id" class="ui-tab gap-1 pb-2 text-xs font-medium" :class="sidebarFilter.filter.value === option.id && 'ui-tab-active'">
             <span>{{ option.label }}</span>
-            <span v-if="option.count && option.count > 0" class="tabular-nums text-[11px] opacity-70">{{ option.count }}</span>
+            <span v-if="option.count && option.count > 0" class="tabular-nums text-[11px] opacity-70">{{ option.count }}<template v-if="projectHome && sidebarFilter.hasUnknown.value">+</template></span>
+            <span v-else-if="projectHome && option.id !== 'all' && sidebarFilter.hasUnknown.value" data-filter-unknown class="text-[11px] opacity-70">…</span>
           </ToggleGroupItem>
         </ToggleGroupRoot>
       </div>
@@ -152,20 +179,21 @@ function refresh(): void {
         data-sidebar-scroll-area
         :viewport-attrs="{ 'data-sidebar-scroll-viewport': '' }"
       >
-        <PinnedSessions />
+        <PinnedSessions :collapsible="projectHome" />
         <SuperAgentSection />
         <div class="mb-1 flex items-center justify-between gap-2 pl-2.5 pr-1 text-xs text-ui-text-faint">
-          <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.machines") }}</span>
+          <span>{{ catalogRefreshing ? t("catalog.loading") : t(projectHome ? "superAgent.machineNav.machines" : "catalog.machines") }}</span>
           <div class="flex shrink-0 items-center gap-0.5">
             <UiButton
               variant="ghost"
               size="icon"
               class="!h-6 !w-6 rounded-md text-ui-text-faint [&:not(:disabled,[aria-disabled=true])]:hover:bg-ui-text/8 [&:not(:disabled,[aria-disabled=true])]:hover:text-ui-text"
               :label="t('catalog.refresh')"
-              :disabled="catalogLoading"
+              :disabled="catalogRefreshing"
+              :data-catalog-refreshing="catalogRefreshing ? 'true' : undefined"
               @click="refresh"
             >
-              <RefreshCw :size="14" :stroke-width="1.75" :class="catalogLoading && 'animate-spin'" aria-hidden="true" />
+              <RefreshCw :size="14" :stroke-width="1.75" :class="catalogRefreshing && 'animate-spin'" aria-hidden="true" />
             </UiButton>
             <UiButton
               v-if="account"
@@ -179,7 +207,10 @@ function refresh(): void {
             </UiButton>
           </div>
         </div>
-        <p v-if="catalogError" role="alert" class="mx-2.5 mb-3 break-words text-xs text-ui-danger">{{ catalogError }}</p>
+        <p v-if="catalogError" role="alert" class="mx-2.5 mb-3 break-words text-xs text-ui-danger">
+          {{ catalogError }}
+          <button v-if="projectHome" type="button" data-catalog-retry class="ml-1 cursor-pointer text-ui-accent hover:underline" :disabled="catalogRefreshing" @click="refresh">{{ t("errors.retry") }}</button>
+        </p>
         <div>
           <template v-if="account">
             <template v-for="machine in accountMachines" :key="machine.id">

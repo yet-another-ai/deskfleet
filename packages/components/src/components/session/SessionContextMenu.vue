@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import SpringSurface from "../common/SpringSurface.ts"
-import { Archive, ArchiveRestore, ExternalLink, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
+import { Archive, ArchiveRestore, Copy, ExternalLink, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
+import { useTimeoutFn } from "@vueuse/core"
+import { formatWorkerReference } from "@deskfleet/client/worker-reference"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
@@ -16,7 +19,7 @@ import UiDialog from "../common/UiDialog.vue"
 import RenameSessionDialog from "./RenameSessionDialog.vue"
 import SessionConfirmDialog from "./SessionConfirmDialog.vue"
 
-const props = defineProps<{ sessionId: string; machineId?: string; title: string; context?: "directory" | "worktree"; archiveState?: "active" | "archiving" | "archived"; disabled?: boolean }>()
+const props = defineProps<{ sessionId: string; machineId?: string; title: string; context?: "directory" | "worktree"; archiveState?: "active" | "archiving" | "archived"; disabled?: boolean; projectWorker?: boolean }>()
 const { t } = useI18n()
 const client = usePlatformClient()
 const account = useAccountSession()
@@ -24,6 +27,21 @@ const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const pins = usePinnedSessionsStore()
 const machineId = computed(() => props.machineId ?? fleet.findSession(props.sessionId)?.machine.id ?? account?.machineId.value ?? fleet.targetId)
+const workspaceMode = useWorkspaceAgentMode()
+const workerRegistration = computed(() => {
+  if (!workspaceMode.value) return
+  if (!props.projectWorker || props.archiveState !== "active" || !props.machineId) return
+  // Target IDs name server registrations. The native catalog's numeric machine ID is local to its database.
+  const target = client.target
+  if (target?.teamId) {
+    if (target.id !== props.machineId || (account && account.teamId.value !== target.teamId)) return
+    return { teamId: target.teamId, machineId: target.id }
+  }
+  const registration = account?.machines.value.find(machine => machine.id === props.machineId && machine.teamId === account.teamId.value)
+  if (registration) return { teamId: registration.teamId, machineId: registration.id }
+})
+const copyFeedback = ref<"copied" | "failed">()
+const { start: resetCopyFeedback, stop: cancelCopyReset } = useTimeoutFn(() => { copyFeedback.value = undefined }, 2200, { immediate: false })
 const canOpenInNewWindow = computed(() => client.platform !== "web" && !client.mobile)
 const pinned = computed(() => pins.isPinned(machineId.value, props.sessionId))
 const canMarkUnread = computed(() => sessionCanMarkUnread(agents.sessions[props.sessionId]))
@@ -74,6 +92,21 @@ function togglePin(): void {
   if (pinned.value) pins.unpin(machineId.value, props.sessionId)
   else pins.pin(machineId.value, props.sessionId, props.title)
 }
+async function copyWorkerId(): Promise<void> {
+  const registration = workerRegistration.value
+  if (!registration) return
+  open.value = false
+  copyFeedback.value = undefined
+  cancelCopyReset()
+  try {
+    const reference = formatWorkerReference({ ...registration, sessionId: props.sessionId })
+    await navigator.clipboard.writeText(reference)
+    copyFeedback.value = "copied"
+  } catch {
+    copyFeedback.value = "failed"
+  }
+  resetCopyFeedback()
+}
 function openInNewWindow(): void {
   open.value = false
   openSessionInNewWindow({
@@ -97,6 +130,7 @@ function confirm(): void {
     <ContextMenuPortal>
       <ContextMenuContent :as="SpringSurface" :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
         <ContextMenuItem v-if="canOpenInNewWindow" as="button" type="button" class="ui-menu-item" data-session-action="open-in-new-window" @select="openInNewWindow"><ExternalLink :size="14" aria-hidden="true" />{{ t('agent.openInNewWindow') }}</ContextMenuItem>
+        <ContextMenuItem v-if="workerRegistration" as="button" type="button" class="ui-menu-item" data-session-action="copy-id" @select="copyWorkerId"><Copy :size="14" aria-hidden="true" />{{ t('superAgent.copyWorkerId') }}</ContextMenuItem>
         <ContextMenuItem v-if="archiveState !== 'archived'" as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
         <ContextMenuItem v-if="canMarkUnread" as="button" type="button" class="ui-menu-item" :disabled="disabled || pending" @select="markUnread"><Mail :size="14" aria-hidden="true" />{{ t('agent.markUnread') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</ContextMenuItem>
@@ -105,6 +139,7 @@ function confirm(): void {
       </ContextMenuContent>
     </ContextMenuPortal>
   </ContextMenuRoot>
+  <p v-if="copyFeedback" data-worker-id-feedback :role="copyFeedback === 'failed' ? 'alert' : 'status'" class="mx-2.5 my-1 text-xs" :class="copyFeedback === 'failed' ? 'text-ui-danger' : 'text-ui-text-muted'">{{ t(copyFeedback === 'copied' ? 'superAgent.workerIdCopied' : 'superAgent.copyWorkerIdFailed') }}</p>
   <RenameSessionDialog v-if="dialog === 'rename'" :title="title" :disabled="disabled" :confirm="value => agents.rename(sessionId, value)" @close="dialog = undefined" />
   <UiDialog v-else-if="dialog === 'unread'" ref="unreadDialog" v-slot="{ close }" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
     <DialogTitle class="ui-dialog-title">{{ t('agent.markUnread') }}</DialogTitle>

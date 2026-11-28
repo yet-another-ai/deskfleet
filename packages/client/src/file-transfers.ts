@@ -1,8 +1,7 @@
-import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry, type FileMethods } from "@deskfleet/protocol/files"
+import { FILE_CHUNK_BYTES, FILE_PREVIEW_BYTES, type FileEndpoint, type FileEntry, type FileMethods } from "@deskfleet/protocol/files"
 import { filePathToUri, type FileAttachmentUploadOptions, type FileAttachmentUploadRequest, type FileAttachmentUploadResult, type FileConflict, type FileListing, type FileReadResourceOptions, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer, type FileTransferRequest } from "./files.ts"
 import { copyFileChunks, writeBufferChunks } from "./file-pipeline.ts"
 
-const PREVIEW_BYTES = 16 * 1024 * 1024
 const targetKey = (target: FileTarget) => target.kind === "local" ? `local/${target.grantId ?? ""}` : `${target.teamId}/${target.machineId}`
 const reasonOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 interface Job { value: FileTransfer; conflict: FileConflict; cancelled: boolean; run?: Promise<void>; abort?: () => Promise<void> }
@@ -232,7 +231,7 @@ export class FileTransferManager implements FilesApi {
     const endpoint = await this.#endpoint(request.target)
     const file = (await endpoint.call("resolve", this.#resolveParams(request))).value
     if (file.kind !== "file") throw new Error("Select a file to preview")
-    if (file.size > PREVIEW_BYTES && !await this.#unlimitedPreview?.(request.target)) throw new Error("This file is too large to preview. Download it instead.")
+    if (file.size > FILE_PREVIEW_BYTES && !await this.#unlimitedPreview?.(request.target)) throw new Error("This file is too large to preview. Download it instead.")
     options?.onProgress?.({ transferredBytes: 0, totalBytes: file.size })
     const data = new Uint8Array(file.size)
     const { readId } = (await endpoint.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value
@@ -298,7 +297,7 @@ export class FileTransferManager implements FilesApi {
       check()
       const committed = (await endpoint.call("commit", { transferId })).value
       const name = committed.path.split(/[\\/]/u).filter(Boolean).at(-1) ?? request.name
-      return { path: committed.path, uri: filePathToUri(committed.path), name, size: request.data.byteLength }
+      return { path: committed.path, uri: filePathToUri(committed.path), name, size: request.data.byteLength, ...(committed.attachmentGrant && { attachmentGrant: committed.attachmentGrant }) }
     } catch (error) {
       await endpoint.call("abort", { transferId }).catch(() => {})
       throw error

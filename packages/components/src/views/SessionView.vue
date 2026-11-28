@@ -4,12 +4,12 @@ import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import { LoaderCircle, SquareTerminal } from "@lucide/vue"
+import { ArrowLeft, LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, inject, onScopeDispose, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { useRouter } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "@deskfleet/protocol/agent"
 import SessionHeader from "../components/session/SessionHeader.vue"
 import McpActorBadge from "../components/session/McpActorBadge.vue"
@@ -17,6 +17,7 @@ import SessionConversationPane from "../components/session/SessionConversationPa
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import { newTerminalWindowKey, windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
+import WorkerControls from "../components/composer/WorkerControls.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
 import AgentBacklog from "../components/session/AgentBacklog.vue"
@@ -46,6 +47,7 @@ import { createAgentUsageSelector } from "../services/agent-usage.ts"
 import { hasIncompleteAttachmentUploads } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
+import { useWorkspaceAgentMode, isPrivateAgentWorkspace, workspaceAgentRoute, workspaceSessionRoute } from "../services/workspace-agent-navigation.ts"
 
 const client = usePlatformClient()
 
@@ -54,6 +56,7 @@ const SessionTerminalPanel = defineAsyncComponent(() => import("../components/te
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const motion = useNavigationMotion()
+const route = useRoute()
 const router = useRouter()
 const newTerminalWindow = inject(newTerminalWindowKey, undefined)
 const windowedMainWindow = !!inject(windowHeaderActionsTargetKey)
@@ -70,6 +73,23 @@ const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
+// A confirmed machine-only Session keeps its original composer.
+// Project Workers receive task instructions through the Super Agent.
+const workspaceMode = useWorkspaceAgentMode()
+const projectWorker = computed(() => workspaceMode.value && !!client.superAgent && (
+  !snapshot.value || !!snapshot.value.session.workspaceId || !!location.value?.workspace || !fleet.catalog
+))
+const returnToWorkspace = computed(() => {
+  if (!workspaceMode.value) return
+  const machineId = fleet.targetId
+  const teamId = account?.teamId.value
+  const sameTeam = route.query.team === undefined || route.query.team === teamId
+  const source = sameTeam && route.query.superMachine === machineId ? route.query.superFrom : undefined
+  if (!machineId || (!client.superAgent && !((client.localChannels || client.remoteWorkspaceAgent) && typeof source === "string"))) return
+  if (typeof source === "string") return workspaceAgentRoute(machineId, source || null, teamId)
+  const workspace = location.value?.workspace
+  return workspaceAgentRoute(machineId, workspace && !isPrivateAgentWorkspace(workspace) ? workspace.id : null, teamId)
+})
 const showFirstTaskHandoff = computed(() => {
   const route = router.currentRoute.value
   return route.name === "session" && route.params.sessionId === props.sessionId && route.query.firstTask === "1"
@@ -126,6 +146,7 @@ const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
 const canStop = computed(() => active.value && (runActive.value || snapshot.value?.session.lifecycle === "provisioning"))
 const promotedInputIds = computed(() => promotedPendingInputs(snapshot.value, view.value?.events).map(input => input.id))
+const forkWorkspaceId = computed(() => snapshot.value?.session.workspaceId ?? location.value?.workspace?.id)
 const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value
   && !snapshot.value.permissions.some(permission => permission.state === "pending")
   && !snapshot.value.elicitations.some(elicitation => elicitation.state === "pending"))
@@ -133,8 +154,8 @@ const pendingFork = computed(() => Object.values(agents.operations).find(operati
 const forkContext = computed(() => {
   const pending = pendingFork.value?.params.context as AgentSessionContext | undefined
   if (pending) return pending
-  if (!snapshot.value?.session.workspaceId) return "directory"
-  return snapshot.value.session.context ?? "worktree"
+  if (!forkWorkspaceId.value) return "directory"
+  return snapshot.value?.session.context ?? "worktree"
 })
 const forkDisabled = computed(() => !connected.value || !!view.value?.syncing || !!view.value?.error)
 // A stopped or interrupted agent resumes on the next message; only a dead end is shown.
@@ -153,6 +174,7 @@ const openWithMenu = ref<InstanceType<typeof OpenWithMenu> | null>(null)
 const empty = computed(() => !view.value?.loading && !agents.optimisticInputs[props.sessionId] && !snapshot.value?.inputs.length && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input") && snapshot.value?.session.lifecycle !== "provisioning" && run.value?.state !== "starting")
 const busy = ref(false)
 const forkOpen = ref(false)
+const expectedForkTurn = ref<string>()
 const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? openWithMenu.value?.launchError ?? agents.draftErrors[props.sessionId])
@@ -161,6 +183,7 @@ const faces = useSessionFaces(() => props.sessionId)
 watchImmediate(() => props.sessionId, id => {
   busy.value = false
   forkOpen.value = false
+  expectedForkTurn.value = undefined
   renameOpen.value = false
   actionError.value = null
   void agents.open(id)
@@ -200,17 +223,55 @@ function submit(delivery: "backlog" | "steer"): void {
     await agents.submit(sessionId, content, intent, intent === "steer" ? turnId : undefined, currentDraft, submittedDraft)
   })
 }
+// A project reply links to the original dialog. Wait for the live subscription so a
+// cached reply cannot select an obsolete turn or an identically numbered remote Session.
+watchImmediate(() => {
+  const turn = route.query.forkTurn
+  if (route.name !== "session" || route.params.sessionId !== props.sessionId || typeof turn !== "string" || !turn) return
+  if (route.query.superMachine !== fleet.targetId || typeof route.query.superFrom !== "string"
+    || (route.query.team !== undefined && route.query.team !== account?.teamId.value)) return { error: "agent.forkScope" }
+  if (!snapshot.value || view.value?.loading || view.value?.syncing || forkDisabled.value) return
+  if (route.query.superFrom && route.query.superFrom !== forkWorkspaceId.value) return { error: "agent.forkScope" }
+  if (snapshot.value.turns.at(-1)?.id !== turn) return { error: "agent.forkStale" }
+  if (!snapshot.value.session.capabilities?.fork) return { error: "agent.forkUnsupported" }
+  if (!canFork.value || pendingFork.value) return { error: "agent.forkUnavailable" }
+  return { turn }
+}, request => {
+  if (!request) return
+  actionError.value = request.error ? t(request.error) : null
+  expectedForkTurn.value = request.turn
+  forkOpen.value = !!request.turn
+  void router.replace({ query: { ...route.query, forkTurn: undefined } })
+})
+
+function closeFork(): void {
+  const origin = expectedForkTurn.value && returnToWorkspace.value
+  forkOpen.value = false
+  expectedForkTurn.value = undefined
+  if (origin && route.name === "session" && route.params.sessionId === props.sessionId) void router.replace(origin)
+}
 async function showFork(snapshot: AgentSnapshot, sourceId: string): Promise<void> {
   // Open the child before refreshing the catalog: the fork already exists, and a
   // refresh failure must not reject the dialog into allocating another child.
-  if (!disposed && router.currentRoute.value.name === "session" && props.sessionId === sourceId) await router.push({ name: "session", params: { sessionId: snapshot.session.id } })
+  if (!disposed && router.currentRoute.value.name === "session" && router.currentRoute.value.params.sessionId === sourceId && props.sessionId === sourceId) {
+    const project = returnToWorkspace.value
+    const destination = project
+      ? workspaceSessionRoute(fleet.targetId, project.params?.workspaceId ?? null, snapshot.session.id, account?.teamId.value)
+      : { name: "session", params: { sessionId: snapshot.session.id } }
+    await router.push(destination)
+  }
   await fleet.refreshLocalCatalog().catch(() => undefined)
 }
 async function fork(context: AgentSessionContext): Promise<void> {
   if (busy.value) return
   const sourceId = props.sessionId
   busy.value = true
-  try { await showFork(await agents.fork(sourceId, context), sourceId) }
+  try {
+    if (expectedForkTurn.value && (pendingFork.value && pendingFork.value.params.expectedTurnId !== expectedForkTurn.value || snapshot.value?.turns.at(-1)?.id !== expectedForkTurn.value)) {
+      throw new Error(t("agent.forkStale"))
+    }
+    await showFork(await agents.fork(sourceId, context, expectedForkTurn.value), sourceId)
+  }
   finally { if (props.sessionId === sourceId) busy.value = false }
 }
 async function checkOperation(operationId: string): Promise<void> {
@@ -229,10 +290,11 @@ function openInNewWindow(): void {
 </script>
 
 <template>
-  <SessionHeader :has-actions="!!snapshot || faces.length > 0">
+  <SessionHeader :has-actions="!!returnToWorkspace || !!snapshot || faces.length > 0">
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
     <template #actions>
-      <div v-if="snapshot || faces.length" data-session-window-actions class="app-no-drag flex items-center gap-1">
+      <div v-if="returnToWorkspace || snapshot || faces.length" data-session-window-actions class="app-no-drag flex items-center gap-1">
+        <UiButton v-if="returnToWorkspace" size="sm" variant="ghost" @click="router.push(returnToWorkspace)"><ArrowLeft :size="14" aria-hidden="true" />{{ t("superAgent.back") }}</UiButton>
         <template v-if="snapshot">
           <McpActorBadge v-if="snapshot.session.createdBy?.via" :actor="snapshot.session.createdBy" creator class="mr-1" />
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
@@ -255,6 +317,7 @@ function openInNewWindow(): void {
     :composer-active="active"
   >
     <template #default="{ focusedEntry }">
+      <ErrorNotice v-if="draftError && !location" :error="draftError" />
       <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
       <template v-else-if="snapshot">
         <AgentConversation :events="view!.events" :snapshot="snapshot" :projection="projection" :optimistic-input="agents.optimisticInputs[sessionId]" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
@@ -293,10 +356,14 @@ function openInNewWindow(): void {
       </template>
     </template>
     <template #composer>
-      <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+      <WorkerControls v-if="projectWorker && snapshot && location" :key="sessionId" :location="location" :session-id="sessionId" :usage="usage" :active="active" :running="!!activeTurn" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error || snapshot.session.lifecycle !== 'ready'" />
+      <div v-if="projectWorker && activeTurn && activeTurn.state !== 'cancelling' && active" class="px-6 pb-3">
+        <UiButton size="sm" :disabled="!connected || busy || !!view?.syncing || !!view?.error" @click="action(() => agents.cancel(sessionId, activeTurn!.id))">{{ t('agent.cancelTurn') }}</UiButton>
+      </div>
+      <SessionComposer v-if="active && !projectWorker" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
     </template>
   </SessionConversationPane>
   <SessionTerminalPanel v-if="compact && !windowedMainWindow && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
-  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
+  <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!forkWorkspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="closeFork" />
 </template>

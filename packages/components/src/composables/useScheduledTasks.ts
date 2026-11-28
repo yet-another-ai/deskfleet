@@ -69,10 +69,10 @@ export function useScheduledTasks() {
     catch (reason) { if (!disposed) error.value = message(reason); return false }
   }
 
-  async function save(id: string | undefined, input: ScheduleInput): Promise<ScheduledTask> {
+  async function save(id: string | undefined, input: ScheduleInput, options?: { operationId?: string; scheduleId?: string }): Promise<ScheduledTask> {
     const track = captureAnalyticsContext()
     return mutate(async () => {
-      const task = id ? await api!.update(id, input) : await api!.create(input)
+      const task = id ? await api!.update(id, input, options) : await api!.create(input, options)
       if (!id) track("schedule_action", { action: "create" })
       if (!disposed) replace(task)
       scheduleSyncRevision.value += 1

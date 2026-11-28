@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { CircleCheck, Copy, GitFork } from "@lucide/vue"
+import { ArrowUp, CircleCheck, Copy, CornerUpLeft, GitFork } from "@lucide/vue"
 import { useTimeoutFn } from "@vueuse/core"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import UiButton from "../common/UiButton.vue"
 
-const props = defineProps<{ text: string; canFork?: boolean; forkDisabled?: boolean }>()
-const emit = defineEmits<{ fork: [] }>()
+const props = defineProps<{ text: string; canFork?: boolean; forkDisabled?: boolean; alwaysVisible?: boolean; canQuote?: boolean; canLocatePrevious?: boolean }>()
+const emit = defineEmits<{ fork: []; quote: []; locatePrevious: [] }>()
 const { t } = useI18n()
 const copied = ref(false)
 const copyFailed = ref(false)
@@ -23,9 +23,11 @@ async function copy(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="text || canFork" class="-my-1 flex ui-motion can-hover:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+  <div v-if="text || canFork || canQuote || canLocatePrevious" class="-my-1 flex ui-motion" :class="!alwaysVisible && 'can-hover:opacity-0 group-hover:opacity-100 focus-within:opacity-100'">
     <UiButton v-if="text" variant="ghost" size="icon" :label="t(copied ? 'agent.copied' : 'agent.copy')" @click="copy"><component :is="copied ? CircleCheck : Copy" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     <UiButton v-if="canFork" variant="ghost" size="icon" :label="t('agent.fork')" :disabled="forkDisabled" @click="emit('fork')"><GitFork :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    <UiButton v-if="canQuote" variant="ghost" size="icon" :label="t('superAgent.quote')" @click="emit('quote')"><CornerUpLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    <UiButton v-if="canLocatePrevious" variant="ghost" size="icon" data-locate-previous-user :label="t('superAgent.locatePreviousUserMessage')" @click="emit('locatePrevious')"><ArrowUp :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
   </div>
   <p v-if="copyFailed" role="alert" class="m-0 text-xs text-ui-danger">{{ t('agent.copyFailed') }}</p>
 </template>

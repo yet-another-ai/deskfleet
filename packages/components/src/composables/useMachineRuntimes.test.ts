@@ -19,7 +19,7 @@ import { usePlatformClient } from "./usePlatformClient.ts"
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
 
-async function fixture() {
+async function fixture(platform = getClient().platform, remoteWorkspaceAgent = false, mobile = false) {
   const first = machineFixture("m1", "team-1", "First", false)
   const second = machineFixture("m2", "team-1", "Second", false)
   const fake = fakeCentral({ machines: [first, second] })
@@ -45,7 +45,7 @@ async function fixture() {
   const scope = effectScope()
   const batteries = useMachineBatteriesStore(state)
   const runtimes = scope.run(() => createMachineRuntimes(
-    getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state), batteries,
+    { ...getClient(), platform, remoteWorkspaceAgent, mobile }, session, useAppearanceStore(state), useOutlineAudioStore(state), batteries,
   ))!
   cleanups.push(() => { scope.stop(); session.dispose(); disposePinia(state) })
   return { ...fake, first, second, session, scope, runtimes, batteries, createPeer, closePeer, catalog }
@@ -66,6 +66,35 @@ function mountFleet(runtime: MachineRuntime) {
   cleanups.push(() => { unmount(); root.remove() })
   return { fleet, api, root, unmount }
 }
+
+test.each(["darwin", "web"] as const)("only the selected registration enables remote agent on the project-aware %s host", async platform => {
+  const f = await fixture(platform, platform === "web", platform === "web")
+  expect(() => f.runtimes.open({ ...f.first, teamId: "another-team" })).toThrow("selected team")
+  const first = f.runtimes.open(f.first)
+  const second = f.runtimes.open(f.second)
+  expect(first.api.superAgent).toBeUndefined()
+  expect(first.api.filesystem.listDirectories).toBeTypeOf("function")
+  f.state.machines = [{ ...f.first, capabilities: { superAgent: true } }, f.second]
+  f.emit({ type: "catalogChanged", teamId: f.first.teamId, machineId: f.first.id })
+  await flushPromises()
+  const agent = first.api.superAgent!
+  expect(agent.snapshot).toBeTypeOf("function")
+  f.createPeer.mockRejectedValueOnce(new Error("Target unavailable"))
+  await expect(agent.snapshot({ workspaceId: "20" })).rejects.toThrow("Target unavailable")
+  expect(f.createPeer).toHaveBeenCalledExactlyOnceWith(f.first.teamId, f.first.id, "agent")
+  expect(second.api.superAgent).toBeUndefined()
+  expect(() => first.updateMachine({ ...f.first, teamId: "another-team" })).toThrow("registration")
+  first.updateMachine({ ...f.first, capabilities: {} })
+  expect(first.api.superAgent).toBeUndefined()
+  await expect(agent.snapshot({ workspaceId: "20" })).rejects.toThrow("unavailable")
+
+  expect(first.api.target?.local).toBe(false)
+})
+
+test.each([false, true])("a generic web adapter does not enable projects (mobile=%s)", async mobile => {
+  const web = await fixture("web", false, mobile)
+  expect(web.runtimes.open({ ...web.first, capabilities: { superAgent: true } }).api.superAgent).toBeUndefined()
+})
 
 test("child machine apps share the account battery cache", async () => {
   const f = await fixture()

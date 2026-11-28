@@ -34,7 +34,7 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     M::up(&db, None).await.unwrap();
     assert_eq!(
         Migrator::get_pending_migrations(&db).await.unwrap().len(),
-        3
+        5
     );
 
     Migrator::up(&db, None).await.unwrap();
@@ -60,10 +60,37 @@ async fn upgrade_baseline<M: MigratorTrait>() {
     );
     assert_eq!(
         Migrator::get_applied_migrations(&db).await.unwrap().len(),
-        6
+        8
     );
 
+    assert!(schema.has_table("super_agent_state").await.unwrap());
+    assert!(
+        schema
+            .has_table("super_agent_follow_up_auth")
+            .await
+            .unwrap()
+    );
+    assert!(
+        schema
+            .has_table("super_agent_follow_up_source")
+            .await
+            .unwrap()
+    );
+    assert!(schema.has_table("super_agent_follow_up_run").await.unwrap());
+    assert!(
+        schema
+            .has_table("super_agent_follow_up_action")
+            .await
+            .unwrap()
+    );
     Migrator::down(&db, None).await.unwrap();
+    assert!(!schema.has_table("super_agent_state").await.unwrap());
+    assert!(
+        !schema
+            .has_table("super_agent_follow_up_auth")
+            .await
+            .unwrap()
+    );
     assert!(!schema.has_table("agent_elicitations").await.unwrap());
     assert!(!schema.has_table("agent_sessions").await.unwrap());
     Migrator::up(&db, None).await.unwrap();
@@ -113,7 +140,7 @@ async fn query_indexes_upgrade_existing_receipts_without_rewriting_audit_json() 
         "{\"sessionId\":\"10\"}"
     );
     assert_eq!(row.try_get::<i64>("", "revision").unwrap(), 0);
-    Migrator::down(&db, Some(1)).await.unwrap();
+    Migrator::down(&db, Some(3)).await.unwrap();
     assert!(
         !SchemaManager::new(&db)
             .has_column("agent_commands", "revision")

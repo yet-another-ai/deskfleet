@@ -12,10 +12,13 @@ import type { ScheduleInput, ScheduledTask } from "@deskfleet/client/schedules"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ConfirmDialog from "../components/common/ConfirmDialog.vue"
 import ScheduleDetail from "../components/schedules/ScheduleDetail.vue"
-import ScheduleEditor from "../components/schedules/ScheduleEditor.vue"
+import ScheduleEditor, { type ScheduleFollowUpOption } from "../components/schedules/ScheduleEditor.vue"
+import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useScheduledTasks } from "../composables/useScheduledTasks.ts"
+import { useWorkspaceAgentMode, workspaceAgentRoute } from "../services/workspace-agent-navigation.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { absoluteTime } from "../components/schedules/schedule-format.ts"
+import type { FollowUpDeliveryPolicy, FollowUpSourcesResponse } from "@deskfleet/protocol/super-agent"
 
 // `/schedules` prompts to select or create a task, `/schedules/new` creates one, and `/schedules/:id` shows one.
 const props = defineProps<{ scheduleId?: string }>()
@@ -23,6 +26,8 @@ const { t, locale } = useI18n()
 const motion = useNavigationMotion()
 const router = useRouter()
 const fleet = useFleetStore()
+const client = usePlatformClient()
+const workspaceMode = useWorkspaceAgentMode()
 const schedules = useScheduledTasks()
 const { account, online, tasks, loaded, loading, pending, error, lastObservedAt } = schedules
 const creating = computed(() => props.scheduleId === "new")
@@ -30,13 +35,59 @@ const selected = computed(() => props.scheduleId && !creating.value ? tasks.valu
 const machineName = computed(() => account?.machine.value?.name ?? fleet.machines[0]?.name)
 const blocked = computed(() => !online.value || pending.value)
 const removing = ref<ScheduledTask>()
+const followUpState = ref<FollowUpSourcesResponse>()
+
+async function refreshFollowUpSources(): Promise<void> {
+  if (!workspaceMode.value || !online.value || !client.superAgent?.followUpSources) {
+    followUpState.value = undefined
+    return
+  }
+  try { followUpState.value = await client.superAgent.followUpSources({ workspaceId: null }) }
+  catch { followUpState.value = undefined }
+}
+watch([workspaceMode, online, () => fleet.targetId, () => props.scheduleId], () => { void refreshFollowUpSources() }, { immediate: true })
+
+async function connectFollowUp(task: ScheduledTask, enabled: boolean, deliveryPolicy: FollowUpDeliveryPolicy): Promise<void> {
+  if (!client.superAgent?.followUpUpdateSource) throw new Error("Proactive follow-up is unavailable on this host")
+  await client.superAgent.followUpUpdateSource({ workspaceId: task.workspaceId, sourceKind: "schedule", sourceId: task.id, enabled, deliveryPolicy })
+  await refreshFollowUpSources()
+}
+
+const editorFollowUp = computed<ScheduleFollowUpOption | undefined>(() => {
+  if (!workspaceMode.value || !followUpState.value) return undefined
+  const existing = selected.value
+    ? followUpState.value.sources.find(s => s.sourceKind === "schedule" && s.sourceId === selected.value!.id && s.workspaceId === selected.value!.workspaceId)
+    : undefined
+  const awaitingAuthorization = existing?.state.pausedReason === "awaiting_authorization"
+  const takeoverActive = followUpState.value.auth.authorized && followUpState.value.auth.takeoverAllSessions !== false
+  if (!takeoverActive && !awaitingAuthorization) return undefined
+  return {
+    supported: true,
+    authorized: takeoverActive,
+    awaitingAuthorization,
+    initialEnabled: selected.value ? (existing ? existing.state.enabled && !existing.state.pausedReason : false) : true,
+    initialPolicy: existing?.state.deliveryPolicy,
+    connect: connectFollowUp,
+  }
+})
+
+const selectedProjectChatRoute = computed(() => {
+  if (!workspaceMode.value || !selected.value) return undefined
+  return workspaceAgentRoute(fleet.targetId, selected.value.workspaceId, account?.teamId.value)
+})
+
+async function toggleSelectedFollowUp(): Promise<void> {
+  if (!selected.value || !editorFollowUp.value) return
+  const next = !editorFollowUp.value.initialEnabled
+  await connectFollowUp(selected.value, next, editorFollowUp.value.initialPolicy ?? "every_run")
+}
 
 const list = () => router.replace({ name: "schedules" })
 // A deleted task, or a link to another machine's task, returns to the schedules root.
 watch([loaded, () => props.scheduleId, selected], () => {
   if (loaded.value && props.scheduleId && !creating.value && !selected.value) void list()
 }, { immediate: true })
-const save = (input: ScheduleInput) => schedules.save(selected.value?.id, input)
+const save = (input: ScheduleInput, options?: { operationId?: string; scheduleId?: string }) => schedules.save(selected.value?.id, input, options)
 // Replacing the creation page lets Back return to the root rather than an empty form.
 function created(task: ScheduledTask): void { void router.replace({ name: "schedules", params: { scheduleId: task.id } }) }
 async function remove(): Promise<void> {
@@ -66,9 +117,9 @@ async function remove(): Promise<void> {
       <template v-else-if="loaded">
         <template v-if="creating">
           <h1 class="ui-page-title">{{ t('schedules.createTitle') }}</h1>
-          <ScheduleEditor :disabled="blocked" :save="save" @saved="created" @cancel="list" />
+          <ScheduleEditor :disabled="blocked" :follow-up="editorFollowUp" :save="save" @saved="created" @cancel="list" />
         </template>
-        <ScheduleDetail v-else-if="selected" :key="selected.id" :task="selected" :disabled="blocked" :save="save" @run="schedules.run(selected)" @toggle="schedules.toggle(selected)" @delete="removing = selected" />
+        <ScheduleDetail v-else-if="selected" :key="selected.id" :task="selected" :disabled="blocked" :follow-up="editorFollowUp" :project-chat-route="selectedProjectChatRoute" :save="save" @run="schedules.run(selected)" @toggle="schedules.toggle(selected)" @toggle-follow-up="toggleSelectedFollowUp" @delete="removing = selected" />
         <div v-else class="ui-empty">
           <CalendarClock :size="25" class="mb-2 text-ui-text-muted" aria-hidden="true" />
           <p class="m-0 text-sm font-medium">{{ t('schedules.title') }}</p>

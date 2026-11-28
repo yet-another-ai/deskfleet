@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import type { AgentActor, AgentCommand, AgentEvent, AgentMethod, AgentPreview, AgentSnapshot } from "@deskfleet/protocol/agent"
 import { isSnapshotReference } from "@deskfleet/protocol/agent-command-results"
-import { validateAgentConfigurationSelection, type AgentConfigurationSelection } from "@deskfleet/protocol/agent-configuration"
+import { validateAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "@deskfleet/protocol/agent-configuration"
 import type { AgentLiveUpdate } from "@deskfleet/protocol/agent-live"
 import { validateProviderId } from "@deskfleet/protocol/provider"
 import type { WorktreePreferences } from "@deskfleet/protocol/worktree-preferences"
@@ -25,6 +25,20 @@ import { AgentRuntime, type ResolveAgentProvider } from "./runtime.ts"
 import { markSessionRead, markSessionUnread, rememberSessionViewer, renameSession } from "./session-metadata.ts"
 import { SessionTransitions } from "./session-transitions.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./store.ts"
+
+function withAdhdSkill<T extends AgentConfiguration | null>(configuration: T): T {
+  if (!configuration) return configuration
+  return {
+    ...configuration,
+    supportsAdhdSkill: true,
+    ...(configuration.matrix ? {
+      matrix: {
+        ...configuration.matrix,
+        configurations: configuration.matrix.configurations.map(entry => ({ ...entry, supportsAdhdSkill: true })),
+      },
+    } : {}),
+  } as T
+}
 
 /**
  * Durable collaboration belongs to the daemon, not to a client connection.
@@ -207,6 +221,10 @@ export class AgentSessions {
     return this.#catalog.attachments.draftDirectory(draftId)
   }
 
+  fileGrant(userId: string, path: string): string {
+    return this.#catalog.attachments.fileGrant(userId, path)
+  }
+
   async requireActive(sessionId: string): Promise<AgentSnapshot> {
     const snapshot = await this.journal.read(sessionId)
     requireActiveSession(snapshot.session)
@@ -225,14 +243,14 @@ export class AgentSessions {
   async handle(method: AgentMethod, value: unknown, actor: AgentActor): Promise<unknown> {
     if (this.#closed) throw new Error("Agent service is stopping")
     const params = requestParams(value)
-    if (method === "_deskfleet/agent/configuration") return this.#track(this.#discovery.configuration(params, actor))
+    if (method === "_deskfleet/agent/configuration") return this.#track(this.#discovery.configuration(params, actor)).then(withAdhdSkill)
     if (method === "_deskfleet/agent/usage") return this.#track(this.#discovery.usage(params))
     if (method === "_deskfleet/session/configuration") {
       const sessionId = recordId(params.sessionId, "Session ID")
       if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid composer discovery flag")
       await this.#provisioning.ready(sessionId)
       await this.journal.session(sessionId)
-      return this.#track(this.#runtime(sessionId).configuration(this.#closing.signal, params.composer === true))
+      return this.#track(this.#runtime(sessionId).configuration(this.#closing.signal, params.composer === true)).then(withAdhdSkill)
     }
     if (method === "_deskfleet/composer/references" || method === "_deskfleet/composer/resolve") return this.#composer(method, params, actor)
     if (method === "_deskfleet/session/list") return this.journal.list()
@@ -371,7 +389,7 @@ export class AgentSessions {
       if (method === "_deskfleet/session/configure") {
         if (params.provider !== undefined && params.provider !== session.provider) throw new Error("A Session's Agent cannot be changed")
         validateAgentConfigurationSelection(params)
-        const result = await this.#runtime(sessionId).configure(params as AgentConfigurationSelection)
+        const result = withAdhdSkill(await this.#runtime(sessionId).configure(params as AgentConfigurationSelection))
         await this.journal.complete(command, result)
         return result
       }

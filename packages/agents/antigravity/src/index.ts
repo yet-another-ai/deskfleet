@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises"
+import { basename, join } from "node:path"
 import type { ForkSessionRequest, InitializeResponse, NewSessionRequest, PromptResponse, ResumeSessionRequest, Usage } from "@agentclientprotocol/sdk/unstable"
 import {
   connectAcpProcess, jsonVersionParser, launchProviderCommand, resolveBashScriptInstaller,
@@ -161,6 +163,19 @@ export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   async connect(config, client) {
     const geminiDir = config.env?.GEMINI_HOME ?? process.env.GEMINI_HOME
+    const baseArgs = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
+    if (client.inferenceOnly) {
+      const cwd = client.inferenceOnly.cwd
+      const name = basename(cwd).toLowerCase()
+      const directory = join(cwd, ".agents", "agents")
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, name + ".md"), [
+        "---", "name: " + name, "description: DeskFleet foreground routing", "mainAgent: true", "subagent: false",
+        "tools: []", "mcpServers: []", "skills: []", "plugins: []", "commandExecutionPolicy: off", "---",
+        "Return the requested routing decision using only the information supplied in the prompt.",
+      ].join("\n"), { flag: "wx", mode: 0o600 })
+      return connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", [...baseArgs, "--agent", name, "--sandbox"], config.env), client)
+    }
     const args = geminiDir
       ? ["acp", "--process-per-session", "--gemini-dir", geminiDir]
       : ["acp", "--process-per-session"]

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { McpServer } from "@agentclientprotocol/sdk/unstable"
-import { DESKFLEET_TOOLS } from "@deskfleet/mcp/tools"
+import { DESKFLEET_SA_WORKER_TOOLS, DESKFLEET_TOOLS } from "@deskfleet/mcp/tools"
 import { adapterProcess, DESKFLEET_MCP_ARGUMENT } from "../acp/adapter-host.ts"
 import type { AgentActor } from "@deskfleet/protocol/agent"
 
@@ -10,6 +10,7 @@ export interface AgentMcpScope { sessionId: string; workspaceId?: string; superA
 export interface AgentMcpLease { servers: McpServer[]; close(): void }
 export interface AgentMcpOptions {
   servers?(): McpServer[]
+  isSaWorkerSession?(sessionId: string, creationOperationId?: string): boolean
   authorize(actor: AgentActor, scope: AgentMcpScope): Promise<void>
   dispatch(method: string, params: Record<string, unknown>, actor: AgentActor, scope: AgentMcpScope): Promise<unknown>
 }
@@ -44,7 +45,7 @@ export class AgentMcp {
     this.#endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`
   }
 
-  lease(sessionId: string, workspaceId: string | undefined, actor: AgentActor, superAgent = false): AgentMcpLease {
+  lease(sessionId: string, workspaceId: string | undefined, actor: AgentActor, superAgent = false, creationOperationId?: string): AgentMcpLease {
     // Local development fixtures have no centrally authenticated user to delegate.
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) {
       return { servers: [...this.#options.servers?.() ?? []], close() {} }
@@ -56,10 +57,12 @@ export class AgentMcp {
     this.#grants.set(token, { actor: structuredClone(principal), scope: { sessionId, ...(workspaceId ? { workspaceId } : {}), ...(superAgent ? { superAgent: true } : {}) } })
     const launch = adapterProcess(DESKFLEET_MCP_ARGUMENT)
     const env = Object.entries(launch.env ?? {}).flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
+    const saWorker = this.#options.isSaWorkerSession?.(sessionId, creationOperationId) === true
     return {
       servers: [
         { name: "deskfleet", command: launch.command, args: launch.args ?? [], env: [
           ...env, { name: "DESKFLEET_MCP_ENDPOINT", value: this.#endpoint }, { name: "DESKFLEET_MCP_TOKEN", value: token },
+          ...(saWorker ? [{ name: "DESKFLEET_SA_REPORT", value: "1" }] : []),
         ] },
         ...this.#options.servers?.() ?? [],
       ],
@@ -93,6 +96,7 @@ export class AgentMcp {
     const value = body as Record<string, unknown>
     if (Object.keys(value).some(key => key !== "name" && key !== "arguments")) throw new Error("MCP request cannot supply authority")
     const tool = DESKFLEET_TOOLS.find(tool => tool.name === value.name)
+      ?? (this.#options.isSaWorkerSession?.(grant.scope.sessionId) ? DESKFLEET_SA_WORKER_TOOLS.find(tool => tool.name === value.name) : undefined)
     if (!tool) throw new Error("Unknown DeskFleet tool")
     const args = value.arguments ?? {}
     if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Expected tool arguments")

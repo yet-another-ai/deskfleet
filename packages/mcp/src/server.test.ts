@@ -108,6 +108,7 @@ test("remote tools are discoverable and retain the remote MCP result, including 
   assert.ok(tools.includes("deskfleet_remote_files"))
   assert.ok(tools.includes("deskfleet_remote_file_upload"))
   assert.ok(tools.includes("deskfleet_remote_file_download"))
+  assert.ok(!tools.includes("deskfleet_sa_report"), "classic sessions must not see SA report tool")
   const findTool = (name: string) => listed.tools.find(tool => tool.name === name)
   for (const name of ["deskfleet_session_create", "deskfleet_remote_session_create"]) {
     const props = findTool(name)?.inputSchema.properties as Record<string, { type?: string; properties?: Record<string, { type?: string }> }> | undefined
@@ -126,4 +127,21 @@ test("remote tools are discoverable and retain the remote MCP result, including 
     assert.equal(props?.configuration?.properties?.model?.type, "string")
   }
   assert.deepEqual(await client.callTool({ name: "deskfleet_remote_mcp_call", arguments: { machineId: "target", serverId: "server", name: "tool", arguments: {} } }), result)
+})
+
+test("deskfleet_sa_report is exposed only when enableSaReport is true", async t => {
+  const calls: unknown[] = []
+  const server = createMcpServer(async (name, args) => {
+    calls.push({ name, args })
+    return { itemId: "milestone:req:sub-1", kind: "milestone", status: "accepted" }
+  }, { enableSaReport: true })
+  const client = new Client({ name: "sa-worker", version: "1.0.0" })
+  const [a, b] = InMemoryTransport.createLinkedPair()
+  await Promise.all([server.connect(a), client.connect(b)])
+  t.after(async () => { await client.close(); await server.close() })
+  const tools = (await client.listTools()).tools.map(tool => tool.name)
+  assert.ok(tools.includes("deskfleet_sa_report"))
+  const receipt = await client.callTool({ name: "deskfleet_sa_report", arguments: { kind: "milestone", text: "Root cause identified", submissionId: "sub-1" } })
+  assert.equal(receipt.isError, undefined)
+  assert.deepEqual(calls, [{ name: "deskfleet_sa_report", args: { kind: "milestone", text: "Root cause identified", submissionId: "sub-1" } }])
 })

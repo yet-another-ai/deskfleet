@@ -51,7 +51,12 @@ export function dshAcpProcess(env?: NodeJS.ProcessEnv): DshHost {
   return runtimeProcess("acp", [], env)
 }
 
-function runtimeProcess(action: "login" | "status" | "acp" | undefined, args: readonly string[], env?: NodeJS.ProcessEnv): DshHost {
+/** One-shot inference and model discovery without starting the DSH agent loop. */
+export function dshCoordinatorProcess(env?: NodeJS.ProcessEnv): DshHost {
+  return runtimeProcess("coordinate", [], env)
+}
+
+function runtimeProcess(action: "login" | "status" | "acp" | "coordinate" | undefined, args: readonly string[], env?: NodeJS.ProcessEnv): DshHost {
   const runtime = configuredRuntime ?? sourceDshRuntime()
   return {
     command: runtime.command,

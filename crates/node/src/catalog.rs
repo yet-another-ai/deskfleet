@@ -1,7 +1,10 @@
 //! Thin asynchronous catalog binding owned by the machine daemon.
 
 use deskfleet_model::{DirectoryBinding, DirectoryBindings, WorkspaceSession, Worktree};
-use deskfleet_store::{CatalogWorkspace as StoredWorkspace, LocalCatalog, LocalSnapshot};
+use deskfleet_store::{
+    CatalogWorkspace as StoredWorkspace, FollowUpActionWrite, FollowUpRunQuery, FollowUpRunWrite,
+    FollowUpSourceWrite, LocalCatalog, LocalSnapshot,
+};
 use napi::Result;
 use napi_derive::napi;
 
@@ -91,6 +94,61 @@ impl From<LocalSnapshot> for CatalogSnapshot {
     }
 }
 
+#[napi(object)]
+pub struct SuperAgentStateRecord {
+    pub user_id: String,
+    pub revision: i32,
+    pub state_json: String,
+}
+
+#[napi(object)]
+pub struct SuperAgentFollowUpAuthRecord {
+    pub user_id: String,
+    pub revision: i32,
+    pub auth_version: i32,
+    pub state_json: String,
+}
+
+#[napi(object)]
+pub struct SuperAgentFollowUpSourceRecord {
+    pub id: String,
+    pub user_id: String,
+    pub workspace_id: String,
+    pub source_kind: String,
+    pub source_id: String,
+    pub revision: i32,
+    pub state_json: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct SuperAgentFollowUpRunRecord {
+    pub id: String,
+    pub user_id: String,
+    pub workspace_id: String,
+    pub source_kind: String,
+    pub source_id: String,
+    pub run_key: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub record_json: String,
+}
+
+#[napi(object)]
+pub struct SuperAgentFollowUpActionRecord {
+    pub id: String,
+    pub user_id: String,
+    pub workspace_id: String,
+    pub source_kind: String,
+    pub source_id: String,
+    pub action_key: String,
+    pub status: String,
+    pub auth_version: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub record_json: String,
+}
+
 #[napi]
 pub struct NativeCatalog {
     catalog: LocalCatalog,
@@ -114,6 +172,290 @@ pub async fn open_in_memory_catalog(machine_name: String) -> Result<NativeCatalo
 
 #[napi]
 impl NativeCatalog {
+    #[napi]
+    pub async fn super_agent_states(&self) -> Result<Vec<SuperAgentStateRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_states()
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentStateRecord {
+                user_id: row.user_id,
+                revision: row.revision,
+                state_json: row.state_json,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn save_super_agent_state(
+        &self,
+        user_id: String,
+        revision: i32,
+        state_json: String,
+    ) -> Result<()> {
+        self.catalog
+            .save_super_agent_state(user_id, revision, state_json)
+            .await
+            .map_err(native_error)
+    }
+
+    #[napi]
+    pub async fn super_agent_follow_up_auths(&self) -> Result<Vec<SuperAgentFollowUpAuthRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_follow_up_auths()
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentFollowUpAuthRecord {
+                user_id: row.user_id,
+                revision: row.revision,
+                auth_version: row.auth_version,
+                state_json: row.state_json,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn save_super_agent_follow_up_auth(
+        &self,
+        user_id: String,
+        revision: i32,
+        auth_version: i32,
+        state_json: String,
+    ) -> Result<()> {
+        self.catalog
+            .save_super_agent_follow_up_auth(user_id, revision, auth_version, state_json)
+            .await
+            .map_err(native_error)
+    }
+
+    #[napi]
+    pub async fn super_agent_follow_up_sources(
+        &self,
+        user_id: Option<String>,
+        workspace_id: Option<String>,
+    ) -> Result<Vec<SuperAgentFollowUpSourceRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_follow_up_sources(user_id, workspace_id)
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentFollowUpSourceRecord {
+                id: row.id,
+                user_id: row.user_id,
+                workspace_id: row.workspace_id,
+                source_kind: row.source_kind,
+                source_id: row.source_id,
+                revision: row.revision,
+                state_json: row.state_json,
+                updated_at: row.updated_at,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn save_super_agent_follow_up_source(
+        &self,
+        record: SuperAgentFollowUpSourceRecord,
+    ) -> Result<SuperAgentFollowUpSourceRecord> {
+        let saved = self
+            .catalog
+            .save_super_agent_follow_up_source(FollowUpSourceWrite {
+                id: record.id,
+                user_id: record.user_id,
+                workspace_id: record.workspace_id,
+                source_kind: record.source_kind,
+                source_id: record.source_id,
+                revision: record.revision,
+                state_json: record.state_json,
+                updated_at: record.updated_at,
+            })
+            .await
+            .map_err(native_error)?;
+        Ok(SuperAgentFollowUpSourceRecord {
+            id: saved.id,
+            user_id: saved.user_id,
+            workspace_id: saved.workspace_id,
+            source_kind: saved.source_kind,
+            source_id: saved.source_id,
+            revision: saved.revision,
+            state_json: saved.state_json,
+            updated_at: saved.updated_at,
+        })
+    }
+
+    #[napi]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn super_agent_follow_up_runs(
+        &self,
+        user_id: String,
+        workspace_id: Option<String>,
+        source_kind: Option<String>,
+        source_id: Option<String>,
+        before_created_at: Option<String>,
+        before_id: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<SuperAgentFollowUpRunRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_follow_up_runs(FollowUpRunQuery {
+                user_id,
+                workspace_id,
+                source_kind,
+                source_id,
+                before_created_at,
+                before_id,
+                limit,
+            })
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentFollowUpRunRecord {
+                id: row.id,
+                user_id: row.user_id,
+                workspace_id: row.workspace_id,
+                source_kind: row.source_kind,
+                source_id: row.source_id,
+                run_key: row.run_key,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                record_json: row.record_json,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn super_agent_follow_up_run(
+        &self,
+        user_id: String,
+        workspace_id: String,
+        source_kind: String,
+        source_id: String,
+        run_key: String,
+    ) -> Result<Option<SuperAgentFollowUpRunRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_follow_up_run(user_id, workspace_id, source_kind, source_id, run_key)
+            .await
+            .map_err(native_error)?
+            .map(|row| SuperAgentFollowUpRunRecord {
+                id: row.id,
+                user_id: row.user_id,
+                workspace_id: row.workspace_id,
+                source_kind: row.source_kind,
+                source_id: row.source_id,
+                run_key: row.run_key,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                record_json: row.record_json,
+            }))
+    }
+
+    #[napi]
+    pub async fn upsert_super_agent_follow_up_run(
+        &self,
+        record: SuperAgentFollowUpRunRecord,
+    ) -> Result<SuperAgentFollowUpRunRecord> {
+        let saved = self
+            .catalog
+            .upsert_super_agent_follow_up_run(FollowUpRunWrite {
+                id: record.id,
+                user_id: record.user_id,
+                workspace_id: record.workspace_id,
+                source_kind: record.source_kind,
+                source_id: record.source_id,
+                run_key: record.run_key,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+                record_json: record.record_json,
+            })
+            .await
+            .map_err(native_error)?;
+        Ok(SuperAgentFollowUpRunRecord {
+            id: saved.id,
+            user_id: saved.user_id,
+            workspace_id: saved.workspace_id,
+            source_kind: saved.source_kind,
+            source_id: saved.source_id,
+            run_key: saved.run_key,
+            created_at: saved.created_at,
+            updated_at: saved.updated_at,
+            record_json: saved.record_json,
+        })
+    }
+
+    #[napi]
+    pub async fn super_agent_follow_up_actions(
+        &self,
+        user_id: String,
+        status: Option<String>,
+        limit: u32,
+        before_created_at: Option<String>,
+        before_id: Option<String>,
+    ) -> Result<Vec<SuperAgentFollowUpActionRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_follow_up_actions(user_id, status, limit, before_created_at, before_id)
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentFollowUpActionRecord {
+                id: row.id,
+                user_id: row.user_id,
+                workspace_id: row.workspace_id,
+                source_kind: row.source_kind,
+                source_id: row.source_id,
+                action_key: row.action_key,
+                status: row.status,
+                auth_version: row.auth_version,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                record_json: row.record_json,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn upsert_super_agent_follow_up_action(
+        &self,
+        record: SuperAgentFollowUpActionRecord,
+    ) -> Result<SuperAgentFollowUpActionRecord> {
+        let saved = self
+            .catalog
+            .upsert_super_agent_follow_up_action(FollowUpActionWrite {
+                id: record.id,
+                user_id: record.user_id,
+                workspace_id: record.workspace_id,
+                source_kind: record.source_kind,
+                source_id: record.source_id,
+                action_key: record.action_key,
+                status: record.status,
+                auth_version: record.auth_version,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+                record_json: record.record_json,
+            })
+            .await
+            .map_err(native_error)?;
+        Ok(SuperAgentFollowUpActionRecord {
+            id: saved.id,
+            user_id: saved.user_id,
+            workspace_id: saved.workspace_id,
+            source_kind: saved.source_kind,
+            source_id: saved.source_id,
+            action_key: saved.action_key,
+            status: saved.status,
+            auth_version: saved.auth_version,
+            created_at: saved.created_at,
+            updated_at: saved.updated_at,
+            record_json: saved.record_json,
+        })
+    }
+
     #[napi]
     pub async fn snapshot(&self) -> Result<CatalogSnapshot> {
         self.catalog

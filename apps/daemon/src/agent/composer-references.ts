@@ -47,7 +47,7 @@ function filePath(value: unknown): asserts value is string {
     throw new Error("Invalid file reference path")
   }
 }
-function validateReference(value: unknown): asserts value is ComposerReference {
+export function validateComposerReference(value: unknown): asserts value is ComposerReference {
   object(value)
   if (typeof value.originId !== "string" || !value.originId) throw new Error("Invalid reference origin")
   resourceId(value.workspaceId)
@@ -183,12 +183,13 @@ export class ComposerReferences {
   async resolve(value: unknown): Promise<ContentBlock[]> {
     object(value)
     const params = value as unknown as ComposerReferenceResolve
-    resourceId(params.sessionId)
+    validateScope(params)
+    if (!params.workspaceId && !params.sessionId) throw new Error("Select a reference Workspace or Session")
     if (!Array.isArray(params.references) || params.references.length > 50) throw new Error("Invalid composer references")
-    const context = await this.#context({ sessionId: params.sessionId })
+    const context = await this.#context(params)
     const blocks: ContentBlock[] = []
     for (const reference of params.references) {
-      validateReference(reference)
+      validateComposerReference(reference)
       if (reference.originId !== this.#journal.identity.originId) throw new Error("Reference belongs to another machine catalog")
       if (!context.workspaceId || reference.workspaceId !== context.workspaceId) throw new Error("Reference is outside this Session's Workspace")
       if (reference.kind === "file") {

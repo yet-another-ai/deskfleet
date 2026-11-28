@@ -203,3 +203,15 @@ test("command and skill completion shares configuration discovery, limits slash 
   await wrapper.get('button[aria-label="Steer now"]:has(.lucide-corner-down-right)').trigger("click")
   expect(wrapper.emitted("submit")?.at(-1)).toEqual(["steer"])
 })
+
+test("a Worker menu offers one DeskFleet entry even when the provider reports the same skill", async () => {
+  const { wrapper, textarea, type } = fixture({ provider: { id: "agy", name: "Antigravity" }, models: null, modes: null, reasoningEfforts: null,
+    supportsAdhdSkill: true, skills: [{ id: "native", name: "i-have-adhd", invocation: "/i-have-adhd", description: "provider copy" }] })
+  await type("$adhd")
+  expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
+  expect(wrapper.get('[role="option"]').text()).not.toContain("provider copy")
+  await textarea.trigger("keydown", { key: "Tab" })
+  await flushPromises()
+  expect(textarea.element.value).toBe("$i-have-adhd ")
+  expect(wrapper.find("[data-composer-mentions]").exists()).toBe(false)
+})

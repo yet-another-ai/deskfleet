@@ -1,25 +1,8 @@
-import type { ComposerReference } from "@deskfleet/protocol/composer-reference"
+import { adhdCommand } from "@deskfleet/protocol/adhd-command"
+import { validComposerMentions, type ComposerMention } from "@deskfleet/protocol/composer-reference"
+export { validComposerMentions, type ComposerMention, type ComposerSkillReference } from "@deskfleet/protocol/composer-reference"
 
-export interface ComposerSkillReference { kind: "skill"; id: string; name: string; invocation: string; providerId: string }
-export interface ComposerMention {
-  id: string
-  /** UTF-16 offsets into the textarea value; end is exclusive. */
-  start: number
-  end: number
-  token: string
-  reference: ComposerReference | ComposerSkillReference
-}
 export interface ComposerTrigger { kind: "reference" | "skill" | "command"; start: number; end: number; query: string }
-
-export function validComposerMentions(text: string, mentions: readonly ComposerMention[]): ComposerMention[] {
-  let end = 0
-  return [...mentions].sort((left, right) => left.start - right.start).filter(mention => {
-    if (mention.start < end || mention.start < 0 || mention.end <= mention.start || text.slice(mention.start, mention.end) !== mention.token) return false
-    if (mention.start > 0 && !/\s/u.test(text[mention.start - 1]!) || mention.end < text.length && !/\s/u.test(text[mention.end]!)) return false
-    end = mention.end
-    return true
-  })
-}
 
 /** Keep identities through surrounding edits; editing a selected token turns it into plain text. */
 export function reconcileComposerMentions(before: string, after: string, mentions: readonly ComposerMention[]): ComposerMention[] {
@@ -47,4 +30,4 @@ export function composerTrigger(text: string, caret: number, mentions: readonly 
 }
 
 /** Slash commands are delivered as a new turn, including commands typed without autocomplete. */
-export function commandDraft(text: string): boolean { return /^\s*\/\S+/u.test(text) }
+export function commandDraft(text: string): boolean { return /^\s*\/\S+/u.test(text) || !!adhdCommand(text) }

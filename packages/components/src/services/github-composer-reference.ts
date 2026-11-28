@@ -1,4 +1,5 @@
 import type { GithubRepositoryItem } from "@deskfleet/client/central"
+import { isGithubItemUri } from "@deskfleet/protocol/composer-reference"
 import type { ComposerAttachment } from "./composer-attachments.ts"
 
 export interface GithubReferenceScope {
@@ -23,7 +24,7 @@ export function readGithubItemDrag(transfer: DataTransfer, target: GithubReferen
       || !Number.isSafeInteger(item.number) || item.number < 1 || typeof item.repository !== "string"
       || !/^[\w.-]+\/[\w.-]+$/u.test(item.repository) || typeof item.url !== "string") return
     const url = `https://github.com/${item.repository}/${item.kind === "issue" ? "issues" : "pull"}/${item.number}`
-    if (item.url.toLowerCase() === url.toLowerCase()) return item
+    if (isGithubItemUri(item.url) && item.url.toLowerCase() === url.toLowerCase()) return item
   } catch {
     // A native drop may carry an empty or foreign payload.
   }

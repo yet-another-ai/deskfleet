@@ -934,6 +934,12 @@ input available for explicit retry.
 
 ### Strict steering boundary
 
+Project conversations can pass `requireUnshared: true` to `_deskfleet/turn/cancel`.
+The daemon verifies the named turn inside the journal transaction and rejects
+this request if another input is joining or already shares that turn. Clients
+stopping an explicitly selected whole turn omit the flag. A steer arriving
+after cancellation starts uses the existing next-turn fallback.
+
 The pinned `@agentclientprotocol/codex-acp` 2.3.0 package has a repository patch
 for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.107.0
 already implements the same idle behavior; its patch advertises that support.

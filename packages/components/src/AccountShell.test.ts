@@ -12,6 +12,7 @@ import { fakeCentral, machineFixture } from "./test/central.ts"
 import * as analytics from "./services/analytics.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { useProvidersStore } from "./stores/providers.ts"
+import { HIDDEN_WORKSPACES_STORAGE_KEY } from "./composables/useHiddenWorkspaces.ts"
 import * as machineRuntimes from "./composables/useMachineRuntimes.ts"
 
 const host = getClient()
@@ -237,7 +238,7 @@ test("Refresh reloads every opened machine's resources with unchanged roster met
   fake.central.machines.mockClear()
   revision++
 
-  await page().get('button[aria-label="Refresh"]').trigger("click")
+  await page().get('aside button[aria-label="Refresh"]').trigger("click")
   await settled(() => {
     const sidebar = page().get("aside").text()
     expect(sidebar).toContain("Workspace m1 revision 1")
@@ -757,4 +758,104 @@ test("standalone Session window selects its Team and Machine and opens focused w
   await settled(() => expect(view!.text()).toContain("Message from 102"))
   expect(fake.central.machines).toHaveBeenLastCalledWith("7")
   expect(page().find("aside [data-sidebar-scroll-area]").exists()).toBe(false)
+})
+
+test("full AccountShell sidebar round-trip hides, persists across reopen, reveals per machine, and unhides with same-name workspaces on two machines", async () => {
+  i18n.global.locale.value = "zh-cmn-Hans-CN"
+  const fake = fakeCentral({
+    teams: [{ id: "7", name: "Team", role: "member" }],
+    machines: [
+      machineFixture("101", "7", "dev-host.local", false),
+      machineFixture("102", "7", "workstation.local", false),
+    ],
+  })
+  const catalogFor = (machineId: string) => ({
+    machineId,
+    lastObservedAt: "2026-10-25T00:00:00Z",
+    providers: { providers: [{ id: "codex", name: "Codex", template: "codex" }] },
+    snapshot: {
+      teamId: "7",
+      machineId,
+      machineName: machineId === "101" ? "dev-host.local" : "workstation.local",
+      workspaces: [
+        { id: "20", name: "SharedProject", worktrees: [{ id: "201", workspaceId: "20", directories: [{ path: "/code/shared" }] }] },
+        { id: "21", name: "ExtraProject", worktrees: [{ id: "211", workspaceId: "21", directories: [{ path: "/code/extra" }] }] },
+      ],
+      sessions: [],
+    },
+  })
+  Object.assign(fake.central, {
+    catalog: vi.fn(async (_teamId: string, machineId: string) => catalogFor(machineId)),
+    sessions: vi.fn(async () => []),
+  })
+  const clickMenu = async (label: string) => {
+    const item = page().findAll('[role="menuitem"]').find(entry => entry.text() === label)
+    expect(item, `menu item "${label}" should exist`).toBeDefined()
+    await item!.trigger("click")
+    await flushPromises()
+  }
+
+  try {
+    mountShell(fake.central, "darwin")
+    // Open second machine in the sidebar too so both machines are visible simultaneously.
+    await settled(() => expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="20"]').exists()).toBe(true))
+    await page().get('aside section[data-machine-id="102"] button').trigger("click")
+    await settled(() => expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(true))
+
+    // 1. Hide both workspaces on machine 101 and SharedProject (same name & ID) on machine 102.
+    await page().get('aside section[data-machine-id="101"] [data-workspace-id="20"] button[aria-label="SharedProject"]').trigger("contextmenu", { button: 2, clientX: 40, clientY: 60 })
+    await flushPromises()
+    await clickMenu("隐藏工作区")
+    expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="20"]').exists()).toBe(false)
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(true)
+
+    await page().get('aside section[data-machine-id="101"] [data-workspace-id="21"] button[aria-label="ExtraProject"]').trigger("contextmenu", { button: 2, clientX: 40, clientY: 90 })
+    await flushPromises()
+    await clickMenu("隐藏工作区")
+
+    await page().get('aside section[data-machine-id="102"] [data-workspace-id="20"] button[aria-label="SharedProject"]').trigger("contextmenu", { button: 2, clientX: 40, clientY: 160 })
+    await flushPromises()
+    await clickMenu("隐藏工作区")
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(false)
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="21"]').exists()).toBe(true)
+
+    // Simulate full app restart: hidden workspaces stay hidden on both machines.
+    view!.unmount(); disposePinia(pinia); pinia = createPinia()
+    mountShell(fake.central, "darwin")
+    await settled(() => expect(page().find('aside section[data-machine-id="101"]').exists()).toBe(true))
+    await settled(() => expect(fake.central.catalog).toHaveBeenCalledWith("7", "101"))
+    await page().get('aside section[data-machine-id="102"] button').trigger("click")
+    await settled(() => expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="21"]').exists()).toBe(true))
+    expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="20"]').exists()).toBe(false)
+    expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="21"]').exists()).toBe(false)
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(false)
+
+    // 2. Right-click machine 101 -> "显示隐藏工作区": ONLY machine 101 reveals its hidden workspaces.
+    await page().get('aside section[data-machine-id="101"] button').trigger("contextmenu", { button: 2, clientX: 24, clientY: 32 })
+    await flushPromises()
+    await clickMenu("显示隐藏工作区")
+    expect(page().findAll('aside section[data-machine-id="101"] [data-workspace-hidden="true"]').map(row => row.attributes("data-workspace-id"))).toEqual(["20", "21"])
+    expect(page().findAll('aside section[data-machine-id="102"] [data-workspace-hidden="true"]')).toHaveLength(0)
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(false)
+
+    // 3. Right-click hidden SharedProject on machine 101 -> "取消隐藏": restores only SharedProject on machine 101.
+    await page().get('aside section[data-machine-id="101"] [data-workspace-id="20"] button[aria-label="SharedProject"]').trigger("contextmenu", { button: 2, clientX: 40, clientY: 80 })
+    await flushPromises()
+    await clickMenu("取消隐藏")
+    expect(page().findAll('aside section[data-machine-id="101"] [data-workspace-id]:not([data-workspace-hidden])').map(row => row.attributes("data-workspace-id"))).toEqual(["20"])
+    expect(page().findAll('aside section[data-machine-id="101"] [data-workspace-hidden="true"]').map(row => row.attributes("data-workspace-id"))).toEqual(["21"])
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(false)
+
+    // Reopen once more: SharedProject stays restored on 101; ExtraProject on 101 and SharedProject on 102 remain hidden.
+    view!.unmount(); disposePinia(pinia); pinia = createPinia()
+    mountShell(fake.central, "darwin")
+    await settled(() => expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="20"]').exists()).toBe(true))
+    expect(page().find('aside section[data-machine-id="101"] [data-workspace-id="21"]').exists()).toBe(false)
+    await page().get('aside section[data-machine-id="102"] button').trigger("click")
+    await settled(() => expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="21"]').exists()).toBe(true))
+    expect(page().find('aside section[data-machine-id="102"] [data-workspace-id="20"]').exists()).toBe(false)
+  } finally {
+    localStorage.removeItem(HIDDEN_WORKSPACES_STORAGE_KEY)
+    i18n.global.locale.value = "en-US"
+  }
 })

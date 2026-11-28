@@ -226,5 +226,17 @@ export function useSessionGit(sessionId: MaybeRefOrGetter<string>, enabled: Mayb
     detach()
     clearCards()
   })
-  return { snapshot, loading, error, connected, cards, expand, collapse, refresh }
+  const changes = computed(() => {
+    let additions = 0, deletions = 0, files = 0
+    for (const repo of snapshot.value?.repositories ?? []) {
+      if (repo.error) continue
+      for (const change of repo.changes) {
+        additions += change.additions ?? 0
+        deletions += change.deletions ?? 0
+        files++
+      }
+    }
+    return { additions, deletions, files }
+  })
+  return { snapshot, changes, loading, error, connected, cards, expand, collapse, refresh }
 }

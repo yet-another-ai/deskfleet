@@ -4,12 +4,18 @@ import { afterEach, expect, test, vi } from "vitest"
 import { h, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { accountSessionKey } from "../../composables/useAccountSession.ts"
+import { HIDDEN_WORKSPACES_STORAGE_KEY, useHiddenWorkspaces } from "../../composables/useHiddenWorkspaces.ts"
 import { i18n } from "../../i18n/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import WorkspaceContextMenu from "./WorkspaceContextMenu.vue"
 
 const cleanup: (() => void)[] = []
-afterEach(async () => { for (const stop of cleanup.splice(0)) stop(); await flushPromises() })
+afterEach(async () => {
+  for (const stop of cleanup.splice(0)) stop()
+  localStorage.removeItem(HIDDEN_WORKSPACES_STORAGE_KEY)
+  i18n.global.locale.value = "en-US"
+  await flushPromises()
+})
 const page = () => new DOMWrapper(document.body)
 const menuItem = (label: string) => page().findAll('[role="menuitem"]').find(item => item.text() === label)!
 
@@ -44,7 +50,7 @@ test("right-click prevents the native menu and opens workspace management at the
   wrapper.get("button").element.dispatchEvent(event)
   await flushPromises()
   expect(event.defaultPrevented).toBe(true)
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Delete workspace"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Hide workspace", "Delete workspace"])
   // Sync open skips Reka's handleOpen; Content must receive a virtual anchor at the click.
   const exposed = wrapper.vm as unknown as { cursor?: { x: number; y: number }; pointerReference?: { getBoundingClientRect(): DOMRect } }
   expect(exposed.cursor).toEqual({ x: 144, y: 96 })
@@ -70,7 +76,7 @@ test("keyboard workspace management edits the clicked workspace and restores row
   const row = wrapper.get("button")
   row.element.focus()
   await row.trigger("keydown", { key: "F10", shiftKey: true }); await flushPromises()
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Delete workspace"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Edit workspace", "Hide workspace", "Delete workspace"])
   await menuItem("Edit workspace").trigger("click"); await flushPromises()
   const dialog = page().get('[role="dialog"]')
   await dialog.get('input[name="workspace-name"]').setValue("Renamed")
@@ -118,15 +124,39 @@ test("deletion requires confirmation and retains a failed attempt for retry", as
   expect(page().find('[role="dialog"]').exists()).toBe(false)
 })
 
-test("unavailable workspace management remains disabled", async () => {
+test("unavailable workspace management remains disabled while hiding stays available", async () => {
   const { wrapper, update, remove } = await setup(true)
   await openMenu(wrapper)
-  for (const item of page().findAll('[role="menuitem"]')) {
+  expect(menuItem("Hide workspace").attributes("data-disabled")).toBeUndefined()
+  for (const item of [menuItem("Edit workspace"), menuItem("Delete workspace")]) {
     expect(item.attributes("data-disabled")).toBeDefined()
     await item.trigger("click")
   }
   await flushPromises()
   expect(page().find('[role="dialog"]').exists()).toBe(false)
+  expect(update).not.toHaveBeenCalled()
+  expect(remove).not.toHaveBeenCalled()
+  await menuItem("Hide workspace").trigger("click"); await flushPromises()
+  expect(useHiddenWorkspaces().isHidden("local-daemon", "workspace")).toBe(true)
+})
+
+test("hiding and unhiding toggle local sidebar visibility without mutating catalog or navigating", async () => {
+  i18n.global.locale.value = "zh-cmn-Hans-CN"
+  const { wrapper, update, remove, router } = await setup()
+  await router.push({ name: "session", params: { sessionId: "session" } })
+  await openMenu(wrapper)
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["编辑工作区", "隐藏工作区", "删除工作区"])
+  await menuItem("隐藏工作区").trigger("click"); await flushPromises()
+  expect(useHiddenWorkspaces().isHidden("local-daemon", "workspace")).toBe(true)
+  expect(update).not.toHaveBeenCalled()
+  expect(remove).not.toHaveBeenCalled()
+  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  expect(router.currentRoute.value.fullPath).toBe("/sessions/session")
+
+  await openMenu(wrapper)
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["编辑工作区", "取消隐藏", "删除工作区"])
+  await menuItem("取消隐藏").trigger("click"); await flushPromises()
+  expect(useHiddenWorkspaces().isHidden("local-daemon", "workspace")).toBe(false)
   expect(update).not.toHaveBeenCalled()
   expect(remove).not.toHaveBeenCalled()
 })

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -96,7 +96,7 @@ test("templates resolve their own binary defaults and cannot change after creati
   assert.deepEqual(registry.resolve(omp.id).config, { name: "Oh My Pi", binaryPath: "omp", env: { ANTHROPIC_API_KEY: "secret" } })
   const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
   assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
-  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret", DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "deepseek-harness", ".credentials.yaml") } })
+  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret", DESKFLEET_DSH_DESKTOP_ROUTES: "0", DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "deepseek-harness", ".credentials.yaml") } })
   const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
   assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
   assert.equal(registry.resolve(antigravity.id).provider.readUsage, undefined)
@@ -126,8 +126,38 @@ test("bundled DeepSeek sessions isolate registration credentials without persist
   await first.update(a.id, { name: "Custom home", env: { DSH_HOME: "/chosen/home" } })
   assert.equal(first.resolve(a.id).config.env?.DSH_HOME, "/chosen/home")
   assert.equal(first.resolve(a.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, undefined)
+  const localOnly = { DSH_HOME: "/chosen/home", DESKFLEET_DSH_DESKTOP_ROUTES: "0" }
+  await first.update(a.id, { name: "Local only", env: localOnly, inheritShellEnvironment: false })
+  assert.deepEqual(first.resolve(a.id).config.env, localOnly)
+  assert.deepEqual((await first.coordinatorConfig(a.id)).env, localOnly)
   await first.update(a.id, { name: "External", binaryPath: "/tools/dsh", env: {} })
   assert.deepEqual(first.resolve(a.id).config.env, {})
+})
+
+test("a changed DSH desktop routing file refreshes the opted-in registration", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "df-desktop-routes-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const registry = new AgentProviders(join(dir, "registration"))
+  await registry.init()
+  const selectedHome = join(dir, "harness")
+  const profile = join(selectedHome, "profiles", "desktop")
+  await mkdir(profile, { recursive: true })
+  const patch = join(profile, "cordis.patch.yml")
+  await writeFile(patch, "[]")
+  await writeFile(join(selectedHome, "cordis.patch.yml"), "[]")
+  const provider = await registry.create({ template: "deepseek-harness", name: "DSH", env: { DSH_HOME: selectedHome } })
+  assert.equal(registry.resolve(provider.id).config.env?.DESKFLEET_DSH_DESKTOP_ROUTES, "1")
+  const previous = registry.metadata().revision
+  const changed = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Desktop routes did not refresh")), 8000)
+    const stop = registry.onChanged(resolve)
+    t.after(() => { clearTimeout(timer); stop() })
+  })
+  await writeFile(patch + ".tmp", "- id: agent-default-model")
+  await rename(patch + ".tmp", patch)
+  await changed
+  assert.notEqual(registry.metadata().revision, previous)
+  assert.equal(registry.snapshot().providers[0]?.id, provider.id)
 })
 
 test("public provider revision changes on settings edits without exposing launch configuration", async t => {

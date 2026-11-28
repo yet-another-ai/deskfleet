@@ -14,14 +14,15 @@ import UiScrollArea from "../common/UiScrollArea.vue"
 import UiSelect from "../common/UiSelect.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 
-const props = defineProps<{ sessionId: string }>()
-const emit = defineEmits<{ insert: [] }>()
+const props = defineProps<{ sessionId?: string; workspaceId?: string; insertDisabled?: boolean }>()
+const emit = defineEmits<{ insert: [item: GithubRepositoryItem] }>()
 const { t } = useI18n()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const account = useAccountSession()
-const location = computed(() => fleet.findSession(props.sessionId))
-const repositories = computed(() => location.value?.workspace?.githubRepositories ?? [])
+const session = computed(() => props.sessionId ? fleet.findSession(props.sessionId) : undefined)
+const workspace = computed(() => (props.workspaceId ? fleet.findWorkspace(props.workspaceId) : session.value)?.workspace)
+const repositories = computed(() => workspace.value?.githubRepositories ?? [])
 const selectedRepository = ref("")
 const repository = computed(() => repositories.value.includes(selectedRepository.value) ? selectedRepository.value : repositories.value[0])
 const kind = ref<GithubRepositoryItem["kind"]>("issue")
@@ -37,11 +38,11 @@ function itemIcon(item: GithubRepositoryItem) {
   return item.state === "closed" ? CircleCheck : CircleDot
 }
 const scope = computed(() => {
-  const workspaceId = location.value?.workspace?.id
+  const workspaceId = workspace.value?.id
   return fleet.catalogIdentity && workspaceId ? { ...fleet.catalogIdentity, workspaceId } : undefined
 })
-const archiveState = computed(() => location.value?.session.archiveState)
-const canInsert = computed(() => !!scope.value && (!archiveState.value || archiveState.value === "active"))
+const archiveState = computed(() => session.value?.session.archiveState)
+const canInsert = computed(() => !!scope.value && !props.insertDisabled && (!archiveState.value || archiveState.value === "active"))
 const access = useAsyncState(async (known?: GithubAppSettings) => known ?? await account?.central.githubSettings(),
   undefined, { immediate: !!account })
 const permitted = computed(() => !!(access.state.value?.configured && access.state.value.authorized && access.state.value.actAsYou))
@@ -66,8 +67,8 @@ function drag(event: DragEvent, item: GithubRepositoryItem): void {
 }
 function insert(item: GithubRepositoryItem): void {
   if (!canInsert.value) return
-  agents.draftAttachments[props.sessionId] = withGithubReference(agents.draftAttachments[props.sessionId] ?? [], item)
-  emit("insert")
+  if (props.sessionId) agents.draftAttachments[props.sessionId] = withGithubReference(agents.draftAttachments[props.sessionId] ?? [], item)
+  emit("insert", item)
 }
 </script>
 

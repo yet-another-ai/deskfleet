@@ -12,6 +12,7 @@ import CopyField from "../common/CopyField.vue"
 import UiDialog from "../common/UiDialog.vue"
 import { parseDaemonStatus } from "./daemon-status.ts"
 
+const props = defineProps<{ localOnly?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t, locale } = useI18n()
@@ -22,9 +23,13 @@ const statusInput = useTemplateRef<HTMLTextAreaElement>("statusInput")
 const localName = useTemplateRef<HTMLInputElement>("localName")
 const credentialField = useTemplateRef<InstanceType<typeof CopyField>>("credentialField")
 // The desktop can register the daemon it hosts; every client can register another machine.
-const step = ref<"choose" | "local" | "headless" | "credentials">(session.central.enrollLocal ? "choose" : "headless")
+const step = ref<"choose" | "local" | "headless" | "credentials">(props.localOnly ? "local" : session.central.enrollLocal ? "choose" : "headless")
 const statusText = ref("")
-const name = ref("")
+const workspaceHost = session.localStatus.value?.machineName ?? ""
+const workspaceNameSuffix = " · Workspace Agent"
+const name = ref(props.localOnly
+  ? session.enrollment.value?.machineName ?? workspaceHost.slice(0, 200 - workspaceNameSuffix.length) + workspaceNameSuffix
+  : "")
 // Once the user types a name, a newly parsed status no longer overwrites it.
 const nameEdited = ref(false)
 const pending = ref(false)
@@ -69,6 +74,7 @@ async function chooseLocal(): Promise<void> {
   localName.value?.select()
 }
 const connectThisComputer = () => run(async () => {
+  if (!session.canEnrollLocal.value || !name.value.trim()) return
   await session.enrollLocal(name.value.trim())
   dialog.value?.close()
 })
@@ -91,13 +97,14 @@ const register = () => run(async () => {
 })
 function focusInitial(event: Event): void {
   if (step.value === "headless") { event.preventDefault(); statusInput.value?.focus() }
+  if (step.value === "local") { event.preventDefault(); localName.value?.focus(); localName.value?.select() }
 }
 </script>
 
 <template>
   <UiDialog ref="dialog" class="w-[34rem]" described :prevent-close="pending" @close="emit('close')" @open-auto-focus="focusInitial">
     <DialogTitle class="ui-dialog-title">{{ t(step === "credentials" ? "addMachine.finishTitle" : "addMachine.title", { team: team?.name ?? "" }) }}</DialogTitle>
-    <DialogDescription class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
+    <DialogDescription class="ui-dialog-description mb-5">{{ t(localOnly ? "superAgent.setup.nameDescription" : step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
 
     <div v-if="step === 'choose'" class="flex flex-col gap-2">
       <button v-spring-hover="-1" type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
@@ -140,13 +147,13 @@ function focusInitial(event: Event): void {
       <label class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
         {{ t("addMachine.nameStep") }}
         <input ref="localName" v-model="name" name="machine-name" class="ui-input text-sm text-ui-text" required maxlength="200" autocomplete="off" :disabled="pending" :aria-describedby="`${id}-local-name`" />
-        <span :id="`${id}-local-name`" class="text-xs">{{ t("addMachine.nameHint") }}</span>
+        <span :id="`${id}-local-name`" class="text-xs">{{ t(localOnly ? "superAgent.setup.nameHint" : "addMachine.nameHint") }}</span>
       </label>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex justify-end gap-2">
-        <UiButton type="button" class="mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</UiButton>
+        <UiButton v-if="!localOnly" type="button" class="mr-auto" :disabled="pending" @click="step = 'choose'; error = undefined">{{ t("addMachine.back") }}</UiButton>
         <UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
-        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !name.trim()">{{ pending ? t("addMachine.connecting") : t("addMachine.connect") }}</UiButton>
+        <UiButton variant="primary" type="submit" :loading="pending" :disabled="pending || !session.canEnrollLocal.value || !name.trim()">{{ pending ? t("addMachine.connecting") : t("addMachine.connect") }}</UiButton>
       </div>
     </form>
 
