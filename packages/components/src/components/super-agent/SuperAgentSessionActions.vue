@@ -28,7 +28,17 @@ const groups = computed(() => [
 ])
 const action = shallowRef<"archive" | "restore" | "delete">()
 const actionAvailable = computed(() => props.selected && (action.value === "archive" ? !props.selected.archived : props.selected.archived))
-const title = computed(() => props.selected?.title || t("superAgent.untitled"))
+const confirmation = computed(() => {
+  const title = props.selected?.title || t("superAgent.untitled")
+  switch (action.value) {
+    case "archive":
+      return { label: t("agent.archive"), description: t("superAgent.archiveQuestion", { title }) }
+    case "restore":
+      return { label: t("agent.restore"), description: t("superAgent.restoreQuestion", { title }) }
+    case "delete":
+      return { label: t("agent.delete"), description: t("superAgent.deleteQuestion", { title }) }
+  }
+})
 async function confirm(): Promise<void> {
   if (actionAvailable.value && props.selected && action.value) await props.change(props.selected, action.value)
 }
@@ -56,10 +66,10 @@ async function confirm(): Promise<void> {
   </template>
   <UiButton v-else-if="selected" variant="ghost" size="icon" :label="t('agent.archive')" :disabled="disabled || sending" @click="action = 'archive'"><Archive :size="16" aria-hidden="true" /></UiButton>
 
-  <ConfirmDialog v-if="action && selected"
-    :title="t('agent.' + action)"
-    :description="t('superAgent.' + action + 'Question', { title })"
-    :confirm-label="t('agent.' + action)"
+  <ConfirmDialog v-if="confirmation && selected"
+    :title="confirmation.label"
+    :description="confirmation.description"
+    :confirm-label="confirmation.label"
     :tone="action === 'delete' ? 'danger' : 'primary'"
     :confirm-disabled="disabled || sending || !actionAvailable"
     :confirm="confirm"
