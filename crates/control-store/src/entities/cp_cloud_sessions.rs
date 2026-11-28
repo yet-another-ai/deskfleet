@@ -8,6 +8,8 @@ pub struct Model {
     pub session_id: String,
     pub team_id: i64,
     pub title: Option<String>,
+    pub archived: bool,
+    pub deleted_at: Option<i64>,
     pub next_line: i64,
     pub last_active_at: i64,
     pub next_check_at: Option<i64>,

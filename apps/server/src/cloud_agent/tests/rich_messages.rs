@@ -245,12 +245,31 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
     let delivery: Value = test::call_and_read_body_json(&app, teammate_post(&followup)).await;
     assert_eq!(delivery["sessionId"], SESSION);
     assert_ne!(delivery["deliveryId"], create_again["deliveryId"]);
+    // A Team member archives the Session after both operations were accepted.
+    // Replays must read their original receipts without contacting Eve again.
+    store
+        .lock_cloud_session(&team.id, SESSION)
+        .await
+        .unwrap()
+        .set_archived(true)
+        .await
+        .unwrap();
+    let archived_create: Value = test::call_and_read_body_json(&app, post(&path, &create)).await;
+    assert_eq!(archived_create, create_again);
     let repeated: Value = test::call_and_read_body_json(&app, teammate_post(&followup)).await;
     assert_eq!(repeated, delivery);
     let mut changed_followup = followup.clone();
     changed_followup["message"][0]["filename"] = json!("changed.txt");
     assert_eq!(
         test::call_service(&app, teammate_post(&changed_followup))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let next_operation = uuid::Uuid::new_v4();
+    let next = json!({"operationId":next_operation, "message":"A new task"});
+    assert_eq!(
+        test::call_service(&app, teammate_post(&next))
             .await
             .status(),
         StatusCode::CONFLICT
@@ -271,6 +290,22 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
     }
     let listed = store.cloud_sessions(&team.id).await.unwrap();
     assert_eq!(listed[0].title.as_deref(), Some("Check the design"));
+
+    // The rejected request did not reserve an operation ID while archived.
+    store
+        .lock_cloud_session(&team.id, SESSION)
+        .await
+        .unwrap()
+        .set_archived(false)
+        .await
+        .unwrap();
+    let revised = json!({"operationId":next_operation, "message":"A revised task"});
+    assert_eq!(
+        test::call_service(&app, teammate_post(&revised))
+            .await
+            .status(),
+        StatusCode::ACCEPTED
+    );
 
     drop(app);
     handle.stop(true).await;

@@ -1,6 +1,7 @@
 //! Durable client-operation receipts for the hosted Agent HTTP boundary.
 use crate::{
-    ControlStore, Error, Result, entities::cp_cloud_agent_requests as requests, now_ms, resource_id,
+    CloudSessionGuard, ControlStore, Error, Result, entities::cp_cloud_agent_requests as requests,
+    now_ms, resource_id,
 };
 use sea_orm::sea_query::{Cond, Expr, OnConflict, Query};
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect};
@@ -15,45 +16,46 @@ pub enum CloudPrewarm {
 impl ControlStore {
     /// Reserve an admitted operation, or load its original receipt for a replay.
     async fn reserve_cloud_request(
-        &self,
+        db: &impl ConnectionTrait,
         team: &str,
         key: &str,
         fingerprint: &str,
         session: Option<&str>,
         admitted: bool,
-    ) -> Result<requests::Model> {
+    ) -> Result<Option<requests::Model>> {
         let team = resource_id(team)?;
         if admitted {
-            self.db
-                .execute(
-                    Query::insert()
-                        .into_table(requests::Entity)
-                        .columns([
-                            requests::Column::Id,
-                            requests::Column::TeamId,
-                            requests::Column::Fingerprint,
-                            requests::Column::SessionId,
-                        ])
-                        .values_panic([key.into(), team.into(), fingerprint.into(), session.into()])
-                        .on_conflict(
-                            OnConflict::column(requests::Column::Id)
-                                .do_nothing()
-                                .to_owned(),
-                        ),
-                )
-                .await?;
+            db.execute(
+                Query::insert()
+                    .into_table(requests::Entity)
+                    .columns([
+                        requests::Column::Id,
+                        requests::Column::TeamId,
+                        requests::Column::Fingerprint,
+                        requests::Column::SessionId,
+                    ])
+                    .values_panic([key.into(), team.into(), fingerprint.into(), session.into()])
+                    .on_conflict(
+                        OnConflict::column(requests::Column::Id)
+                            .do_nothing()
+                            .to_owned(),
+                    ),
+            )
+            .await?;
         }
-        let row = requests::Entity::find_by_id(key)
+        let Some(row) = requests::Entity::find_by_id(key)
             .filter(requests::Column::TeamId.eq(team))
-            .one(&self.db)
+            .one(db)
             .await?
-            .ok_or(Error::Limited("monthly credit allowance exhausted"))?;
+        else {
+            return Ok(None);
+        };
         if row.fingerprint != fingerprint || row.session_id.as_deref() != session {
             return Err(Error::Conflict(
                 "operation ID already used for another request",
             ));
         }
-        Ok(row)
+        Ok(Some(row))
     }
 
     pub async fn cloud_message_request(
@@ -64,26 +66,38 @@ impl ControlStore {
         session: &str,
         admitted: bool,
     ) -> Result<Option<String>> {
-        let row = self
-            .reserve_cloud_request(team, key, fingerprint, Some(session), admitted)
-            .await?;
+        let guard = self.lock_cloud_session(team, session).await?;
+        let row = Self::reserve_cloud_request(
+            &guard.tx,
+            team,
+            key,
+            fingerprint,
+            Some(session),
+            admitted && !guard.archived,
+        )
+        .await?;
+        if let Some(result) = row.as_ref().and_then(|r| r.result_id.as_ref()) {
+            return Ok(Some(result.clone()));
+        }
+        guard.require_active()?;
+        let row = row.ok_or(Error::Limited("monthly credit allowance exhausted"))?;
         // Eve remembers 1,024 message keys. A retry lacking a saved response can
         // no longer rely on that window if enough newer messages were admitted.
-        if row.result_id.is_none()
-            && requests::Entity::find()
-                .filter(requests::Column::SessionId.eq(session))
-                .filter(requests::Column::Position.gt(row.position))
-                .offset(1023)
-                .limit(1)
-                .one(&self.db)
-                .await?
-                .is_some()
+        if requests::Entity::find()
+            .filter(requests::Column::SessionId.eq(session))
+            .filter(requests::Column::Position.gt(row.position))
+            .offset(1023)
+            .limit(1)
+            .one(&guard.tx)
+            .await?
+            .is_some()
         {
             return Err(Error::Conflict(
                 "message delivery is uncertain beyond the replay window",
             ));
         }
-        Ok(row.result_id)
+        guard.wake_meter().await?;
+        Ok(None)
     }
 
     /// Upstream create keys resolve to their active Session after startup.
@@ -95,9 +109,9 @@ impl ControlStore {
         fingerprint: &str,
         admitted: bool,
     ) -> Result<CloudPrewarm> {
-        let row = self
-            .reserve_cloud_request(team, key, fingerprint, None, admitted)
-            .await?;
+        let row = Self::reserve_cloud_request(&self.db, team, key, fingerprint, None, admitted)
+            .await?
+            .ok_or(Error::Limited("monthly credit allowance exhausted"))?;
         if let Some(session) = row.result_id {
             return Ok(CloudPrewarm::Completed(session));
         }
@@ -141,16 +155,37 @@ impl ControlStore {
 
     /// Keep the first successful result when requests on different replicas race.
     pub async fn finish_cloud_agent_request(&self, key: &str, result_id: &str) -> Result<String> {
-        requests::Entity::update_many()
-            .col_expr(requests::Column::ResultId, Expr::val(result_id))
-            .filter(requests::Column::Id.eq(key))
-            .filter(requests::Column::ResultId.is_null())
-            .exec(&self.db)
-            .await?;
-        requests::Entity::find_by_id(key)
-            .one(&self.db)
-            .await?
-            .and_then(|row| row.result_id)
-            .ok_or(Error::NotFound)
+        finish_request(&self.db, key, result_id).await
     }
+}
+
+impl CloudSessionGuard {
+    /// Recheck after acquiring the delivery lock in case another sender completed the same request.
+    pub async fn message_receipt(&self, key: &str) -> Result<Option<String>> {
+        Ok(requests::Entity::find_by_id(key)
+            .one(&self.tx)
+            .await?
+            .ok_or(Error::NotFound)?
+            .result_id)
+    }
+
+    pub async fn finish_delivery(self, key: &str, delivery_id: &str) -> Result<String> {
+        let result = finish_request(&self.tx, key, delivery_id).await?;
+        self.finish().await?;
+        Ok(result)
+    }
+}
+
+async fn finish_request(db: &impl ConnectionTrait, key: &str, result_id: &str) -> Result<String> {
+    requests::Entity::update_many()
+        .col_expr(requests::Column::ResultId, Expr::val(result_id))
+        .filter(requests::Column::Id.eq(key))
+        .filter(requests::Column::ResultId.is_null())
+        .exec(db)
+        .await?;
+    requests::Entity::find_by_id(key)
+        .one(db)
+        .await?
+        .and_then(|row| row.result_id)
+        .ok_or(Error::NotFound)
 }

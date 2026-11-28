@@ -1,10 +1,12 @@
 import { HttpError } from "@deskfleet/client/request-diagnostics"
 import type { SuperAgentConfig, SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
-import { createPinia } from "pinia"
+import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { accountSessionKey, createAccountSession } from "../composables/useAccountSession.ts"
+import { machineRuntimesKey } from "../composables/useMachineRuntimes.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { i18n } from "../i18n/index.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import SuperAgentView from "./SuperAgentView.vue"
@@ -12,7 +14,10 @@ import SuperAgentView from "./SuperAgentView.vue"
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose(); vi.useRealTimers() })
 
-async function setup(configure?: (central: ReturnType<typeof fakeCentral>["central"], state: ReturnType<typeof fakeCentral>["state"]) => void) {
+async function setup(
+  configure?: (central: ReturnType<typeof fakeCentral>["central"], state: ReturnType<typeof fakeCentral>["state"]) => void,
+  options?: { route?: string; machines?: Map<string, { state: ReturnType<typeof createPinia> }> },
+) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
   const { central, state } = fakeCentral({ teams: [
@@ -24,10 +29,10 @@ async function setup(configure?: (central: ReturnType<typeof fakeCentral>["centr
   const account = createAccountSession(central)
   await flushPromises()
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/super-agent", name: "super-agent", component: SuperAgentView }] })
-  await router.push("/super-agent")
+  await router.push(options?.route ?? "/super-agent")
   const wrapper = mount(SuperAgentView, { attachTo: document.body, global: {
-    plugins: [createPinia(), i18n, router], provide: { [accountSessionKey as symbol]: account },
-    stubs: { AgentMarkdown: { props: ["text"], template: "<div>{{ text }}</div>" } },
+    plugins: [createPinia(), i18n, router], provide: { [accountSessionKey as symbol]: account, ...(options?.machines && { [machineRuntimesKey as symbol]: { opened: options.machines } }) },
+    stubs: { ...(options?.machines && { SuperAgentByoaHost: true }), AgentMarkdown: { props: ["text"], template: "<div>{{ text }}</div>" } },
   } })
   cleanup.push(() => { wrapper.unmount(); account.dispose() })
   await flushPromises()
@@ -343,4 +348,87 @@ test("keeps Cloud composer disabled when Team config fails to load on an empty h
   await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(central.createSuperAgentSession).not.toHaveBeenCalled()
+})
+
+test("archives the selected hosted conversation and clears its route only after confirmed deletion succeeds", async () => {
+  const { wrapper, central, router } = await setup(central => {
+    central.superAgentSessions.mockResolvedValue([{ sessionId: "release", title: "Release plan", lastActiveAt: 20 }])
+  })
+  vi.useRealTimers()
+  const page = new DOMWrapper(document.body)
+  const action = async (label: string) => { await wrapper.get(`button[aria-label="${label}"]`).trigger("click"); await flushPromises() }
+  const confirm = async (variant: string) => { await page.get(`[role="dialog"] .ui-button-${variant}`).trigger("click"); await flushPromises() }
+
+  await action("Archive session")
+  expect(page.get('[role="dialog"]').text()).toContain("Release plan")
+  expect(central.archiveSuperAgentSession).not.toHaveBeenCalled()
+  await confirm("primary")
+  expect(central.archiveSuperAgentSession).toHaveBeenCalledExactlyOnceWith("alpha", "release")
+  expect(wrapper.find("textarea").exists()).toBe(false)
+  expect(wrapper.text()).toContain("This session is archived.")
+  expect(router.currentRoute.value.query.session).toBe("hosted:release")
+
+  await action("Delete session")
+  await page.get("[data-confirm-cancel]").trigger("click")
+  await flushPromises()
+  expect(central.deleteSuperAgentSession).not.toHaveBeenCalled()
+  await action("Delete session")
+  central.deleteSuperAgentSession.mockRejectedValueOnce(new Error("Try again later"))
+  await confirm("danger")
+  expect(page.get('[role="dialog"] [role="alert"]').text()).toContain("Try again later")
+  expect(wrapper.get("h1").text()).toBe("Release plan")
+
+  await confirm("danger")
+  expect(central.deleteSuperAgentSession).toHaveBeenCalledWith("alpha", "release")
+  expect(wrapper.get("h1").text()).toBe("New conversation")
+  expect(wrapper.find('[aria-label="Conversations"]').exists()).toBe(false)
+  expect(router.currentRoute.value.query.session).toBeUndefined()
+})
+
+test("opens an archived conversation from history and restores it for sending", async () => {
+  const { wrapper, central } = await setup(central => {
+    central.superAgentSessions.mockResolvedValue([{ sessionId: "old", title: "Previous launch", lastActiveAt: 40, archived: true }])
+  })
+  vi.useRealTimers()
+  expect(wrapper.get("h1").text()).toBe("New conversation")
+  const page = new DOMWrapper(document.body)
+  await wrapper.get('button[aria-label="Conversations"]').trigger("keydown", { key: "ArrowDown" })
+  await flushPromises()
+  await page.get('[role="menuitem"]').trigger("click")
+  await flushPromises()
+  expect(central.superAgentHistory).toHaveBeenCalledWith("alpha", "old", 0, undefined)
+  expect(wrapper.find("textarea").exists()).toBe(false)
+  await wrapper.get('button[aria-label="Restore session"]').trigger("click")
+  await flushPromises()
+  await page.get('[role="dialog"] .ui-button-primary').trigger("click")
+  await flushPromises()
+  expect(central.restoreSuperAgentSession).toHaveBeenCalledExactlyOnceWith("alpha", "old")
+  expect(wrapper.get("h1").text()).toBe("Previous launch")
+  expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined()
+})
+
+test("deletes an archived BYOA deep link only on its owning machine when other conversations share the ID", async () => {
+  const first = createPinia()
+  const second = createPinia()
+  cleanup.push(() => { disposePinia(first); disposePinia(second) })
+  const firstDelete = vi.spyOn(useAgentSessionsStore(first), "remove").mockResolvedValue()
+  const secondDelete = vi.spyOn(useAgentSessionsStore(second), "remove").mockResolvedValue()
+  const { wrapper, central } = await setup((central, state) => {
+    state.machines.push(machineFixture("m1", "alpha", "Mac"), machineFixture("m2", "alpha", "Linux"))
+    central.superAgentSessions.mockResolvedValue([
+      { engine: "hosted", sessionId: "7", title: "Cloud", lastActiveAt: 40 },
+      { engine: "byoa", sessionId: "7", title: "Mac conversation", machineId: "m1", lastActiveAt: 30 },
+      { engine: "byoa", sessionId: "7", title: "Linux conversation", machineId: "m2", lastActiveAt: 10, archived: true },
+    ])
+  }, { route: "/super-agent?session=byoa:m2:7", machines: new Map([["m1", { state: first }], ["m2", { state: second }]]) })
+  vi.useRealTimers()
+  expect(wrapper.get("h1").text()).toBe("Linux conversation")
+  expect(central.superAgentHistory).not.toHaveBeenCalled()
+  await wrapper.get('button[aria-label="Delete session"]').trigger("click")
+  await flushPromises()
+  await new DOMWrapper(document.body).get('[role="dialog"] .ui-button-danger').trigger("click")
+  await flushPromises()
+  expect(secondDelete).toHaveBeenCalledExactlyOnceWith("7")
+  expect(firstDelete).not.toHaveBeenCalled()
+  expect(central.deleteSuperAgentSession).not.toHaveBeenCalled()
 })

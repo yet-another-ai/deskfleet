@@ -91,6 +91,32 @@ async fn tool_calls_require_the_current_senders_active_login_and_bound_team() {
     );
     sdk.override_gate(rollout::GATE, true, Some(&team.id));
     store
+        .lock_cloud_session(&team.id, session)
+        .await
+        .unwrap()
+        .set_archived(true)
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, call("fixture-secret", &owner_principal))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+    store
+        .lock_cloud_session(&team.id, session)
+        .await
+        .unwrap()
+        .delete()
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, call("fixture-secret", &owner_principal))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    store
         .revoke_user_sessions(&owner.id, Some(login_id))
         .await
         .unwrap();

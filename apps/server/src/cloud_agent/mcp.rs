@@ -1,7 +1,7 @@
 //! Stateless MCP Streamable HTTP endpoint for Eve's private DeskFleet connection.
 use super::{
-    AppState, HttpRequest, HttpResponse, Result, TeamAction, require_rollout, require_session,
-    rollout_for_member, runtime, web,
+    AppState, HttpRequest, HttpResponse, Result, TeamAction, require_active_session,
+    require_rollout, rollout_for_member, runtime, web,
 };
 use crate::{api, error::ApiError, remote_mcp};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -119,7 +119,7 @@ async fn call_tool(
     require_rollout(
         rollout_for_member(&login, state, &scope.team_id, TeamAction::UseSuperAgent).await?,
     )?;
-    require_session(state, &scope.team_id, &scope.session_id).await?;
+    require_active_session(state, &scope.team_id, &scope.session_id).await?;
 
     let Ok(mut call) = Call::deserialize(params) else {
         return Ok(rpc_error(id, -32602, "Invalid tool parameters"));

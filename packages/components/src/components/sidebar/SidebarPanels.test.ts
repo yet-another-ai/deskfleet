@@ -51,6 +51,7 @@ test("SuperAgentSection renders as an expandable machine node with sessions and 
   const fake = fakeCentral()
   fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
   fake.central.superAgentSessions.mockResolvedValue([
+    { sessionId: "archived", title: "Archived chat", lastActiveAt: 3000, archived: true },
     { sessionId: "sa-1", title: "Release planning", lastActiveAt: 2000, engine: "hosted" },
     { sessionId: "sa-2", title: null, lastActiveAt: 1000, engine: "hosted" },
   ])
@@ -65,6 +66,7 @@ test("SuperAgentSection renders as an expandable machine node with sessions and 
 
   expect(wrapper.find("[data-super-agent-section]").exists()).toBe(true)
   expect(wrapper.text()).toContain("Super Agent")
+  expect(wrapper.text()).not.toContain("Archived chat")
   expect(wrapper.text()).toContain("Release planning")
   expect(wrapper.text()).toContain("Untitled conversation")
 

@@ -730,6 +730,9 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       } : null,
     }),
     superAgentSessions: async () => [],
+    archiveSuperAgentSession: async () => {},
+    restoreSuperAgentSession: async () => {},
+    deleteSuperAgentSession: async () => {},
     registerSuperAgentMachineSession: async (_teamId, input) => ({
       sessionId: input.sessionId,
       title: input.title ?? null,

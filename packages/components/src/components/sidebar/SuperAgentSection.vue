@@ -11,7 +11,6 @@ import {
   getSharedSuperAgentSessions,
   setSharedSuperAgentSessions,
   superAgentSessionKey,
-  useSharedSuperAgentState,
 } from "../../composables/useSuperAgentSessionsList.ts"
 import UiButton from "../common/UiButton.vue"
 
@@ -22,7 +21,6 @@ const route = useRoute()
 const router = useRouter()
 const account = useAccountSession()
 const sidebarFilter = useSidebarFilter()
-const shared = useSharedSuperAgentState()
 
 const open = ref(true)
 const expanded = ref(false)
@@ -35,8 +33,7 @@ const scope = computed(() => JSON.stringify([
   account?.teamId.value,
 ]))
 const sessions = computed(() => {
-  void shared.value
-  return getSharedSuperAgentSessions(scope.value) ?? []
+  return getSharedSuperAgentSessions(scope.value)?.filter(session => !session.archived) ?? []
 })
 const filtering = computed(() => sidebarFilter.filter.value !== "all")
 const showSection = computed(() => enabled.value && !filtering.value)
@@ -52,10 +49,11 @@ async function load(): Promise<void> {
   if (!account || !teamId || !enabled.value) return
   const currentScope = scope.value
   const revision = ++loadRevision
+  const cached = getSharedSuperAgentSessions(currentScope)
   try {
     const automatic = withCentralRequestTrigger(account.central, "background")
     const list = await automatic.superAgentSessions(teamId)
-    if (revision !== loadRevision || currentScope !== scope.value) return
+    if (revision !== loadRevision || currentScope !== scope.value || cached !== getSharedSuperAgentSessions(currentScope)) return
     setSharedSuperAgentSessions(currentScope, list)
   } catch {
     // Keep any cached list; SuperAgentView reports interactive errors.

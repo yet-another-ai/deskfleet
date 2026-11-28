@@ -1,16 +1,15 @@
 //! Team Super Agent configuration (hosted cloud vs registered BYOA machine agent)
 //! and unified Team Super Agent session index.
 use crate::entities::{
-    cp_cloud_sessions as cloud_sessions, cp_machine_registrations as registrations,
+    cp_catalogs as catalogs, cp_machine_registrations as registrations, cp_sessions as sessions,
     cp_super_agent_machine_sessions as machine_sessions, cp_team_super_agent as team_config,
 };
 use crate::policies::{MachineAction, TeamAction, authorize};
 use crate::{ControlStore, Error, Result, now_ms, resource_id};
-use sea_orm::sea_query::{Expr, ExprTrait, JoinType, OnConflict, Query};
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    TransactionTrait,
+use sea_orm::sea_query::{
+    BinOper, Expr, ExprTrait, JoinType, OnConflict, Query, extension::postgres::PgExpr,
 };
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering;
 
@@ -94,6 +93,7 @@ pub struct TeamSuperAgentConfigUpdate {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuperAgentSessionSummary {
+    pub archived: bool,
     pub session_id: String,
     pub title: Option<String>,
     pub last_active_at: i64,
@@ -324,19 +324,17 @@ impl ControlStore {
         team_id: &str,
     ) -> Result<Vec<SuperAgentSessionSummary>> {
         let team = resource_id(team_id)?;
-        let hosted = cloud_sessions::Entity::find()
-            .select_only()
-            .columns([
-                cloud_sessions::Column::SessionId,
-                cloud_sessions::Column::Title,
-                cloud_sessions::Column::LastActiveAt,
-            ])
-            .filter(cloud_sessions::Column::TeamId.eq(team))
-            .order_by_desc(cloud_sessions::Column::LastActiveAt)
-            .order_by_asc(cloud_sessions::Column::SessionId)
-            .into_model::<crate::CloudSessionSummary>()
-            .all(&self.db)
-            .await?;
+        let hosted = self.cloud_sessions(team_id).await?;
+        let registration = Expr::col((
+            machine_sessions::Entity,
+            machine_sessions::Column::RegistrationId,
+        ));
+        let session_id = Expr::col((
+            machine_sessions::Entity,
+            machine_sessions::Column::SessionId,
+        ));
+        let inventory =
+            Expr::col((catalogs::Entity, catalogs::Column::Snapshot)).get_json_field("sessionIds");
 
         let rows = self
             .db
@@ -374,6 +372,38 @@ impl ControlStore {
                         ))
                         .equals((registrations::Entity, registrations::Column::Id)),
                     )
+                    .join(
+                        JoinType::LeftJoin,
+                        sessions::Entity,
+                        registration
+                            .clone()
+                            .equals((sessions::Entity, sessions::Column::RegistrationId))
+                            .and(
+                                session_id
+                                    .clone()
+                                    .equals((sessions::Entity, sessions::Column::SessionId)),
+                            ),
+                    )
+                    .join(
+                        JoinType::LeftJoin,
+                        catalogs::Entity,
+                        registration.equals((catalogs::Entity, catalogs::Column::RegistrationId)),
+                    )
+                    .expr_as(
+                        Expr::col((sessions::Entity, sessions::Column::Summary))
+                            .get_json_field("session")
+                            .cast_json_field("archiveState"),
+                        "archive_state",
+                    )
+                    .and_where(Expr::col((sessions::Entity, sessions::Column::DeletedAt)).is_null())
+                    // A complete inventory can report deletion before the first history upload.
+                    // SeaQuery has no typed operator for PostgreSQL JSONB key existence.
+                    .and_where(
+                        inventory
+                            .clone()
+                            .is_null()
+                            .or(inventory.binary(BinOper::Custom("?"), session_id)),
+                    )
                     .and_where(
                         Expr::col((machine_sessions::Entity, machine_sessions::Column::TeamId))
                             .eq(team),
@@ -388,6 +418,7 @@ impl ControlStore {
         let mut sessions = Vec::with_capacity(hosted.len() + rows.len());
         for item in hosted {
             sessions.push(SuperAgentSessionSummary {
+                archived: item.archived,
                 session_id: item.session_id,
                 title: item.title,
                 last_active_at: item.last_active_at,
@@ -400,6 +431,10 @@ impl ControlStore {
         }
         for row in rows {
             sessions.push(SuperAgentSessionSummary {
+                archived: row
+                    .try_get::<Option<String>>("", "archive_state")?
+                    .as_deref()
+                    == Some("archived"),
                 session_id: row.try_get("", "session_id")?,
                 title: row.try_get("", "title")?,
                 last_active_at: row.try_get("", "last_active_at")?,
@@ -499,6 +534,7 @@ impl ControlStore {
         };
         tx.commit().await?;
         Ok(SuperAgentSessionSummary {
+            archived: false,
             session_id,
             title: final_title,
             last_active_at: final_active,

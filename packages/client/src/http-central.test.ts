@@ -100,6 +100,21 @@ test("sends Team-scoped Super Agent operations and preserves caller-supplied ret
   await expectRequest(f.fetch, 6, root + "/sessions/session%2F1/cancel", { method: "POST", body: JSON.stringify({ turnId: "turn/1" }) })
 })
 
+test("routes hosted lifecycle commands to the selected Team and Session", async () => {
+  const f = setup()
+  f.fetch.mockImplementation(async input => {
+    captureBody(input)
+    return new Response(null, { status: 204 })
+  })
+  const path = "https://fleet.example/api/teams/team%2F1/super-agent/sessions/session%2F1"
+  await f.client.archiveSuperAgentSession("team/1", "session/1")
+  await f.client.restoreSuperAgentSession("team/1", "session/1")
+  await f.client.deleteSuperAgentSession("team/1", "session/1")
+  await expectRequest(f.fetch, 1, path + "/archive", { method: "POST" })
+  await expectRequest(f.fetch, 2, path + "/restore", { method: "POST" })
+  await expectRequest(f.fetch, 3, path, { method: "DELETE" })
+})
+
 test("reads and updates Team Super Agent configuration and registers BYOA machine sessions", async () => {
   const f = setup()
   const root = "https://fleet.example/api/teams/team%2F1/super-agent"

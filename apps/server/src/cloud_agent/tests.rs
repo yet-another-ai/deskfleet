@@ -1,4 +1,5 @@
 mod image;
+mod lifecycle;
 mod mcp;
 mod rich_messages;
 
