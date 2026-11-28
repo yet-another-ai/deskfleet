@@ -302,6 +302,15 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   superAgentConfig(teamId: string) { return this.request<SuperAgentConfig>("GET", `${superAgentPath(teamId)}/config`) }
   updateSuperAgentConfig(teamId: string, config: SuperAgentConfigUpdate) { return this.request<SuperAgentConfig>("PUT", `${superAgentPath(teamId)}/config`, config) }
   superAgentSessions(teamId: string) { return this.request<SuperAgentSession[]>("GET", `${superAgentPath(teamId)}/sessions`) }
+  archiveSuperAgentSession(teamId: string, sessionId: string) {
+    return this.request<void>("POST", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/archive`)
+  }
+  restoreSuperAgentSession(teamId: string, sessionId: string) {
+    return this.request<void>("POST", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/restore`)
+  }
+  deleteSuperAgentSession(teamId: string, sessionId: string) {
+    return this.request<void>("DELETE", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}`)
+  }
   registerSuperAgentMachineSession(teamId: string, session: RegisterSuperAgentMachineSessionInput) {
     return this.request<SuperAgentSession>("POST", `${superAgentPath(teamId)}/machine-sessions`, session)
   }

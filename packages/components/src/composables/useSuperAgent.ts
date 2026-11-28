@@ -5,8 +5,11 @@ import { useDocumentVisibility, useTimeoutPoll } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { ComposerAttachment } from "../services/composer-attachments.ts"
 import { buildSuperAgentMessage } from "../services/super-agent-message.ts"
+import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
+import { useMachineRuntimes } from "./useMachineRuntimes.ts"
 import { useAccountSession } from "./account-session-context.ts"
 import {
+  removeSharedSuperAgentSession,
   setSharedSuperAgentSessions,
   superAgentSessionKey,
   upsertSharedSuperAgentSession,
@@ -14,8 +17,9 @@ import {
 
 export { superAgentSessionKey }
 
-export function useSuperAgent() {
+export function useSuperAgent(requestedSession: () => string | null | undefined) {
   const account = useAccountSession()
+  const runtimes = useMachineRuntimes()
   const automatic = account && withCentralRequestTrigger(account.central, "background")
   const user = account && withCentralRequestTrigger(account.central, "user")
   const visibility = useDocumentVisibility()
@@ -54,8 +58,9 @@ export function useSuperAgent() {
   const isHostedSelected = computed(() => !!selectedSession.value && (selectedSession.value.engine ?? "hosted") === "hosted")
   const activeTurn = computed(() => turns.value.findLast(turn => turn.state === "running"))
   const cancelling = computed(() => !!cancellingId.value && cancellingId.value === activeTurn.value?.id)
-  const canCancel = computed(() => isHostedSelected.value && !!activeTurn.value && !cancelling.value && !sending.value && !loadingHistory.value && !readError.value && status.value !== "ended")
-  const canSend = computed(() => activeEngine.value === "hosted" && !!account?.superAgentEnabled.value && !!usage.value?.admitted && !loadingList.value && !listError.value && !loadingHistory.value
+  const archived = computed(() => !!selectedSession.value?.archived)
+  const canCancel = computed(() => !archived.value && isHostedSelected.value && !!activeTurn.value && !cancelling.value && !sending.value && !loadingHistory.value && !readError.value && status.value !== "ended")
+  const canSend = computed(() => !archived.value && activeEngine.value === "hosted" && !!account?.superAgentEnabled.value && !!usage.value?.admitted && !loadingList.value && !listError.value && !loadingHistory.value
     && !readError.value && !sending.value && status.value !== "ended")
   const title = computed(() => selectedSession.value?.title)
 
@@ -178,14 +183,14 @@ export function useSuperAgent() {
   }
 
   const poll = useTimeoutPoll(readHistory, () => pending.value.length || status.value === "working" ? 1500 : 10_000, { immediate: false })
-  watch(() => isHostedSelected.value && !loadingHistory.value && !readError.value && status.value !== "ended" && visibility.value === "visible", active => {
+  watch(() => !archived.value && isHostedSelected.value && !loadingHistory.value && !readError.value && status.value !== "ended" && visibility.value === "visible", active => {
     if (active) poll.resume()
     else poll.pause()
   })
   watch(visibility, active => {
     if (active !== "visible" || !account?.superAgentEnabled.value) return
     void refreshUsage()
-    if (isHostedSelected.value && status.value !== "ended") void readHistory()
+    if (!archived.value && isHostedSelected.value && status.value !== "ended") void readHistory()
   })
 
   function resetSession(key?: string, isHosted = false): void {
@@ -243,23 +248,57 @@ export function useSuperAgent() {
     if (selectIt) selectedKey.value = key
   }
 
-  async function loadSessions(preferredKey?: string): Promise<void> {
+  async function changeSession(session: SuperAgentSession, action: "archive" | "restore" | "delete"): Promise<void> {
+    const teamId = account?.teamId.value
+    if (!teamId || !user) return
+    const revision = scopeRevision
+    if (session.engine === "byoa") {
+      // The selected conversation pane has mounted its store inside the owning Machine runtime.
+      const state = session.machineId && runtimes?.opened.get(session.machineId)?.state
+      const machine = account.machines.value.find(item => item.id === session.machineId)
+      if (!state || !machine?.online || machine.teamId !== teamId) throw new Error("Machine unavailable")
+      const agents = useAgentSessionsStore(state)
+      if (action === "archive") await agents.archive(session.sessionId)
+      else if (action === "restore") await agents.restore(session.sessionId)
+      else await agents.remove(session.sessionId)
+    } else {
+      if (action === "archive") await user.archiveSuperAgentSession(teamId, session.sessionId)
+      else if (action === "restore") await user.restoreSuperAgentSession(teamId, session.sessionId)
+      else await user.deleteSuperAgentSession(teamId, session.sessionId)
+    }
+    if (revision !== scopeRevision) return
+    if (action !== "delete") {
+      upsertSession({ ...session, archived: action === "archive" })
+      if (selectedKey.value === superAgentSessionKey(session) && session.engine !== "byoa") void readHistory()
+      return
+    }
+
+    const key = superAgentSessionKey(session)
+    sessions.value = sessions.value.filter(item => superAgentSessionKey(item) !== key)
+    removeSharedSuperAgentSession(sharedScope.value, key)
+    if (key === selectedKey.value) resetSession()
+  }
+
+  async function loadSessions(): Promise<void> {
     const teamId = account?.teamId.value
     if (!teamId || !automatic) return
     const revision = scopeRevision
     const scope = sharedScope.value
+    const previous = sessions.value
     loadingList.value = true
     try {
       const result = await automatic.superAgentSessions(teamId)
       if (revision !== scopeRevision) return
+      if (sessions.value !== previous) return
       sessions.value = result
       setSharedSuperAgentSessions(scope, result)
       listError.value = undefined
+      const preferredKey = requestedSession()
       if (preferredKey) {
         const matched = result.find(item => superAgentSessionKey(item) === preferredKey || item.sessionId === preferredKey)
         if (matched) select(matched)
-      } else if (!selectedKey.value && result[0]) {
-        select(result[0])
+      } else if (preferredKey !== null && !selectedKey.value) {
+        select(result.find(item => !item.archived))
       }
     } catch (error) {
       if (revision !== scopeRevision) return
@@ -371,6 +410,6 @@ export function useSuperAgent() {
     config, loadingConfig, configError, refreshConfig, applyConfig,
     sessions, selected, selectedKey, selectedSession, activeEngine, title, usage, messages, turns, previews, status, pending, draft, attachments,
     loadingList, loadingHistory, sending, canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError,
-    loadSessions, readHistory, refreshUsage, select, upsertSession, send, cancel,
+    loadSessions, readHistory, refreshUsage, select, upsertSession, changeSession, send, cancel,
   }
 }

@@ -98,7 +98,12 @@ const usage = computed(() => selectUsage(view.value?.events ?? []))
 const run = computed(() => snapshot.value?.runs.at(-1))
 const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
 const archiveState = computed(() => snapshot.value?.session.archiveState)
-const active = computed(() => !archiveState.value || archiveState.value === "active")
+const active = computed(() => archiveState.value ? archiveState.value === "active" : !props.sessionMeta?.archived)
+watch([archiveState, () => props.sessionMeta], ([state, session]) => {
+  if (!session || snapshot.value?.session.id !== session.sessionId || (state !== "active" && state !== "archived")) return
+  const archived = state === "archived"
+  if (!!session.archived !== archived) props.onSessionChange({ ...session, archived }, false)
+})
 const connected = computed(() => agents.state === "connected")
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && !!activeTurn.value && activeTurn.value.state !== "cancelling")
 const promotedInputIds = computed(() => promotedPendingInputs(snapshot.value, view.value?.events).map(input => input.id))
@@ -200,7 +205,9 @@ async function submit(delivery: "backlog" | "steer"): Promise<void> {
         title: snapshot.value?.session.title || props.sessionMeta?.title || sessionTitleFromDraft(currentDraft, currentAttachments),
         lastActiveAt: Date.now(),
       }).catch(() => undefined)
-      if (updated) props.onSessionChange(updated, false)
+      if (updated && !disposed && props.sessionId === sessionId) {
+        props.onSessionChange({ ...updated, archived: archiveState.value === "archived" }, false)
+      }
     }
   })
 }
@@ -365,9 +372,7 @@ const composerDisabled = computed(() => {
         <UiButton type="button" size="sm" :disabled="agents.state === 'connecting'" @click="runAction(() => agents.open(sessionId!))">{{ t("agent.reconnect") }}</UiButton>
       </ErrorNotice>
       <template v-if="sessionId && snapshot">
-        <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
-          <UiButton v-if="archiveState === 'archived'" size="sm" type="button" :disabled="!machine.online || busy" @click="runAction(() => agents.restore(sessionId!))">{{ t("agent.restore") }}</UiButton>
-        </AgentNotice>
+        <AgentNotice v-if="!active" :text="t(archiveState === 'archiving' ? 'agent.archiving' : 'agent.archived')" />
         <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
         <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
         <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />

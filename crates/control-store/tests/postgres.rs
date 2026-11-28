@@ -489,7 +489,7 @@ async fn postgres_migration_upgrades_both_version_37_layouts() {
         .unwrap();
     db.execute_unprepared(
         "DROP TABLE cp_cloud_token_usage, cp_cloud_agent_requests, cp_cloud_sessions;
-         DELETE FROM cp_migrations WHERE version BETWEEN 38 AND 43;
+         DELETE FROM cp_migrations WHERE version BETWEEN 38 AND 43 OR version = 45;
          UPDATE cp_site_settings SET captcha_enabled = true WHERE singleton",
     )
     .await

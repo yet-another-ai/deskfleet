@@ -2,6 +2,7 @@
 mod client;
 mod config;
 mod content;
+mod lifecycle;
 mod mcp;
 mod rollout;
 
@@ -39,6 +40,15 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 "/machine-sessions",
                 web::post().to(config::register_machine_session),
             )
+            .route(
+                "/sessions/{sessionId}/archive",
+                web::post().to(lifecycle::archive),
+            )
+            .route(
+                "/sessions/{sessionId}/restore",
+                web::post().to(lifecycle::restore),
+            )
+            .route("/sessions/{sessionId}", web::delete().to(lifecycle::delete))
             .route("/sessions/{sessionId}/messages", web::post().to(message))
             .route("/sessions/{sessionId}/cancel", web::post().to(cancel_turn))
             .route("/sessions/{sessionId}/stream", web::get().to(stream))
@@ -186,8 +196,8 @@ async fn period(state: &AppState, team: &str) -> Result<CloudTokenPeriod> {
     Ok(state.store.cloud_token_period(team).await?)
 }
 
-async fn require_session(state: &AppState, team: &str, session: &str) -> Result<()> {
-    if !client::valid_segment(session) || !state.store.owns_cloud_session(team, session).await? {
+fn validate_session_id(session: &str) -> Result<()> {
+    if !client::valid_segment(session) {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -195,6 +205,14 @@ async fn require_session(state: &AppState, team: &str, session: &str) -> Result<
         ));
     }
     Ok(())
+}
+
+async fn require_active_session(state: &AppState, team: &str, session: &str) -> Result<()> {
+    validate_session_id(session)?;
+    Ok(state
+        .store
+        .require_active_cloud_session(team, session)
+        .await?)
 }
 
 async fn list(
@@ -296,7 +314,7 @@ async fn message(
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     let actor = authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
-    require_session(&state, &team, &session).await?;
+    require_active_session(&state, &team, &session).await?;
     let body: MessageRequest = read_body(&req, body).await?;
     body.message.validate()?;
     let key = request_key(&actor.user.id, &team, &body.operation_id)?;
@@ -335,6 +353,8 @@ async fn deliver(
             // Schedule usage collection before delivery: eve may accept the
             // message even when the HTTP acknowledgement is lost.
             state.store.wake_cloud_meter(team, session).await?;
+            let guard = state.store.lock_cloud_session(team, session).await?;
+            guard.require_active()?;
             let sender = json!({"id": actor.user.id, "name": actor.user.name});
             let response = client::send(
                 eve.post(&["eve", "v1", "session", session])?
@@ -349,6 +369,7 @@ async fn deliver(
             )
             .await?;
             let sent: Delivered = response.json().await.map_err(|_| client::unavailable())?;
+            guard.finish().await?;
             if sent.delivery_id.is_empty() {
                 return Err(client::unavailable());
             }
@@ -372,18 +393,21 @@ async fn cancel_turn(
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
-    require_session(&state, &team, &session).await?;
+    require_active_session(&state, &team, &session).await?;
     let body: CancelRequest = read_body(&req, body).await?;
     // A delayed cancellation may only affect the turn the caller observed.
     if body.turn_id.trim().is_empty() {
         return Err(ApiError::bad("turnId must be nonempty"));
     }
+    let guard = state.store.lock_cloud_session(&team, &session).await?;
+    guard.require_active()?;
     client::send(
         runtime(&state)?
             .post(&["eve", "v1", "session", &session, "cancel"])?
             .json(&body),
     )
     .await?;
+    guard.finish().await?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -395,7 +419,10 @@ async fn stream(
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     authorize(&req, &state, &team, TeamAction::Read).await?;
-    require_session(&state, &team, &session).await?;
+    validate_session_id(&session)?;
+    if !state.store.owns_cloud_session(&team, &session).await? {
+        return Err(deskfleet_control_store::Error::NotFound.into());
+    }
     let response = client::send(
         runtime(&state)?
             .get(&["eve", "v1", "session", &session, "stream"])?

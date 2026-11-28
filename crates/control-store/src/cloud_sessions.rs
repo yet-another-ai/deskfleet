@@ -1,8 +1,8 @@
 use crate::entities::cp_cloud_sessions::{Column, Entity};
 use crate::{ControlStore, Error, Result, now_ms, resource_id};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
     sea_query::{Cond, Expr, Func, LockBehavior, LockType, OnConflict, Query},
 };
 use serde::Serialize;
@@ -13,6 +13,7 @@ pub struct CloudSessionSummary {
     pub session_id: String,
     pub title: Option<String>,
     pub last_active_at: i64,
+    pub archived: bool,
 }
 
 /// A bounded catch-up read against one durable eve event stream.
@@ -45,10 +46,9 @@ impl ControlStore {
                     ),
             )
             .await?;
-        if inserted.rows_affected() == 0 && !self.owns_cloud_session(team_id, session_id).await? {
-            return Err(Error::Conflict(
-                "cloud session already belongs to another Team",
-            ));
+        if inserted.rows_affected() == 0 {
+            self.require_active_cloud_session(team_id, session_id)
+                .await?;
         }
         Ok(())
     }
@@ -56,8 +56,14 @@ impl ControlStore {
     pub async fn cloud_sessions(&self, team_id: &str) -> Result<Vec<CloudSessionSummary>> {
         Ok(Entity::find()
             .select_only()
-            .columns([Column::SessionId, Column::Title, Column::LastActiveAt])
+            .columns([
+                Column::SessionId,
+                Column::Title,
+                Column::LastActiveAt,
+                Column::Archived,
+            ])
             .filter(Column::TeamId.eq(resource_id(team_id)?))
+            .filter(Column::DeletedAt.is_null())
             .order_by_desc(Column::LastActiveAt)
             .order_by_asc(Column::SessionId)
             .into_model()
@@ -89,15 +95,52 @@ impl ControlStore {
             .col_expr(Column::Title, Expr::val(title))
             .filter(Column::TeamId.eq(resource_id(team_id)?))
             .filter(Column::SessionId.eq(session_id))
+            .filter(Column::DeletedAt.is_null())
             .filter(Column::Title.is_null())
             .exec(&self.db)
             .await?;
         Ok(())
     }
 
+    /// Serialize lifecycle changes with upstream deliveries across API replicas.
+    pub async fn lock_cloud_session(
+        &self,
+        team_id: &str,
+        session_id: &str,
+    ) -> Result<CloudSessionGuard> {
+        let tx = self.db.begin().await?;
+        let row = Entity::find_by_id(session_id)
+            .filter(Column::TeamId.eq(resource_id(team_id)?))
+            .filter(Column::DeletedAt.is_null())
+            .lock_exclusive()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        Ok(CloudSessionGuard {
+            tx,
+            session_id: row.session_id,
+            archived: row.archived,
+        })
+    }
+
+    pub async fn require_active_cloud_session(
+        &self,
+        team_id: &str,
+        session_id: &str,
+    ) -> Result<()> {
+        let row = Entity::find_by_id(session_id)
+            .filter(Column::TeamId.eq(resource_id(team_id)?))
+            .filter(Column::DeletedAt.is_null())
+            .one(&self.db)
+            .await?
+            .ok_or(Error::NotFound)?;
+        require_active(row.archived)
+    }
+
     pub async fn owns_cloud_session(&self, team_id: &str, session_id: &str) -> Result<bool> {
         Ok(Entity::find_by_id(session_id)
             .filter(Column::TeamId.eq(resource_id(team_id)?))
+            .filter(Column::DeletedAt.is_null())
             .one(&self.db)
             .await?
             .is_some())
@@ -181,6 +224,51 @@ impl ControlStore {
             .filter(Column::MeterClaimUntil.eq(cursor.claim_until))
             .exec(&self.db)
             .await?;
+        Ok(())
+    }
+}
+
+/// Holds the Session row while its Eve control or delivery is in flight. Dropping
+/// the guard on an upstream error rolls back the local lifecycle transition.
+pub struct CloudSessionGuard {
+    tx: DatabaseTransaction,
+    session_id: String,
+    pub archived: bool,
+}
+
+fn require_active(archived: bool) -> Result<()> {
+    if archived {
+        return Err(Error::Conflict("Super Agent session is archived"));
+    }
+    Ok(())
+}
+
+impl CloudSessionGuard {
+    pub fn require_active(&self) -> Result<()> {
+        require_active(self.archived)
+    }
+
+    pub async fn set_archived(self, archived: bool) -> Result<()> {
+        Entity::update_many()
+            .col_expr(Column::Archived, Expr::val(archived))
+            .filter(Column::SessionId.eq(&self.session_id))
+            .exec(&self.tx)
+            .await?;
+        self.finish().await
+    }
+
+    pub async fn delete(self) -> Result<()> {
+        Entity::update_many()
+            .col_expr(Column::DeletedAt, Expr::val(now_ms()))
+            .col_expr(Column::Title, Expr::val(None::<String>))
+            .filter(Column::SessionId.eq(&self.session_id))
+            .exec(&self.tx)
+            .await?;
+        self.finish().await
+    }
+
+    pub async fn finish(self) -> Result<()> {
+        self.tx.commit().await?;
         Ok(())
     }
 }

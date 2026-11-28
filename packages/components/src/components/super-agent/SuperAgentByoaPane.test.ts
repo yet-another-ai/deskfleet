@@ -268,3 +268,18 @@ test("clears a failed pending creation when navigating to another BYOA conversat
   expect(createSpy).toHaveBeenCalledTimes(2)
   expect(submitSpy).toHaveBeenCalledWith("byoa-fresh-2", "Fresh conversation", "backlog", undefined, "Fresh conversation", { mentions: [], attachmentIds: [] })
 })
+
+test("updates the Super Agent list when another view restores the local session", async () => {
+  const { agents, wrapper, onSessionChange } = await setup()
+  const snapshot = agentSnapshot()
+  snapshot.session.archiveState = "archived"
+  const id = snapshot.session.id
+  agents.views[id] = { snapshot, loading: false, error: null, events: [], historySeq: "0", snapshotSeq: "0" }
+  const item = { engine: "byoa" as const, sessionId: id, machineId: "m1", title: "Launch", lastActiveAt: 0, archived: true }
+  await wrapper.setProps({ sessionId: id, sessionMeta: item })
+  expect(wrapper.find("textarea").exists()).toBe(false)
+  agents.views[id]!.snapshot!.session.archiveState = "active"
+  await flushPromises()
+  expect(onSessionChange).toHaveBeenCalledExactlyOnceWith({ ...item, archived: false }, false)
+  expect(wrapper.find("textarea").exists()).toBe(true)
+})

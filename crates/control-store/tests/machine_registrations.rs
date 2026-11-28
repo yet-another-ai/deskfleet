@@ -1,6 +1,7 @@
 //! Public machine identity and Team registration boundaries against PostgreSQL.
 use deskfleet_control_store::{
-    ControlStore, Error, MachineRegistration, now_ms, secret, timestamp,
+    ControlStore, Error, MachineRegistration, RegisterSuperAgentMachineSession, now_ms, secret,
+    timestamp,
 };
 use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget, PeerTransport};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
@@ -126,6 +127,73 @@ async fn peer(
         .await
         .unwrap();
     grant
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn super_agent_history_follows_each_machine_session_lifecycle() {
+    let fixture = Fixture::new().await;
+    let store = &fixture.store;
+    let owner = store
+        .verified_user("owner@test.invalid", "Owner")
+        .await
+        .unwrap();
+    let team = store.create_team(&owner.id, "Development").await.unwrap();
+    let (first, _) = register(store, &owner.id, &team.id, &secret()).await;
+    let (second, _) = register(store, &owner.id, &team.id, &secret()).await;
+    for reg in [&first, &second] {
+        let input = RegisterSuperAgentMachineSession {
+            machine_id: reg.machine_id.clone(),
+            session_id: "1".into(),
+            provider_id: "codex".into(),
+            provider_name: None,
+            title: Some("Release".into()),
+            last_active_at: None,
+        };
+        store
+            .register_super_agent_machine_session(&owner.id, &team.id, &input)
+            .await
+            .unwrap();
+    }
+    // Both newly registered conversations appear before their first inventory.
+    let listed = store.super_agent_sessions(&team.id).await.unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|entry| !entry.archived));
+
+    history(store, &first.id, "Release").await;
+    let mut snapshot = store.session_snapshot(&first.id, "1").await.unwrap()["snapshot"].clone();
+    for state in ["archived", "active"] {
+        snapshot["session"]["archiveState"] = json!(state);
+        store
+            .sync_history(&first.id, "1", snapshot.clone(), vec![], vec![])
+            .await
+            .unwrap();
+        let listed = store.super_agent_sessions(&team.id).await.unwrap();
+        assert_eq!(listed.len(), 2);
+        for entry in listed {
+            assert_eq!(
+                entry.archived,
+                state == "archived" && entry.machine_id.as_ref() == Some(&first.machine_id)
+            );
+        }
+    }
+    // Deleting the second Session before any history upload still removes it.
+    for (reg, revision, remaining) in [(&second, "1", 1), (&first, "2", 0)] {
+        store
+            .save_catalog(
+                &reg.id,
+                revision,
+                json!({"sessionIds": []}),
+                json!({"providers": []}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store.super_agent_sessions(&team.id).await.unwrap().len(),
+            remaining
+        );
+    }
+    fixture.close().await;
 }
 
 #[tokio::test]

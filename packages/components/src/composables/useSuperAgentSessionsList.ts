@@ -29,6 +29,8 @@ export function upsertSharedSuperAgentSession(scope: string, session: SuperAgent
   state.value = { scope, sessions: next }
 }
 
-export function useSharedSuperAgentState() {
-  return state
+export function removeSharedSuperAgentSession(scope: string, key: string): void {
+  if (state.value?.scope === scope) {
+    state.value = { scope, sessions: state.value.sessions.filter(session => superAgentSessionKey(session) !== key) }
+  }
 }

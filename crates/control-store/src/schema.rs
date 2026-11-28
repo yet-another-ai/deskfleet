@@ -268,6 +268,10 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 44).await?;
     }
+    if !version_present(&tx, 45).await? {
+        tx.execute_unprepared("ALTER TABLE cp_cloud_sessions ADD COLUMN archived boolean NOT NULL DEFAULT false, ADD COLUMN deleted_at bigint").await?;
+        record_version(&tx, 45).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -280,6 +284,13 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 45).await? {
+        tx.execute_unprepared(
+            "ALTER TABLE cp_cloud_sessions DROP COLUMN archived, DROP COLUMN deleted_at",
+        )
+        .await?;
+        remove_version(&tx, 45).await?;
+    }
     if version_present(&tx, 44).await? {
         tx.execute_unprepared(include_str!("super_agent_config_down.sql"))
             .await?;

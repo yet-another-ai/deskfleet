@@ -43,6 +43,7 @@ export interface RegisterSuperAgentMachineSessionInput {
 }
 
 export interface SuperAgentSession {
+  archived?: boolean
   sessionId: string
   title: string | null
   /** UTC milliseconds. Older idle sessions predate activity tracking. */

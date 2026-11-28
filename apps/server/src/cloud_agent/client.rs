@@ -106,6 +106,51 @@ pub(super) fn unavailable() -> ApiError {
 
 pub(super) async fn send(request: RequestBuilder) -> Result<reqwest::Response> {
     let response = request.send().await.map_err(|_| unavailable())?;
+    checked(response)
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum SessionControl {
+    Cancel,
+    End,
+}
+
+impl EveClient {
+    pub(super) async fn stop_session(&self, session: &str, control: SessionControl) -> Result<()> {
+        let action = match control {
+            SessionControl::Cancel => "cancel",
+            SessionControl::End => "end",
+        };
+        let response = self
+            .post(&["eve", "v1", "session", session, action])?
+            .send()
+            .await
+            .map_err(|_| unavailable())?;
+        if matches!(response.status().as_u16(), 409 | 410) {
+            let error: serde_json::Value = response.json().await.map_err(|_| unavailable())?;
+            let code = error["code"].as_str();
+            // Retried end/cancel may find a retired Session. A stranded Session cannot
+            // do work, but Eve still requires an explicit end to retire its workflow.
+            if matches!(code, Some("session_not_active" | "session_expired"))
+                || (matches!(control, SessionControl::Cancel) && code == Some("session_stranded"))
+            {
+                return Ok(());
+            }
+            return Err(conflict());
+        }
+        checked(response).map(|_| ())
+    }
+}
+
+fn conflict() -> ApiError {
+    ApiError::new(
+        StatusCode::CONFLICT,
+        "super_agent_conflict",
+        "Super Agent session cannot accept this request",
+    )
+}
+
+fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
     match response.status().as_u16() {
         200..=299 => Ok(response),
         400 => Err(ApiError::bad("Super Agent rejected the request")),
@@ -124,11 +169,7 @@ pub(super) async fn send(request: RequestBuilder) -> Result<reqwest::Response> {
             "not_found",
             "Super Agent session was not found",
         )),
-        409 => Err(ApiError::new(
-            StatusCode::CONFLICT,
-            "super_agent_conflict",
-            "Super Agent session cannot accept this request",
-        )),
+        409 => Err(conflict()),
         _ => Err(unavailable()),
     }
 }

@@ -14,6 +14,7 @@ import SessionConversationPane from "../components/session/SessionConversationPa
 import SessionHeader from "../components/session/SessionHeader.vue"
 import SessionWelcome from "../components/session/SessionWelcome.vue"
 import SuperAgentByoaHost from "../components/super-agent/SuperAgentByoaHost.vue"
+import SuperAgentSessionActions from "../components/super-agent/SuperAgentSessionActions.vue"
 import SuperAgentConfigDialog from "../components/super-agent/SuperAgentConfigDialog.vue"
 import { useAccountSession } from "../composables/account-session-context.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
@@ -29,8 +30,8 @@ const {
   config, loadingConfig, configError, refreshConfig, applyConfig,
   sessions, selected, selectedKey, selectedSession, activeEngine, title, usage, messages, turns, previews, status, pending, draft, attachments,
   loadingList, loadingHistory, sending, canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError,
-  loadSessions, readHistory, refreshUsage, select, upsertSession, send, cancel,
-} = useSuperAgent()
+  loadSessions, readHistory, refreshUsage, select, upsertSession, changeSession, send, cancel,
+} = useSuperAgent(() => route.query.new === "1" ? null : typeof route.query.session === "string" ? route.query.session : undefined)
 
 const composer = useTemplateRef<InstanceType<typeof SessionComposer>>("composer")
 const configOpen = ref(false)
@@ -40,7 +41,7 @@ const projection = computed(() => projectSuperAgentConversation(messages.value, 
 const readingId = computed(() => JSON.stringify(["super-agent", account?.account.value.serverUrl, account?.account.value.user?.id, account?.teamId.value, selectedKey.value]))
 const loading = computed(() => loadingList.value || loadingHistory.value || (!selected.value && loadingConfig.value))
 const startupStatus = computed(() => {
-  if (status.value === "failed" || status.value === "ended") return undefined
+  if (selectedSession.value?.archived || status.value === "failed" || status.value === "ended") return undefined
   if (pending.value.length) return t("superAgent.queued")
   if (status.value === "working") return t("agent.working")
   return undefined
@@ -87,9 +88,9 @@ function newConversation(): void {
 
 // Sync sidebar SuperAgentSection clicks (?session=key or ?new=1) with the view's active session.
 watch(
-  () => [route.name, route.query.session, route.query.new, sessions.value] as const,
-  ([name, sessionParam, newParam, list]) => {
-    if (name !== "super-agent") return
+  () => [route.name, route.query.session, route.query.new, sessions.value, loadingList.value] as const,
+  ([name, sessionParam, newParam, list, loading]) => {
+    if (name !== "super-agent" || loading) return
     if (newParam === "1") {
       select()
       void router.replace({ name: "super-agent", query: {} })
@@ -104,9 +105,10 @@ watch(
   { immediate: true },
 )
 
-watch(selectedKey, key => {
+watch(selectedKey, (key, previous) => {
   if (route.name !== "super-agent" || route.query.new === "1") return
   const current = typeof route.query.session === "string" ? route.query.session : undefined
+  if (!key && previous === current && current) void router.replace({ name: "super-agent", query: {} })
   if (key && key !== current) void router.replace({ name: "super-agent", query: { session: key } })
 })
 function suggest(prompt: string): void {
@@ -149,6 +151,16 @@ async function switchToCloud(): Promise<void> {
           <span class="hidden max-w-28 truncate sm:inline">{{ config.mode === "byoa" ? (config.byoa?.machineName || t("superAgent.byoaBadge")) : t("superAgent.cloudBadge") }}</span>
           <Settings2 :size="13" aria-hidden="true" />
         </UiButton>
+        <SuperAgentSessionActions
+          :key="selectedKey"
+          :sessions="sessions"
+          :include-active="!account?.machine.value"
+          :selected="selectedSession"
+          :disabled="selectedSession?.engine === 'byoa' && !activeByoaMachine?.online"
+          :sending="sending"
+          :change="changeSession"
+          @select="select"
+        />
         <UiButton v-if="selected" variant="ghost" size="icon" :label="t('superAgent.new')" :disabled="sending" @click="newConversation"><SquarePen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </template>
@@ -177,7 +189,7 @@ async function switchToCloud(): Promise<void> {
     </div>
   </template>
 
-  <SessionConversationPane v-else :reading-id="readingId" :loading="loading" :revision="projection" :ready="!!selected" :sidebar="!!account?.machine.value" show-composer composer-active>
+  <SessionConversationPane v-else :reading-id="readingId" :loading="loading" :revision="projection" :ready="!!selected" :sidebar="!!account?.machine.value" show-composer :composer-active="!selectedSession?.archived">
     <template #default="{ focusedEntry }">
       <p v-if="loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
       <AgentConversation v-else-if="projection.length || startupStatus" :session-id="selected" :projection="projection" :turns="turns" :startup-status="startupStatus" :unattributed-user-label="t('superAgent.teamMember')" :locate-entry="focusedEntry" />
@@ -206,7 +218,8 @@ async function switchToCloud(): Promise<void> {
       <ErrorNotice v-if="sendError || usageError" :error="sendError ?? usageError" :title="t(sendError ? 'superAgent.sendError' : 'superAgent.usageError')">
         <UiButton size="sm" :disabled="sending || (!!sendError && !canSend)" @click="sendError ? send() : refreshUsage()">{{ t("errors.retry") }}</UiButton>
       </ErrorNotice>
-      <AgentNotice v-if="blocked || status === 'ended'" :text="blocked?.message ?? t('superAgent.ended')">
+      <AgentNotice v-if="selectedSession?.archived" :text="t('agent.archived')" />
+      <AgentNotice v-else-if="blocked || status === 'ended'" :text="blocked?.message ?? t('superAgent.ended')">
         <UiButton v-if="blocked?.action === 'retry'" size="sm" @click="refreshUsage">{{ t("errors.retry") }}</UiButton>
         <UiButton v-else-if="blocked?.action === 'billing' && !platform.mobile" size="sm" @click="account?.openSettings('plans')">{{ t("errors.viewBilling") }}</UiButton>
         <UiButton v-if="blocked && canConfigure && hasMachines" size="sm" @click="configOpen = true">{{ t("superAgent.switchToByoa") }}</UiButton>
@@ -214,7 +227,7 @@ async function switchToCloud(): Promise<void> {
       </AgentNotice>
     </template>
     <template #composer>
-      <SessionComposer ref="composer" v-model="draft" v-model:attachments="attachments" :location="null" :hosted="{ sessionId: selected }" :disabled="!canSend" :submitting="sending" :can-cancel="canCancel" @submit="send" @cancel="cancel">
+      <SessionComposer v-if="!selectedSession?.archived" ref="composer" v-model="draft" v-model:attachments="attachments" :location="null" :hosted="{ sessionId: selected }" :disabled="!canSend" :submitting="sending" :can-cancel="canCancel" @submit="send" @cancel="cancel">
         <template #context>
           <span class="flex min-w-0 items-center gap-1.5 text-xs text-ui-text-muted"><UsersRound :size="14" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ t('superAgent.shared', { team: account?.team.value?.name ?? '' }) }}</span></span>
         </template>

@@ -4,7 +4,7 @@ import { deserializeCentralRequestError, serializeCentralRequestError, type Cent
 import { reportingCentral } from "./reporting-central.ts"
 
 export const CENTRAL_METHODS = [
-  "superAgentAvailability", "superAgentConfig", "updateSuperAgentConfig", "superAgentSessions", "registerSuperAgentMachineSession", "superAgentUsage", "createSuperAgentSession", "sendSuperAgentMessage", "cancelSuperAgentTurn", "superAgentHistory",
+  "superAgentAvailability", "superAgentConfig", "updateSuperAgentConfig", "superAgentSessions", "archiveSuperAgentSession", "restoreSuperAgentSession", "deleteSuperAgentSession", "registerSuperAgentMachineSession", "superAgentUsage", "createSuperAgentSession", "sendSuperAgentMessage", "cancelSuperAgentTurn", "superAgentHistory",
   "search", "scheduleSnapshot",
   "status", "login", "logout", "site", "updateTelemetryConsent", "teams", "createTeam", "deleteTeam", "enrollHeadless", "members", "teamUsage", "teamTurnSettings", "updateTeamTurnSettings", "aiUsage", "aiUsageSessions", "openAccountSettings", "githubSettings", "manageGithub", "authorizeGithubApp", "setGithubActAsYou", "githubPullRequest", "githubRepositoryItems", "billing", "checkout", "billingPortal", "renameTeam", "invite", "acceptInvite", "setMemberRole", "removeMember", "transferOwnership", "machines", "renameMachine", "removeMachine", "localEnrollment", "enrollLocal", "catalog", "sessions", "session", "events", "rpc", "createPeer", "offerPeer", "startPeer", "candidatePeer", "closePeer",
 ] as const satisfies readonly (keyof CentralApi)[]

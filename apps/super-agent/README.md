@@ -132,22 +132,31 @@ API and Eve service together to use hosted dispatch.
 Team members in the rollout can open **Super Agent** from the sidebar in Web
 or Desktop, including before connecting their first Machine. Sending the first
 message starts a conversation. The conversation list reopens the Team's saved
-history. Reaching the monthly credit allowance pauses new messages and keeps history
+history. Archive a conversation from its header to remove it from the active
+list. Open **Archived sessions** to read or restore it, or confirm deletion
+to remove it from the Team's history. Without a selected Machine, the
+**Conversations** menu lists both active and archived conversations. For a
+machine-backed (BYOA) conversation, the Machine must be online to change its state.
+
+Reaching the monthly credit allowance pauses new messages and keeps history
 available to members in the rollout.
 
 All routes are relative to `/api/teams/{teamId}/super-agent` and use the
-existing DeskFleet account authentication. Writes take a client-generated
-UUID as `operationId`. Reuse it when retrying the same operation.
+existing DeskFleet account authentication. Session creation and message delivery take a
+client-generated UUID as `operationId`. Reuse it when retrying the same operation.
 If a concurrent create returns HTTP 409 while the first is running, retry
 with that UUID to get the Session. Each Team member can use the Team's allowance.
 
 | Method and path | Input or result |
 | --- | --- |
 | GET `/availability` | Read the boolean `enabled` for the authenticated account and selected Team. |
-| GET `/sessions` | List this Team's conversations by most recent activity, with `sessionId`, the first message's short `title` when available, and `lastActiveAt` in UTC milliseconds. |
+| GET `/sessions` | List this Team's conversations by most recent activity, including the engine, archive flag (`archived`), `sessionId`, short `title` and `lastActiveAt` in UTC milliseconds. |
 | POST `/sessions` | Send `{"operationId":"<uuid>"}` to create an empty Session and receive `{sessionId}`. Include `message` to deliver the first message and receive `{sessionId, deliveryId}`. |
 | POST `/sessions/{sessionId}/messages` | Send `operationId` and `message` to receive `{sessionId, deliveryId}`. |
 | POST `/sessions/{sessionId}/cancel` | Send `{turnId}` to request cancellation of that turn. Returns HTTP 204 when the runtime accepts the request. |
+| POST `/sessions/{sessionId}/archive` | Request cancellation of hosted work and archive the conversation. Returns HTTP 204. |
+| POST `/sessions/{sessionId}/restore` | Return a hosted conversation to the active list. Returns HTTP 204. |
+| DELETE `/sessions/{sessionId}` | End the hosted Session and remove its entry and transcript access from DeskFleet. Returns HTTP 204. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
 | GET `/usage` | Read the effective plan, billing period, credit allowance (`includedCredits`, an integer or `null` for unlimited), credits charged (`usedCredits`, a decimal string), raw model tokens (`usedTokens`), runtime availability and admission decision. `includedTokens` is the legacy name for the allowance. |
 

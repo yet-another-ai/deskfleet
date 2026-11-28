@@ -160,6 +160,9 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       return { ...state.superAgentConfig, byoa: nextByoa ? { ...nextByoa } : null }
     }),
     superAgentSessions: vi.fn(async (_teamId: string): Promise<SuperAgentSession[]> => []),
+    archiveSuperAgentSession: vi.fn<CentralApi["archiveSuperAgentSession"]>(async () => {}),
+    restoreSuperAgentSession: vi.fn<CentralApi["restoreSuperAgentSession"]>(async () => {}),
+    deleteSuperAgentSession: vi.fn<CentralApi["deleteSuperAgentSession"]>(async () => {}),
     registerSuperAgentMachineSession: vi.fn(async (_teamId: string, input: RegisterSuperAgentMachineSessionInput): Promise<SuperAgentSession> => ({
       sessionId: input.sessionId,
       title: input.title ?? null,

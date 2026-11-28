@@ -116,6 +116,9 @@ export interface CentralApi {
   superAgentConfig(teamId: string): Promise<SuperAgentConfig>
   updateSuperAgentConfig(teamId: string, config: SuperAgentConfigUpdate): Promise<SuperAgentConfig>
   superAgentSessions(teamId: string): Promise<SuperAgentSession[]>
+  archiveSuperAgentSession(teamId: string, sessionId: string): Promise<void>
+  restoreSuperAgentSession(teamId: string, sessionId: string): Promise<void>
+  deleteSuperAgentSession(teamId: string, sessionId: string): Promise<void>
   registerSuperAgentMachineSession(teamId: string, session: RegisterSuperAgentMachineSessionInput): Promise<SuperAgentSession>
   superAgentUsage(teamId: string): Promise<SuperAgentUsage>
   createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId?: string }>
