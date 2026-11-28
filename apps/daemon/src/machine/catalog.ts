@@ -14,7 +14,7 @@ import type { LocalChangesProtection } from "@deskfleet/protocol/worktree-prefer
 /** The daemon owns this machine's persistent catalog, independently of its clients. */
 export class DaemonCatalog {
   readonly attachments: SessionAttachments
-  readonly #directory: string
+  readonly registrationDirectory: string
   readonly #hostDirectory: string
   readonly #hostWorkspaceDirectory: string
   readonly #listeners = new Set<(event: CatalogEvent) => void>()
@@ -24,7 +24,7 @@ export class DaemonCatalog {
   #sessions: ManagedSessionWorktrees | undefined
 
   constructor(directory: string, hostDirectory = directory, hostWorkspaceDirectory = hostDirectory) {
-    this.#directory = directory
+    this.registrationDirectory = directory
     this.#hostDirectory = hostDirectory
     this.#hostWorkspaceDirectory = hostWorkspaceDirectory
     const attachmentDirectory = hostWorkspaceDirectory === hostDirectory
@@ -35,12 +35,12 @@ export class DaemonCatalog {
 
   // Called only after this daemon has acquired its discovery record.
   async init(open: typeof openCatalog = openCatalog): Promise<void> {
-    this.#catalog = await open(join(this.#directory, "catalog.db"), hostname())
+    this.#catalog = await open(join(this.registrationDirectory, "catalog.db"), hostname())
     const { originId } = JSON.parse(await this.#catalog.agentIdentity()) as { originId: string }
     const defaultRoot = this.#hostWorkspaceDirectory === this.#hostDirectory
       ? null
       : join(this.#hostWorkspaceDirectory, "worktrees")
-    this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.#directory, {
+    this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.registrationDirectory, {
       originId,
       root: async () => {
         const configured = await readWorktreeRoot(this.#hostDirectory)

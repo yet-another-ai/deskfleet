@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useWorkspaceAgentMode } from "./services/workspace-agent-navigation.ts"
 import UiButton from "./components/common/UiButton.vue"
 import UiScrollArea from "./components/common/UiScrollArea.vue"
 import { computed, defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
@@ -28,6 +29,13 @@ import { useErrorReportingUser } from "./composables/useErrorReportingUser.ts"
 import { trackEvent, useFeatureGate } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
+import { workspaceAgentSummaryKey } from "./composables/useWorkspaceAgentSummary.ts"
+import {
+  clearFollowUpCacheForAccount, flushPendingRevocationsForAccount,
+  listAuthorizedFollowUpScopes, listPendingRevocationsForAccount,
+  revokeAllScopesForInstallation,
+} from "./services/workspace-agent-follow-up.ts"
+import { createFollowUpMachineResolver } from "./services/workspace-agent-follow-up-resolver.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
 import { machineBatteriesKey, useMachineBatteriesStore } from "./stores/machine-batteries.ts"
 import { useOutlineAudioStore } from "./stores/outline-audio.ts"
@@ -35,6 +43,7 @@ import { platformClientKey } from "./composables/usePlatformClient.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
 const MachineSurface = defineAsyncComponent(loadMachineSurface)
+const WorkspaceAgentSetupView = defineAsyncComponent(() => import("./views/WorkspaceAgentSetupView.vue"))
 // Overlap the workspace bundle with the account status request.
 void loadMachineSurface()
 
@@ -70,14 +79,49 @@ async function refreshNotificationPermission(): Promise<void> {
 }
 watch(notificationsEnabled, () => { void refreshNotificationPermission() }, { immediate: true })
 const { t } = useI18n()
-const session = createAccountSession(props.host.central!, props.host.initialError)
+const workspaceMode = useWorkspaceAgentMode()
+const session = createAccountSession(props.host.central!, props.host.initialError, props.host.remoteWorkspaceAgent, () => workspaceMode.value)
 useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
 provide(accountSessionKey, session)
 const batteries = useMachineBatteriesStore()
 batteries.attachAccount(session)
 provide(machineBatteriesKey, batteries)
-provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore(), batteries))
+const runtimes = createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore(), batteries)
+provide(machineRuntimesKey, runtimes)
+if (runtimes.workspaceAgentSummary) provide(workspaceAgentSummaryKey, runtimes.workspaceAgentSummary)
+const stopBeforeSignOut = session.onBeforeSignOut?.(async ({ serverUrl, userId }) => {
+  // ONLY revoke machines where THIS installation actually holds an enabled grant or an unconfirmed
+  // pending revocation. A classic device that never enabled SA must send ZERO disable requests
+  // and must never create bogus pending revocations on sign-out!
+  const knownScopes = listAuthorizedFollowUpScopes(serverUrl, userId)
+  if (knownScopes.length) {
+    const resolveApi = createFollowUpMachineResolver({ host: props.host, session, runtimes })
+    await revokeAllScopesForInstallation({
+      serverUrl,
+      userId,
+      resolveApi,
+      info: { platform: props.host.platform, deviceLabel: props.host.platform },
+    })
+  }
+  // Clears ONLY non-authoritative account UI cache; durable pending revocations survive until confirmed!
+  clearFollowUpCacheForAccount(serverUrl, userId)
+})
+function flushAccountPendingRevocations(): void {
+  const userId = session.account.value.user?.id
+  const serverUrl = session.account.value.serverUrl
+  if (!session.connected.value || !userId) return
+  if (!listPendingRevocationsForAccount(serverUrl, userId).length) return
+  const resolveApi = createFollowUpMachineResolver({ host: props.host, session, runtimes })
+  void flushPendingRevocationsForAccount({ serverUrl, userId, resolveApi }).catch(() => {})
+}
+watch(() => [session.connected.value, session.account.value.user?.id, session.teamId.value, session.machineRosterVersion.value] as const, () => {
+  flushAccountPendingRevocations()
+}, { immediate: true })
+const stopPresenceFlush = session.central.onEvent(event => {
+  if (event.type === "presence" && event.online) flushAccountPendingRevocations()
+})
+onBeforeUnmount(() => { stopBeforeSignOut?.(); stopPresenceFlush() })
 useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
 let localAgentRunning: boolean | undefined
@@ -137,7 +181,7 @@ watch([ready, account], async () => {
   // A Machine surface initializes its own route before it signals readiness.
   if (!machine.value) finishBillingReturn()
 }, { immediate: true })
-useTitle(() => machine.value && route.value.name === "session" ? undefined : (site.value?.siteName ?? "DeskFleet"))
+useTitle(() => machine.value && ["session", "workspace-agent", "new-session"].includes(String(route.value.name)) ? undefined : (site.value?.siteName ?? "DeskFleet"))
 useEventListener(window, "focus", () => {
   void refreshNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
@@ -184,7 +228,8 @@ if (props.host.onboarding) void loadOnboarding()
           <RouterView v-if="route.name === 'super-agent'" />
           <template v-else>
             <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
-            <MachineOnboarding v-if="team" />
+            <WorkspaceAgentSetupView v-if="team && host.localChannels && workspaceMode" :key="team.id" />
+            <MachineOnboarding v-else-if="team" :remote-workspace-agent="host.remoteWorkspaceAgent && workspaceMode" />
             <TeamOnboarding v-else-if="!teams.length" />
           </template>
         </main>

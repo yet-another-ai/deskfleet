@@ -104,6 +104,57 @@ test("warming discovers confirmed model, mode, effort and boolean transitions wi
   assert.equal((await cache.read(params, "/workspace", fake)).models?.currentValue, "first", "Another caller starts with provider defaults")
 })
 
+test("model-only reads share default discovery without waiting for composer commands or exporting other states", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const fake = fakeProvider({ commands: () => undefined })
+  const cache = new AgentConfigurationCache({ maxTransitions: 2 })
+  t.after(() => cache.close())
+  cache.warm(params, "/workspace", fake)
+  const compact = { ...params, includeMatrix: false }
+  const [first, second] = await Promise.all([cache.read(compact, "/workspace", fake), cache.read(compact, "/workspace", fake)])
+  assert.equal(first.models?.currentValue, "first")
+  assert.equal(second.matrix, undefined)
+  assert.equal(fake.configs.length, 1)
+  assert.equal(fake.changes.length, 0)
+  // The unadvanced notification timeout is still pending in the full warmup.
+  t.mock.timers.tick(1_000)
+  await fake.closed
+  const full = await cache.read(params, "/workspace", fake)
+  assert.ok(full.matrix!.configurations.length > 1)
+  assert.equal((await cache.read(compact, "/workspace", fake)).matrix, undefined)
+})
+
+test("a cold composer and model picker share the same startup and receive their own requested metadata", async t => {
+  const connecting = deferred(), connected = deferred()
+  const fake = fakeProvider({ async connect() { connecting.resolve(); await connected.promise }, commands: () => undefined })
+  const cache = new AgentConfigurationCache({ maxStates: 1 })
+  t.after(() => cache.close())
+  const menu = cache.read({ ...params, includeMatrix: false }, "/workspace", fake)
+  await connecting.promise
+  const composer = cache.read({ ...params, composer: true }, "/workspace", fake)
+  connected.resolve()
+  assert.equal((await menu).models?.currentValue, "first")
+  const advertised = [{ name: "review", description: "Review" }]
+  await fake.clients[0]!.onUpdate({ sessionId: "probe", update: { sessionUpdate: "available_commands_update", availableCommands: advertised } })
+  assert.deepEqual((await composer).commands, advertised)
+  assert.equal(fake.configs.length, 1)
+})
+
+test("a standalone model picker reads model-specific efforts without starting full matrix exploration", async t => {
+  const fake = fakeProvider()
+  const cache = new AgentConfigurationCache()
+  t.after(() => cache.close())
+  const compact = { ...params, includeMatrix: false }
+  await cache.read(compact, "/workspace", fake)
+  const changed = await cache.read({ ...compact, model: "second" }, "/workspace", fake)
+  assert.equal(changed.matrix, undefined)
+  assert.deepEqual(changed.reasoningEfforts?.options.map(option => option.id), ["low", "medium"])
+  assert.equal(fake.changes.length, 1)
+  const reused = await cache.read({ ...compact, model: "second" }, "/workspace", fake)
+  assert.deepEqual(reused, changed)
+  assert.equal(fake.configs.length, 2)
+})
+
 test("a cold read shares startup and returns defaults while background setters are pending", async t => {
   const started = deferred(), continueSet = deferred()
   const fake = fakeProvider({ async set() { started.resolve(); await continueSet.promise } })

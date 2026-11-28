@@ -7,11 +7,17 @@ import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import type { ScheduleInput, ScheduledTask } from "@deskfleet/client/schedules"
 import { absoluteTime, describeTrigger, relativeTime } from "./schedule-format.ts"
-import ScheduleEditor from "./ScheduleEditor.vue"
+import ScheduleEditor, { type ScheduleFollowUpOption } from "./ScheduleEditor.vue"
 import ScheduleRunDot from "./ScheduleRunDot.vue"
 
-const props = defineProps<{ task: ScheduledTask; disabled?: boolean; save(schedule: ScheduleInput): Promise<ScheduledTask> }>()
-const emit = defineEmits<{ run: []; toggle: []; delete: [] }>()
+const props = defineProps<{
+  task: ScheduledTask
+  disabled?: boolean
+  followUp?: ScheduleFollowUpOption
+  projectChatRoute?: Record<string, unknown>
+  save(schedule: ScheduleInput, options?: { operationId?: string; scheduleId?: string }): Promise<ScheduledTask>
+}>()
+const emit = defineEmits<{ run: []; toggle: []; delete: []; toggleFollowUp: [] }>()
 const { t, locale } = useI18n()
 const now = useNow({ scheduler: tick => useIntervalFn(tick, 30_000) })
 const manual = computed(() => props.task.trigger.kind === "manual")
@@ -34,10 +40,13 @@ const summary = computed(() => {
           <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 text-xs leading-5" :class="status === 'active' ? 'bg-ui-success/12 text-ui-success' : 'bg-ui-badge text-ui-text-muted'">
             <span v-if="status === 'active'" class="ui-status-dot ui-status-live text-ui-success" aria-hidden="true" />{{ t(`schedules.status.${status}`) }}
           </span>
+          <span v-if="followUp?.awaitingAuthorization && !followUp.authorized" data-schedule-awaiting-auth class="inline-flex shrink-0 items-center rounded-full bg-ui-badge px-2 text-xs leading-5 text-ui-text-muted">{{ t('superAgent.followUp.awaitingAuthorization') }}</span>
         </div>
         <p class="m-0 mt-1.5 text-[13px] text-ui-text-muted">{{ summary }}</p>
       </div>
-      <div class="flex shrink-0 gap-2">
+      <div class="flex shrink-0 flex-wrap gap-2">
+        <RouterLink v-if="projectChatRoute" :to="projectChatRoute" data-schedule-open-chat class="ui-button-ghost inline-flex items-center text-xs no-underline">{{ t('superAgent.followUp.openProjectChat') }}</RouterLink>
+        <UiButton v-if="followUp?.supported && followUp?.authorized" type="button" data-schedule-follow-up-action :disabled="disabled" @click="emit('toggleFollowUp')">{{ t(followUp.initialEnabled ? 'superAgent.followUp.stopFollowUp' : 'superAgent.followUp.resumeFollowUp') }}</UiButton>
         <UiButton type="button" data-schedule-run  :disabled="disabled" @click="emit('run')"><Play :size="14" aria-hidden="true" />{{ t('schedules.run') }}</UiButton>
         <UiButton v-if="!manual" type="button" data-schedule-toggle  :disabled="disabled" @click="emit('toggle')"><component :is="task.enabled ? Pause : Play" :size="14" aria-hidden="true" />{{ t(task.enabled ? 'schedules.pause' : 'schedules.resume') }}</UiButton>
         <UiButton type="button" data-schedule-delete class="px-2" :aria-label="t('schedules.delete')" :title="t('schedules.delete')" :disabled="disabled" @click="emit('delete')"><Trash2 :size="14" aria-hidden="true" /></UiButton>
@@ -45,7 +54,7 @@ const summary = computed(() => {
     </header>
 
     <div class="grid items-start gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_17rem]">
-      <ScheduleEditor :initial="task" :disabled="disabled" :save="save" />
+      <ScheduleEditor :initial="task" :disabled="disabled" :follow-up="followUp" :save="save" />
       <section class="flex flex-col gap-3 xl:sticky xl:top-0" :aria-label="t('schedules.recentRuns')">
         <h2 class="ui-section-title">{{ t('schedules.recentRuns') }}</h2>
         <p v-if="!task.runs.length" class="m-0 text-[13px] leading-5 text-ui-text-muted">{{ t('schedules.noRuns') }}</p>

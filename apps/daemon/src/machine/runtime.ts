@@ -2,6 +2,17 @@ import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { hostname } from "node:os"
 import type { CentralTransport } from "@deskfleet/client/central-transport"
+import { inferDefaultDeliveryPolicy } from "@deskfleet/protocol/super-agent-follow-up"
+import { SuperAttachmentStore } from "../super-agent/attachments.ts"
+import { LocalFollowUpStore } from "../super-agent/follow-up-store.ts"
+import { SuperFollowUpService } from "../super-agent/follow-up.ts"
+import { createCoordinatorRuntime } from "../super-agent/provider.ts"
+import type { routeSuperMessage } from "../super-agent/router.ts"
+import { deterministicScheduleUuid } from "../super-agent/schedule.ts"
+import { SuperAgentService, type SuperUserState } from "../super-agent/service.ts"
+import { LocalSuperStore } from "../super-agent/store.ts"
+import { createCoordinatorTriageModel } from "../super-agent/triage.ts"
+import { superWorkspaces } from "../super-agent/workspaces.ts"
 import { AgentProviders } from "../providers/providers.ts"
 import { AgentSessions } from "../agent/sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "../agent/quotas.ts"
@@ -28,6 +39,7 @@ interface MachineOptions {
   peers: ControlPeers
   capabilities: () => Promise<DesktopCapabilities>
   agentProvider?: AgentProvider
+  superRoute?: typeof routeSuperMessage
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
   workspaceDirectory?: string
@@ -47,6 +59,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   const setup = new ProviderSetup(terminals, { directory })
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
+  let frontDesk: SuperAgentService | undefined
+  let followUp: SuperFollowUpService | undefined
+  const coordinator = createCoordinatorRuntime(providers)
+  let superStore: LocalSuperStore<SuperUserState> | undefined
+  let followUpStore: LocalFollowUpStore | undefined
   let schedules: ScheduledTasks | undefined
   let providerUpdates: ProviderUpdates | undefined
   let mcp: AgentMcp | undefined
@@ -55,10 +72,13 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let stopping: Promise<void> | undefined
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    const followUpStopped = followUp?.close()
+    const frontDeskStopped = frontDesk?.close()
+    const coordinatorStopped = coordinator.close()
     const cleanupResults = await Promise.allSettled([cleanup?.close()])
     remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
-    const results = await Promise.allSettled([providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
+    const results = await Promise.allSettled([followUpStopped, frontDeskStopped, coordinatorStopped, providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
     const terminalResults = await Promise.allSettled([terminals.close()])
     const failures = [...cleanupResults, ...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
@@ -68,7 +88,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     try { await stop() }
     finally {
       try { await central?.close() }
-      finally { await catalog.close() }
+      finally { await superStore?.close(); await followUpStore?.close(); await catalog.close() }
     }
   })()
   try {
@@ -83,11 +103,41 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     }
     mcp = new AgentMcp({
       servers: () => mcpServers.resolve(),
+      isSaWorkerSession: (sessionId, creationOperationId) => frontDesk?.isSaWorkerSession(sessionId, creationOperationId) === true,
       authorize: async actor => { await authorize(actor) },
       dispatch: (method, params, actor, scope) => dispatchMcp(
         operations, method, params, actor, scope,
         request => central!.remoteMcp(request),
         async () => (await readRemoteAgentSettings(hostDirectory)).allowLocalCrossWorkspace,
+        {
+          prepareCreate: async ({ actor: who, sessionId, workspaceId, schedule }) => {
+            const delegation = frontDesk?.workerDelegationForSession(sessionId)
+            if (!delegation || delegation.userId !== who.userId) return {}
+            if (delegation.hasNativeScheduleId) {
+              const existing = schedules?.snapshot().find(t => t.id === delegation.hasNativeScheduleId)
+              if (existing) return { duplicateOf: existing }
+            }
+            const operationId = deterministicScheduleUuid("mcp-schedule-create", delegation.userId, workspaceId, delegation.sourceMessageId, String(schedule.title ?? ""), String(schedule.prompt ?? ""))
+            const scheduleId = deterministicScheduleUuid("mcp-schedule-id", delegation.userId, workspaceId, delegation.sourceMessageId, String(schedule.title ?? ""), String(schedule.prompt ?? ""))
+            const autoSubscribe = !!followUp
+            return { operationId, scheduleId, autoSubscribe, deliveryPolicy: inferDefaultDeliveryPolicy(String(schedule.title ?? ""), String(schedule.prompt ?? "")) }
+          },
+          onCreated: async ({ actor: who, workspaceId, task, deliveryPolicy }) => {
+            if (!who.userId || !followUp) return
+            const active = followUp.isTakeoverActive(who.userId)
+            await followUp.subscribeSchedule({
+              userId: who.userId, workspaceId, scheduleId: task.id, scheduleTitle: task.title,
+              targetKind: task.target.kind === "existing" ? "existing" : task.target.context,
+              deliveryPolicy: deliveryPolicy ?? inferDefaultDeliveryPolicy(task.title, task.prompt),
+              enabled: active,
+              ...(active ? {} : { awaitingAuthorization: true }),
+            })
+          },
+          reportFeedback: ({ actor: who, sessionId, report }) => {
+            if (!frontDesk) throw new Error("Super Agent reporting is unavailable on this machine")
+            return frontDesk.reportFromWorker(sessionId, report, who)
+          },
+        },
       ),
     })
     await mcp.init()
@@ -100,7 +150,29 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     await terminals.init()
     agents.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))
     void agents.resumeArchiving().catch(error => console.error("Could not resume Session archiving", error))
-    schedules = new ScheduledTasks(directory, { agents, catalog, providers, authorize })
+    // Load persisted follow-up grants & subscriptions BEFORE schedules.init() so startup recovery of
+    // `claimed` -> `interrupted` runs immediately sees active SA subscribers!
+    followUpStore = new LocalFollowUpStore(catalog.native)
+    await followUpStore.init()
+    const isScheduleSubscribed = (scheduleId: string, ownerUserId?: string): boolean => {
+      if (followUp) return followUp.hasActiveScheduleSubscriber(scheduleId, ownerUserId)
+      const sources = followUpStore!.listSources().filter(src => src.sourceKind === "schedule" && src.sourceId === scheduleId)
+      const isTakeoverActive = (uid: string) => {
+        const auth = followUpStore!.getAuth(uid)
+        return !!auth && !auth.globalDisabled && auth.takeoverAllSessions === true && Object.values(auth.grants).some(grant => grant.enabled)
+      }
+      if (sources.some(src => src.state.enabled && !src.state.pausedReason && isTakeoverActive(src.userId))) return true
+      if (ownerUserId && isTakeoverActive(ownerUserId) && !sources.some(src => src.userId === ownerUserId)) {
+        return true
+      }
+      return false
+    }
+    const shouldEmitCreated = (ownerUserId: string): boolean => {
+      if (followUp) return followUp.hasAdoptAllSchedules(ownerUserId)
+      const auth = followUpStore!.getAuth(ownerUserId)
+      return !!auth && !auth.globalDisabled && auth.takeoverAllSessions === true && Object.values(auth.grants).some(grant => grant.enabled)
+    }
+    schedules = new ScheduledTasks(directory, { agents, catalog, providers, authorize, isSubscribed: isScheduleSubscribed, shouldEmitCreated })
     await schedules.init()
     providerUpdates = new ProviderUpdates(providers, {
       probe: { directory },
@@ -109,14 +181,65 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     })
     operations = new MachineOperations({ agents, catalog, providers, terminals, setup, providerUpdates, schedules, mcpServers, capabilities: options.capabilities })
     remoteMcp = new RemoteMcp(hostDirectory, operations)
-    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp, options.centralTransport)
+    superStore = new LocalSuperStore<SuperUserState>(catalog.native)
+    await superStore.init()
+    const workspaceHelpers = superWorkspaces(catalog, directory)
+    const defaultCoordinator = process.platform === "darwin" ? "codex" : "claude-code"
+    const triageModel = createCoordinatorTriageModel({
+      superStore,
+      providers: () => providers.metadata().providers,
+      defaultCoordinator,
+      coordinatorModel: coordinator.model,
+      coordinatorOptions: coordinator.options,
+    })
+    followUp = new SuperFollowUpService({
+      followUpStore,
+      superStore,
+      agents,
+      schedules,
+      authorize,
+      workspaces: workspaceHelpers.workspaces,
+      historyCatalog: workspaceHelpers.historyCatalog,
+      onCatalogChanged: listener => catalog.onChange(() => listener()),
+      triageModel,
+      githubPullRequest: (actor, query) => central!.githubPullRequest(actor, query),
+      isInteractiveBusy: (uid, wid) => frontDesk?.isInteractiveBusy(uid, wid) ?? false,
+      onRoomChanged: (uid, wid, sourceId) => frontDesk?.notifySnapshotDirty(uid, wid, sourceId),
+    })
+    const scheduleHost = {
+      handleSchedule: (method: string, params: Record<string, unknown>, actor: Parameters<MachineOperations["handle"]>[2]) => operations.handle(method, params, actor),
+      listSchedules: () => schedules!.snapshot(),
+      subscribeSchedule: (params: Parameters<SuperFollowUpService["subscribeSchedule"]>[0]) => followUp!.subscribeSchedule(params).then(() => {}),
+      setAdoptAllSchedules: (enabled: boolean, actor: Parameters<SuperFollowUpService["setAdoptAllSchedules"]>[1], opts?: Parameters<SuperFollowUpService["setAdoptAllSchedules"]>[2]) => followUp!.setAdoptAllSchedules(enabled, actor, opts),
+      isFollowUpAuthorized: (uid: string) => followUp!.isTakeoverActive(uid),
+      getScheduleSubscription: (uid: string, wid: string, sid: string) => followUp!.getScheduleSubscription(uid, wid, sid),
+      listScheduleRuns: async (uid: string, wid: string, sid: string, limit?: number) => (await followUp!.listRuns({ userId: uid, workspaceId: wid, sourceKind: "schedule", sourceId: sid, limit })).runs,
+      getScheduleRun: (uid: string, wid: string, sid: string, runId: string) => followUp!.getScheduleRun(uid, wid, sid, runId),
+    }
+    frontDesk = new SuperAgentService({
+      coordinatorOptions: coordinator.options, coordinatorModel: coordinator.model,
+      registration: () => central?.status(),
+      defaultCoordinator,
+      attachments: new SuperAttachmentStore(directory, (uid, path) => catalog.attachments.fileGrant(uid, path)),
+      store: superStore, followUp, schedules: scheduleHost, agents, authorize, route: options.superRoute, ...workspaceHelpers,
+      providers: () => providers.metadata().providers,
+    })
+    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp, options.centralTransport, frontDesk.handle.bind(frontDesk), frontDesk.subscribeFeedback.bind(frontDesk))
+    const stopCentralReady = central.onReady(() => followUp?.notifyAuthorizeRecovered())
     await central.init()
+    await followUp.init()
+    await frontDesk.init()
     cleanup = new WorktreeCleanup({ agents, catalog, pullRequest: (actor, query) => central!.githubPullRequest(actor, query) })
     cleanup.start()
     schedules.start()
     providerUpdates.start()
     agents.startConfigurationCache()
-    return { directory, catalog, providers, mcpServers, setup, providerUpdates, agents, terminals, central, schedules, mcp, operations, stop, close }
+    const baseClose = close
+    const closeAll = () => {
+      stopCentralReady()
+      return baseClose()
+    }
+    return { directory, catalog, providers, mcpServers, setup, providerUpdates, agents, terminals, central, schedules, followUp, frontDesk, mcp, operations, stop, close: closeAll }
   } catch (error) {
     try { await close() }
     catch (cleanup) { throw new AggregateError([error, cleanup], "Machine startup and cleanup failed", { cause: error }) }

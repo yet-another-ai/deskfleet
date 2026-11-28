@@ -50,6 +50,7 @@ const props = withDefaults(defineProps<{
   maxWidth?: number
   decayMs?: number
   active?: string
+  entries?: OutlineItem[]
   events?: AgentEvent[]
   snapshot?: AgentSnapshot
   projection?: ConversationEntry[]
@@ -96,8 +97,9 @@ function plainText(content: AgentInput["content"]): string {
 }
 
 const projection = useConversationProjection(() => props.events ?? [], () => props.snapshot)
-const hasConversation = computed(() => props.projection !== undefined || !!(props.events && props.snapshot))
+const hasConversation = computed(() => props.entries !== undefined || props.projection !== undefined || !!(props.events && props.snapshot))
 const items = computed<OutlineItem[]>(previous => {
+  if (props.entries) return props.entries
   if (!hasConversation.value) return PREVIEW_ITEMS
   const result: OutlineItem[] = []
   for (const entry of props.projection ?? projection.value) {

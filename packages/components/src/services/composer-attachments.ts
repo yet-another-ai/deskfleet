@@ -1,6 +1,7 @@
 import { reactive } from "vue"
 import type { GithubRepositoryItem } from "@deskfleet/client/central"
 import type { AgentInput } from "@deskfleet/protocol/agent"
+import type { SuperAttachmentInfo, SuperAttachmentRequest } from "@deskfleet/protocol/super-agent"
 import { truncateGeneratedTitle } from "@deskfleet/protocol/titles"
 import { filePathToUri, type FileEntry, type FilesApi, type FileTarget } from "@deskfleet/client/files"
 import { githubReferenceLabel } from "./github-composer-reference.ts"
@@ -12,8 +13,9 @@ export type ComposerAttachment =
   | { id: string; kind: "github"; item: GithubRepositoryItem }
   | { id: string; kind: "image"; name: string; mimeType: string; data: string; size: number }
   | { id: string; kind: "pasted_text"; text: string; lines: number; label?: string; uri?: string; diff?: { key: string; startIndex: number; endIndex: number } }
-  | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string }
-  | { id: string; kind: "machine_file"; name: string; path: string; uri: string; size?: number }
+  | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string; attachmentGrant?: string }
+  | { id: string; kind: "machine_file"; name: string; path: string; uri: string; size?: number; attachmentGrant?: string }
+  | { id: string; kind: "stored_workspace"; sourceMessageId: string; index: number; attachmentType: SuperAttachmentInfo["type"]; name: string; previewDataUrl?: string }
 
 export interface AttachmentUploadState {
   status: "uploading" | "uploaded" | "error"
@@ -22,6 +24,7 @@ export interface AttachmentUploadState {
   progress: number
   targetKey: string
   uri?: string
+  attachmentGrant?: string
   error?: string
 }
 
@@ -40,6 +43,7 @@ export function isAttachmentUploadedForTarget(
   const key = attachmentTargetKey(target)
   const tracked = uploadStates.get(item.id)
   if (tracked && (!key || tracked.targetKey === key) && tracked.status === "uploaded" && tracked.uri) {
+    item.attachmentGrant ??= tracked.attachmentGrant
     item.uploadedUri ??= tracked.uri
     item.uploadedTargetKey ??= tracked.targetKey
     return true
@@ -111,10 +115,11 @@ async function startAttachmentUpload(
       },
     )
     if (controller.signal.aborted) return
+    item.attachmentGrant = uploaded.attachmentGrant
     item.uploadedUri = uploaded.uri
     item.uploadedTargetKey = targetKey
     if (uploadStates.get(item.id) === state) {
-      Object.assign(state, { status: "uploaded", transferredBytes: item.size, totalBytes: item.size, progress: 1, uri: uploaded.uri })
+      Object.assign(state, { status: "uploaded", transferredBytes: item.size, totalBytes: item.size, progress: 1, uri: uploaded.uri, attachmentGrant: uploaded.attachmentGrant })
     }
   } catch (reason) {
     if (controller.signal.aborted || uploadStates.get(item.id) !== state) return
@@ -171,8 +176,24 @@ export function pathToFileUri(filePath: string): string {
   return /^file:\/\//iu.test(filePath) ? filePath : filePathToUri(filePath)
 }
 
-export function createMachineFileAttachment(entry: Pick<FileEntry, "name" | "path" | "size">): ComposerAttachment {
-  return { id: crypto.randomUUID(), kind: "machine_file", name: entry.name, path: entry.path, uri: pathToFileUri(entry.path), size: entry.size }
+export function createMachineFileAttachment(entry: Pick<FileEntry, "name" | "path" | "size" | "attachmentGrant">): ComposerAttachment {
+  return { id: crypto.randomUUID(), kind: "machine_file", name: entry.name, path: entry.path, uri: pathToFileUri(entry.path), size: entry.size, ...(entry.attachmentGrant && { attachmentGrant: entry.attachmentGrant }) }
+}
+
+export function createStoredWorkspaceAttachment(
+  sourceMessageId: string,
+  index: number,
+  info: SuperAttachmentInfo,
+  id: string = crypto.randomUUID(),
+): Extract<ComposerAttachment, { kind: "stored_workspace" }> {
+  return {
+    id,
+    kind: "stored_workspace",
+    sourceMessageId,
+    index,
+    attachmentType: info.type,
+    name: info.name,
+  }
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {
@@ -211,7 +232,7 @@ export function sessionTitleFromDraft(draft: string, attachments: readonly Compo
   return "Session"
 }
 
-function attachmentToBlock(item: ComposerAttachment, uri?: string): AgentInput["content"][number] {
+function attachmentToBlock(item: Exclude<ComposerAttachment, { kind: "stored_workspace" }>, uri?: string): AgentInput["content"][number] {
   if (item.kind === "github") {
     const reference = item.item
     const type = reference.kind === "issue" ? "GitHub Issue" : "GitHub Pull Request"
@@ -230,8 +251,36 @@ function attachmentToBlock(item: ComposerAttachment, uri?: string): AgentInput["
   }
 }
 
+/** Pass files-channel grants only to the workspace host that validates them. */
+export function workspacePromptAttachments(attachments: readonly ComposerAttachment[]): AgentInput["content"] {
+  const blocks: AgentInput["content"] = []
+  for (const item of attachments) {
+    if (item.kind === "stored_workspace") continue
+    const block = attachmentToBlock(item, item.kind === "local_file" ? item.uploadedUri : undefined)
+    if (block.type === "resource_link" && (item.kind === "local_file" || item.kind === "machine_file") && item.attachmentGrant) {
+      block._meta = { "deskfleet/attachmentGrant": item.attachmentGrant }
+    }
+    blocks.push(block)
+  }
+  return blocks
+}
+
+/** Extract preserved references to immutable attachments stored on an earlier SA user message. */
+export function workspaceReusedAttachments(attachments: readonly ComposerAttachment[]): SuperAttachmentRequest[] {
+  const refs: SuperAttachmentRequest[] = []
+  for (const item of attachments) {
+    if (item.kind !== "stored_workspace") continue
+    refs.push({ messageId: item.sourceMessageId, index: item.index })
+  }
+  return refs
+}
+
 export function previewPromptContent(draft: string, attachments: readonly ComposerAttachment[]): AgentInput["content"] {
-  const blocks = attachments.map(item => attachmentToBlock(item))
+  const blocks: AgentInput["content"] = []
+  for (const item of attachments) {
+    if (item.kind === "stored_workspace") continue
+    blocks.push(attachmentToBlock(item))
+  }
   if (draft.trim()) blocks.push({ type: "text", text: draft })
   return blocks
 }
@@ -245,6 +294,7 @@ export async function buildPromptContent(params: {
 }): Promise<AgentInput["content"]> {
   const blocks: AgentInput["content"] = []
   for (const item of params.attachments) {
+    if (item.kind === "stored_workspace") continue
     if (item.kind === "local_file" && !item.uploadedUri) {
       if (!params.filesApi?.uploadAttachment || !params.target) throw new Error("File transfer is unavailable for this machine.")
       item.uploadedUri = (await params.filesApi.uploadAttachment({ target: params.target, sessionId: params.sessionId, name: item.name, data: item.bytes })).uri

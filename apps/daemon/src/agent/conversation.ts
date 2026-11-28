@@ -1,5 +1,5 @@
 import {
-  autoApprovePermission,
+  autoApprovePermission, turnSteering,
   type AgentCommand, type AgentInput, type AgentPermission, type AgentReceipt, type AgentSnapshot,
 } from "@deskfleet/protocol/agent"
 import { truncateGeneratedTitle } from "@deskfleet/protocol/titles"
@@ -193,6 +193,9 @@ export class SessionConversation {
       requireActiveSession(snapshot.session)
       const previous = snapshot.turns.find(turn => turn.id === turnId)
       if (!previous) throw new Error("Turn was not found")
+      if (command.params.requireUnshared === true && liveTurn(previous) && turnSteering(snapshot.inputs, turnId)) {
+        throw new Error("Another input is joining or sharing this turn")
+      }
       const turn = liveTurn(previous) ? { ...previous, state: "cancelling" as const } : previous
       await journal.commit(snapshot, { turns: [turn], command: { ...command, status: "completed", result, completedAt: timestamp() }, events: [journal.event(sessionId, "turn", turn)] })
     })

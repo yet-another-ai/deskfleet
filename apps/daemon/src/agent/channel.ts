@@ -7,11 +7,21 @@ import {
   AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES,
   type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
 } from "@deskfleet/protocol/agent"
+import { parseSuperFeedbackUnsubscribe, type SuperFeedbackPush, type SuperFeedbackSubscribeResult } from "@deskfleet/protocol/super-agent-feedback"
 
+export type SuperHandler = (method: string, params: unknown, actor: AgentActor) => Promise<unknown>
+export type SuperFeedbackSubscribeHandler = (
+  params: unknown,
+  actor: AgentActor,
+  push: (event: SuperFeedbackPush) => void,
+) => Promise<{ initial: SuperFeedbackSubscribeResult; unsubscribe: () => void }>
 export interface AgentChannelSessions {
+  superAgent?: SuperHandler
+  superAgentFeedback?: SuperFeedbackSubscribeHandler
   readonly journal: { readonly identity: unknown }
   sessionDirectory?(sessionId: string): Promise<string>
   sessionAttachmentDirectory?(sessionId: string): Promise<string>
+  fileGrant?(userId: string, path: string): string
   draftAttachmentDirectory?(draftId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
@@ -71,6 +81,7 @@ export class AgentChannel {
   readonly #unsubscribePresence: (() => void) | undefined
   readonly #subscriptions = new Map<string, Subscription>()
   readonly #gitSubscriptions = new Map<string, GitSubscription>()
+  readonly #feedbackSubscriptions = new Map<string, { stop?: () => void }>()
   readonly #permissionCalls = new Map<string, PermissionCall>()
   readonly #requests = new Set<RpcId>()
   readonly #decoder = new TextDecoder("utf-8", { fatal: true })
@@ -140,6 +151,8 @@ export class AgentChannel {
     this.#unsubscribePresence?.()
     for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
     this.#gitSubscriptions.clear()
+    for (const subscription of this.#feedbackSubscriptions.values()) subscription.stop?.()
+    this.#feedbackSubscriptions.clear()
     this.#subscriptions.clear()
     this.#permissionCalls.clear()
     this.#requests.clear()
@@ -215,6 +228,43 @@ export class AgentChannel {
         return
       }
       if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
+      if (this.#sessions.superAgentFeedback && method === "_deskfleet/super-agent/feedbackSubscribe") {
+        if (this.#feedbackSubscriptions.size >= MAX_PENDING_REQUESTS) throw new Error("Too many feedback subscriptions")
+        const buffered: SuperFeedbackPush[] = []
+        let ready = false
+        let subId: string | undefined
+        const subscription = await this.#sessions.superAgentFeedback(params, this.#actor, push => {
+          if (this.#closed) return
+          if (!ready) { buffered.push(push); return }
+          if (subId && !this.#feedbackSubscriptions.has(subId)) return
+          this.#queue({ jsonrpc: "2.0", method: "_deskfleet/super-agent/feedback", params: push })
+        })
+        subId = subscription.initial.subscriptionId
+        if (this.#closed) { subscription.unsubscribe(); return }
+        this.#feedbackSubscriptions.set(subId, { stop: subscription.unsubscribe })
+        this.#queue({ jsonrpc: "2.0", id, result: subscription.initial })
+        ready = true
+        for (const push of buffered) {
+          if (this.#closed || !this.#feedbackSubscriptions.has(subId)) break
+          this.#queue({ jsonrpc: "2.0", method: "_deskfleet/super-agent/feedback", params: push })
+        }
+        return
+      }
+      if (this.#sessions.superAgentFeedback && method === "_deskfleet/super-agent/feedbackUnsubscribe") {
+        const { subscriptionId } = parseSuperFeedbackUnsubscribe(params)
+        const existing = this.#feedbackSubscriptions.get(subscriptionId)
+        if (existing) {
+          this.#feedbackSubscriptions.delete(subscriptionId)
+          existing.stop?.()
+        }
+        if (!this.#closed) this.#queue({ jsonrpc: "2.0", id, result: null })
+        return
+      }
+      if (this.#sessions.superAgent && ["snapshot", "summary", "markRead", "send", "stop", "correct", "linkMessage", "createTicket", "settings", "history", "archiveTicket", "followUpAuth", "followUpSources", "followUpUpdateSource", "followUpRuns", "feedbackProcess"].some(name => method === `_deskfleet/super-agent/${name}`)) {
+        const result = await this.#sessions.superAgent(method, params, this.#actor)
+        if (!this.#closed) this.#queue({ jsonrpc: "2.0", id, result })
+        return
+      }
       if (!METHODS.has(method as AgentMethod)) { this.#error(id, -32601, "Method not found"); return }
       if (method === "_deskfleet/git/subscribe" || method === "_deskfleet/git/unsubscribe") {
         await this.#gitSubscription(method, params)

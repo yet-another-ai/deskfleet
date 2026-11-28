@@ -48,6 +48,7 @@ import AgentUsage from "./AgentUsage.vue"
 import SessionPreparation from "./SessionPreparation.vue"
 import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
+import type { WorkspaceCommandMenu } from "../../composables/useWorkspaceCommands.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 import { recordSentMessageOrigin } from "../../services/message-sent-transition.ts"
 import { useDictationPreference } from "../../composables/useDictationPreference.ts"
@@ -61,14 +62,18 @@ const props = defineProps<{
   location: SessionTarget | null
   /** A Team-hosted conversation accepts local content without a machine. */
   hosted?: { sessionId?: string }
+  workspaceAgent?: WorkspaceCommandMenu
+  submitBlocked?: boolean
   showTarget?: boolean
   disabled?: boolean
   submitting?: boolean
   activeTurn?: boolean
   canSteer?: boolean
+  coordinatorUsage?: { used: number; size?: number }
   usage?: AgentUsageUpdate
   /** Whether the active turn can be cancelled. */
   canCancel?: boolean
+  cancelLabel?: string
 }>()
 const draft = defineModel<string>({ default: "" })
 const attachments = defineModel<ComposerAttachment[]>("attachments", { default: () => [] })
@@ -208,8 +213,10 @@ async function toggleYolo(): Promise<void> {
 const completionId = useId()
 const completion = reactive(useComposerCompletions({
   draft, mentions, textarea, location: () => props.location,
-  disabled: () => !!(props.hosted || props.disabled || props.submitting), configuration,
-  discover: () => configurationSelector.value?.discover?.() ?? Promise.resolve(),
+  disabled: () => !!(props.hosted || props.disabled || props.submitting),
+  configuration: computed(() => props.workspaceAgent ? props.workspaceAgent.configuration : configuration.value),
+  workspace: () => props.workspaceAgent,
+  discover: () => props.workspaceAgent?.discover() ?? configurationSelector.value?.discover?.() ?? Promise.resolve(),
 }))
 const fileInput = useTemplateRef<HTMLInputElement>("fileInput")
 const dropZoneRef = useTemplateRef<HTMLElement>("dropZoneRef")
@@ -217,15 +224,18 @@ useTextareaAutosize({ element: textarea, input: draft })
 const { fadeStyle: textareaFadeStyle } = useScrollFade(textarea, { size: "sm" })
 const fileTarget = useFileTarget(() => props.location?.machine.id)
 const filesApi = computed(() => client.files)
-const uploadingAttachments = computed(() => !props.hosted && hasIncompleteAttachmentUploads(attachments.value, fileTarget.value))
+const readingFiles = ref(0)
+const fileReadError = ref("")
+const preparingAttachments = computed(() => !!readingFiles.value || !!fileReadError.value || (!props.hosted && hasIncompleteAttachmentUploads(attachments.value, fileTarget.value)))
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value) &&
-  !(props.hosted && attachments.value.some(item => item.kind === "image" || item.kind === "local_file")))
+  !(props.hosted && attachments.value.some(item => item.kind === "image" || item.kind === "local_file")) &&
+  !(props.workspaceAgent && attachments.value.length))
 const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
 const runningSendBehavior = useRunningSendBehavior()
 const steerOnSend = computed(() => !!(!props.hosted && props.activeTurn && props.canSteer && !commandInput.value && runningSendBehavior.value === "steer"))
 const sendLabel = computed(() => t(steerOnSend.value ? "agent.steer" : props.activeTurn && !props.hosted ? "agent.addToBacklog" : "composer.send"))
-const placeholder = computed(() => t(!props.activeTurn || props.hosted ? "composer.placeholder" : steerOnSend.value ? "agent.steerHint" : "agent.backlogHint"))
+const placeholder = computed(() => t(props.workspaceAgent ? "superAgent.placeholder" : !props.activeTurn || props.hosted ? "composer.placeholder" : steerOnSend.value ? "agent.steerHint" : "agent.backlogHint"))
 const { snapshot: gitSnapshot } = useSessionGit(
   () => props.location?.session?.id ?? "",
   () => !props.showTarget && !!props.location?.worktree && !!props.location.machine.online
@@ -326,6 +336,16 @@ watch(attachments, items => {
 
 function itemPreview(item: ComposerAttachment): PreviewDescriptor | undefined {
   if (item.kind === "pasted_text" || item.kind === "github") return undefined
+  if (item.kind === "stored_workspace") {
+    if (!item.previewDataUrl) return undefined
+    return {
+      kind: "image",
+      content: item.previewDataUrl,
+      title: item.name,
+      mimeType: item.name,
+      source: { sessionId: props.location?.session?.id, itemId: item.id },
+    }
+  }
   const content = item.kind === "image"
     ? `data:${item.mimeType};base64,${item.data}`
     : attachmentPreviewUrls.get(item.id) ?? (item.kind === "machine_file" ? item.uri : undefined)
@@ -349,8 +369,14 @@ function itemThumbnailSrc(item: ComposerAttachment): string | undefined {
 async function addFiles(files: Iterable<File>): Promise<void> {
   if (props.hosted && (props.disabled || props.submitting)) return
   const scope = hostedScope.value
-  const added = await attachmentsFromFiles(files)
-  if (scope === hostedScope.value && added.length) attachments.value = [...attachments.value, ...added]
+  readingFiles.value++
+  fileReadError.value = ""
+  try {
+    const added = await attachmentsFromFiles(files)
+    if (scope === hostedScope.value && added.length) attachments.value = [...attachments.value, ...added]
+  } catch (reason) {
+    fileReadError.value = reason instanceof Error ? reason.message : t("composer.uploadFailed")
+  } finally { readingFiles.value-- }
 }
 async function onFilesPicked(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
@@ -372,8 +398,8 @@ function onMachineFilesSelected(entries: FileEntry[]): void {
     }
   }
 }
-watch([attachments, fileTarget, sessionId, filesApi, () => props.location?.machine.online, () => !!props.hosted], ([items, target, currentSessionId, api, online, hosted]) => {
-  if (online === false || hosted) return
+watch([attachments, fileTarget, sessionId, filesApi, () => props.location?.machine.online, () => !!props.hosted, () => props.submitBlocked], ([items, target, currentSessionId, api, online, hosted, blocked]) => {
+  if (online === false || hosted || blocked) return
   syncAttachmentUploads({ attachments: items, target, sessionId: currentSessionId, filesApi: api })
 }, { immediate: true })
 
@@ -393,6 +419,13 @@ function removeAttachment(id: string): void {
 }
 function attachmentLabel(item: ComposerAttachment): string {
   if (item.kind === "github") return githubReferenceLabel(item.item)
+  if (item.kind === "stored_workspace") {
+    return item.attachmentType === "image"
+      ? t("agent.image")
+      : item.attachmentType === "resource" && item.name === "text/plain"
+        ? t("composer.pastedText")
+        : item.name
+  }
   return item.kind === "pasted_text" ? (item.label ?? t("composer.pastedText")) : item.name
 }
 function previewAttachment(item: ComposerAttachment): void {
@@ -414,7 +447,7 @@ function onPaste(event: ClipboardEvent): void {
   }
 }
 function submit(): void {
-  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || uploadingAttachments.value || !canCompose.value || empty.value) return
+  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || preparingAttachments.value || props.submitBlocked || !canCompose.value || empty.value) return
   dictation.cancel()
   recordSentMessageOrigin(dropZoneRef.value)
   emit("submit", steerOnSend.value ? "steer" : "backlog")
@@ -428,7 +461,14 @@ function keydown(event: KeyboardEvent): void {
   if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit() }
 }
 
-defineExpose({ focus: () => textarea.value?.focus() })
+defineExpose({
+  focus: (moveToEnd = false) => {
+    const el = textarea.value
+    if (!el) return
+    el.focus()
+    if (moveToEnd) el.setSelectionRange(el.value.length, el.value.length)
+  },
+})
 
 onBeforeUnmount(() => {
   yoloConfirmation.cancel()
@@ -556,6 +596,10 @@ onBeforeUnmount(() => {
       <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
+      <div v-if="fileReadError" role="alert" class="flex items-center gap-2 px-3 pt-3 text-xs text-ui-danger">
+        <span>{{ fileReadError }}</span>
+        <button type="button" :aria-label="t('common.close')" @click="fileReadError = ''"><X :size="14" aria-hidden="true" /></button>
+      </div>
       <ul v-if="attachments.length" class="m-0 flex list-none flex-wrap gap-2 px-3 pt-3 pb-0" :aria-label="t('composer.attachments')" data-composer-attachments>
         <li
           v-for="item in attachments"
@@ -607,7 +651,7 @@ onBeforeUnmount(() => {
             @click="previewAttachment(item)"
           />
           <component :is="item.item.kind === 'issue' ? CircleDot : GitPullRequest" v-else-if="item.kind === 'github'" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <FileText v-else-if="item.kind === 'pasted_text'" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <FileText v-else-if="item.kind === 'pasted_text' || (item.kind === 'stored_workspace' && item.attachmentType === 'resource')" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <File v-else :size="14" class="shrink-0 text-ui-text-muted" :class="itemPreview(item) && 'cursor-zoom-in'" aria-hidden="true" @click="previewAttachment(item)" />
           <span
             class="min-w-0 truncate font-medium text-ui-text"
@@ -616,7 +660,7 @@ onBeforeUnmount(() => {
             @click="previewAttachment(item)"
           >{{ attachmentLabel(item) }}</span>
           <span v-if="item.kind === 'pasted_text'" class="shrink-0 rounded bg-ui-badge px-1.5 py-0.5 text-[11px] text-ui-text-muted">{{ t("composer.pastedTextLines", item.lines) }}</span>
-          <span v-else-if="item.kind !== 'github' && item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
+          <span v-else-if="item.kind !== 'github' && item.kind !== 'stored_workspace' && item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
           <button
             v-if="attachmentUpload(item)?.status === 'error'"
             type="button"
@@ -641,6 +685,7 @@ onBeforeUnmount(() => {
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
         </li>
       </ul>
+      <slot name="before-input" />
       <textarea ref="textarea" data-composer-input :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" :readonly="!!hosted && submitting" :disabled="!!hosted && disabled && !submitting" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
       <div v-if="dictation.active" class="relative mx-3 mb-2 flex items-center justify-center rounded-lg bg-ui-accent/5 px-10 py-2" data-dictation-panel>
         <div class="flex h-7 shrink-0 items-center gap-0.5" role="img" :aria-label="t(`dictation.${dictation.state}`)" data-dictation-waveform>
@@ -666,9 +711,10 @@ onBeforeUnmount(() => {
             </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
-        <AgentConfigurationSelector v-if="location" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />
+        <slot name="toolbar" />
+        <AgentConfigurationSelector v-if="location && !workspaceAgent" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />
         <button
-          v-if="location"
+          v-if="location && !workspaceAgent"
           type="button"
           class="ui-button-ghost h-7 w-7 shrink-0 p-0"
           :aria-pressed="yoloEnabled"
@@ -682,13 +728,14 @@ onBeforeUnmount(() => {
         </button>
         <slot name="context" />
         <div class="ml-auto flex shrink-0 items-center gap-1">
-          <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
+          <AgentUsage v-if="workspaceAgent" coordinator :usage="coordinatorUsage" />
+          <AgentUsage v-else-if="usage" :key="location?.session?.id" :usage="usage" />
           <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" :class="dictation.active ? 'ui-nav-active' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !canCompose || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
             <Square v-if="dictation.active" :size="11" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="16" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
-          <UiButton v-if="canCancel && (empty || (hosted && disabled))" variant="primary" size="icon" class="ml-1 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="11" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send ml-1 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !canCompose || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="1.75" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="16" :stroke-width="1.75" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-if="canCancel && (empty || (hosted && disabled))" variant="primary" size="icon" class="ml-1 rounded-full" :title="cancelLabel ?? t('agent.cancelTurn')" :aria-label="cancelLabel ?? t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="11" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send ml-1 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || preparingAttachments || submitBlocked || !canCompose || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="1.75" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="16" :stroke-width="1.75" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>

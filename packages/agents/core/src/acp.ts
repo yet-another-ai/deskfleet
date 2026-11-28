@@ -59,7 +59,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const sessionModes = new AcpSessionModes()
   const reasoning = new AcpModelReasoning(sessionConfigMetaKeys)
   const child = spawn(launch.command, launch.args ?? [], {
-    cwd: launch.cwd,
+    cwd: client.inferenceOnly?.cwd ?? launch.cwd,
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
         .map(([key, value]) => [process.platform === "win32" ? key.toUpperCase() : key, value]),
@@ -73,13 +73,13 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   let providerSessionId: string | undefined
   const sessionScope = new AcpSessionScope()
   const filesystem = createAcpFilesystem(id => sessionScope.require(id))
-  const terminals = client.terminals?.createController(
+  const terminals = client.inferenceOnly ? undefined : client.terminals?.createController(
     id => sessionScope.require(id),
     id => sessionScope.cwd(id),
     client.terminals.env,
   )
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
-  const scopedRequestElicitation: AgentClient["requestElicitation"] = client.requestElicitation
+  const scopedRequestElicitation: AgentClient["requestElicitation"] = !client.inferenceOnly && client.requestElicitation
     ? (params, signal) => {
       if ("sessionId" in params && typeof params.sessionId === "string") sessionScope.require(params.sessionId)
       return client.requestElicitation!(params, signal)
@@ -91,6 +91,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       // synchronously when that notification is read, so the flag still covers
       // the replay and is clear before any later notification is read.
       try {
+        if (client.inferenceOnly && (params.update.sessionUpdate === "tool_call" || params.update.sessionUpdate === "tool_call_update"
+          || params.update.sessionUpdate === "subagent_update")) throw new Error("The routing agent attempted to use an execution tool")
         if (replayingHistory) {
           if (params.update.sessionUpdate === "subagent_update") {
             if (client.capabilities?.subagents) {
@@ -132,14 +134,12 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         connection.close(error)
       }
     })
-    .onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
-    .onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
     .onNotification(acp.methods.client.elicitation.complete, async ({ params }) => {
       await client.completeElicitation?.(params)
     })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params, signal }) => {
       sessionScope.require(params.sessionId)
-      if (!client.requestPermission) return { outcome: { outcome: "cancelled" } }
+      if (client.inferenceOnly || !client.requestPermission) return { outcome: { outcome: "cancelled" } }
       try {
         return await client.requestPermission(params, signal)
       } catch (error) {
@@ -149,16 +149,21 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     })
     .onRequest(acp.methods.client.elicitation.create, async ({ params, signal }) => {
       const sessionId = "sessionId" in params && typeof params.sessionId === "string" ? params.sessionId : undefined
-      if (!client.requestElicitation || !sessionId
+      if (!scopedRequestElicitation || !sessionId
         || (acp.CreateElicitationRequest.isUrl(params) && !client.completeElicitation)) return { action: "cancel" }
       sessionScope.require(sessionId)
       try {
-        return await client.requestElicitation(params, signal)
+        return await scopedRequestElicitation(params, signal)
       } catch (error) {
         connection.close(error)
         throw error
       }
     })
+  if (!client.inferenceOnly) {
+    clientApp = clientApp
+      .onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
+      .onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
+  }
   if (client.onAuthStatus) {
     clientApp = clientApp.onNotification(AUTH_STATUS_UPDATE_METHOD, (params: unknown) => params, async ({ params }) => {
       try {
@@ -185,7 +190,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     ...(scopedRequestElicitation ? { requestElicitation: scopedRequestElicitation } : {}),
     close: error => connection.close(error),
   }
-  for (const extension of extensions) {
+  for (const extension of client.inferenceOnly ? [] : extensions) {
     if (extension.notifications) {
       for (const [method, handler] of Object.entries(extension.notifications)) {
         clientApp = clientApp.onNotification(method, (params: unknown) => params, async ({ params }) => {
@@ -222,24 +227,24 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     connection.close(new Error(`ACP process exited (${signal ?? code})`))
   })
 
-  let canCloseSession = false
+  let finishSession: typeof acp.methods.agent.session.close | typeof acp.methods.agent.session.delete | undefined
   let closing: Promise<void> | undefined
   function close(): Promise<void> {
     if (closing) return closing
     const activeSessionId = sessionScope.active
     closing = (async () => {
-      if (canCloseSession && activeSessionId && !connection.signal.aborted && !client.signal?.aborted && child.exitCode === null) {
+      if (finishSession && activeSessionId && !connection.signal.aborted && !client.signal?.aborted && child.exitCode === null) {
         let timer: ReturnType<typeof setTimeout> | undefined
         try {
           await Promise.race([
-            connection.agent.request(acp.methods.agent.session.close, { sessionId: activeSessionId }),
+            connection.agent.request(finishSession, { sessionId: activeSessionId }),
             new Promise<void>(resolve => {
               timer = setTimeout(resolve, 2_000)
               timer.unref()
             }),
           ])
         } catch {
-          // Proceed with process teardown if session/close fails or aborts.
+          // Proceed with process teardown if the session already ended.
         } finally {
           clearTimeout(timer)
         }
@@ -281,7 +286,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       protocolVersion: acp.PROTOCOL_VERSION,
       clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.24.0" },
       clientCapabilities: {
-        ...options.clientCapabilities,
+        ...(client.inferenceOnly ? { _meta: options.clientCapabilities?._meta } : options.clientCapabilities),
         session: {
           ...(client.capabilities?.configOptions ? { configOptions: { boolean: {} } } : {}),
           ...(client.capabilities?.compaction ? { compaction: {} } : {}),
@@ -289,15 +294,17 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         },
         ...(client.capabilities?.plans ? { plan: {} } : {}),
         ...(client.capabilities?.subagents ? { subagents: {} } : {}),
-        fs: { readTextFile: true, writeTextFile: true },
+        fs: { readTextFile: !client.inferenceOnly, writeTextFile: !client.inferenceOnly },
         ...(terminals ? { terminal: true } : { terminal: false }),
-        ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
+        ...(scopedRequestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
       },
     })
     if (initialization.protocolVersion !== acp.PROTOCOL_VERSION) {
       throw new Error(`${launch.command} uses unsupported ACP protocol version ${initialization.protocolVersion}`)
     }
-    canCloseSession = !!initialization.agentCapabilities?.sessionCapabilities?.close
+    const sessions = initialization.agentCapabilities?.sessionCapabilities
+    if (client.inferenceOnly && sessions?.delete) finishSession = acp.methods.agent.session.delete
+    else if (sessions?.close) finishSession = acp.methods.agent.session.close
     await options.afterInitialize?.(initialization, connection.agent)
     const present = <T extends acp.NewSessionResponse | acp.LoadSessionResponse | acp.SetSessionConfigOptionResponse>(
       sessionId: string, response: T,

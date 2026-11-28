@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto"
 import { constants } from "node:fs"
 import { copyFile, link, lstat, mkdir, open, readdir, realpath, rm, rmdir, unlink } from "node:fs/promises"
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -35,6 +36,7 @@ function resourceFileName(uri: string): string {
 
 /** Daemon-managed Session attachment storage outside optional Git worktrees. */
 export class SessionAttachments {
+  readonly #selectionSecret = randomBytes(32)
   readonly #directory: string
   readonly #draftsDirectory: string
   readonly #legacyDirectory: string | undefined
@@ -70,6 +72,11 @@ export class SessionAttachments {
         await rm(candidate, { recursive: true, force: true }).catch(() => {})
       }
     }
+  }
+
+  /** A files-channel listing or completed upload authorizes only this path for this registered user. */
+  fileGrant(userId: string, path: string): string {
+    return createHmac("sha256", this.#selectionSecret).update(JSON.stringify([userId, path])).digest("hex")
   }
 
   async directory(sessionId: string): Promise<string> {

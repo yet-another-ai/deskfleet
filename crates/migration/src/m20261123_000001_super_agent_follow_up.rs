@@ -1,0 +1,352 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[derive(DeriveIden)]
+enum SuperAgentFollowUpAuth {
+    Table,
+    UserId,
+    Revision,
+    AuthVersion,
+    StateJson,
+}
+
+#[derive(DeriveIden)]
+enum SuperAgentFollowUpSource {
+    Table,
+    Id,
+    UserId,
+    WorkspaceId,
+    SourceKind,
+    SourceId,
+    Revision,
+    StateJson,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum SuperAgentFollowUpRun {
+    Table,
+    Id,
+    UserId,
+    WorkspaceId,
+    SourceKind,
+    SourceId,
+    RunKey,
+    CreatedAt,
+    UpdatedAt,
+    RecordJson,
+}
+
+#[derive(DeriveIden)]
+enum SuperAgentFollowUpAction {
+    Table,
+    Id,
+    UserId,
+    WorkspaceId,
+    SourceKind,
+    SourceId,
+    ActionKey,
+    Status,
+    AuthVersion,
+    CreatedAt,
+    UpdatedAt,
+    RecordJson,
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(SuperAgentFollowUpAuth::Table)
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAuth::UserId)
+                            .text()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAuth::Revision)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAuth::AuthVersion)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAuth::StateJson)
+                            .text()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(SuperAgentFollowUpSource::Table)
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::Id)
+                            .text()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::UserId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::WorkspaceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::SourceKind)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::SourceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::Revision)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::StateJson)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpSource::UpdatedAt)
+                            .text()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sa_follow_up_source_unique")
+                    .table(SuperAgentFollowUpSource::Table)
+                    .col(SuperAgentFollowUpSource::UserId)
+                    .col(SuperAgentFollowUpSource::WorkspaceId)
+                    .col(SuperAgentFollowUpSource::SourceKind)
+                    .col(SuperAgentFollowUpSource::SourceId)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(SuperAgentFollowUpRun::Table)
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::Id)
+                            .text()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::UserId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::WorkspaceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::SourceKind)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::SourceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::RunKey)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::CreatedAt)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::UpdatedAt)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpRun::RecordJson)
+                            .text()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sa_follow_up_run_unique")
+                    .table(SuperAgentFollowUpRun::Table)
+                    .col(SuperAgentFollowUpRun::UserId)
+                    .col(SuperAgentFollowUpRun::WorkspaceId)
+                    .col(SuperAgentFollowUpRun::SourceKind)
+                    .col(SuperAgentFollowUpRun::SourceId)
+                    .col(SuperAgentFollowUpRun::RunKey)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sa_follow_up_run_page")
+                    .table(SuperAgentFollowUpRun::Table)
+                    .col(SuperAgentFollowUpRun::UserId)
+                    .col(SuperAgentFollowUpRun::WorkspaceId)
+                    .col(SuperAgentFollowUpRun::SourceKind)
+                    .col(SuperAgentFollowUpRun::SourceId)
+                    .col(SuperAgentFollowUpRun::CreatedAt)
+                    .col(SuperAgentFollowUpRun::Id)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(SuperAgentFollowUpAction::Table)
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::Id)
+                            .text()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::UserId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::WorkspaceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::SourceKind)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::SourceId)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::ActionKey)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::Status)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::AuthVersion)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::CreatedAt)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::UpdatedAt)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(SuperAgentFollowUpAction::RecordJson)
+                            .text()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sa_follow_up_action_unique")
+                    .table(SuperAgentFollowUpAction::Table)
+                    .col(SuperAgentFollowUpAction::UserId)
+                    .col(SuperAgentFollowUpAction::ActionKey)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_sa_follow_up_action_status")
+                    .table(SuperAgentFollowUpAction::Table)
+                    .col(SuperAgentFollowUpAction::UserId)
+                    .col(SuperAgentFollowUpAction::Status)
+                    .col(SuperAgentFollowUpAction::CreatedAt)
+                    .to_owned(),
+            )
+            .await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(SuperAgentFollowUpAction::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(SuperAgentFollowUpRun::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(SuperAgentFollowUpSource::Table)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(SuperAgentFollowUpAuth::Table)
+                    .to_owned(),
+            )
+            .await
+    }
+}

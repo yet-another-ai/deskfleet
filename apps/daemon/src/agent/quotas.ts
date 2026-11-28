@@ -93,12 +93,23 @@ export async function consumeTurn(journal: AgentJournal, authority: AgentQuotaAu
   })
 }
 
-export async function pauseTurn(journal: AgentJournal, turn: AgentTurn, command: AgentCommand, error: TurnAdmissionBlocked): Promise<void> {
-  const reason = error.message
-  await journal.serial(turn.sessionId, async () => {
+/** Settle a claimed input that never reached its provider. Cancellation wins over a late quota reply. */
+export async function settleUndispatchedTurn(journal: AgentJournal, turn: AgentTurn, command: AgentCommand, error: unknown): Promise<"cancelled" | "paused" | undefined> {
+  return journal.serial(turn.sessionId, async () => {
     const snapshot = await journal.read(turn.sessionId)
     const previous = snapshot.inputs.find(input => input.id === turn.initialInputId)
     const current = snapshot.turns.find(value => value.id === turn.id)
+    if (current?.state === "cancelling" && current.consumed === false && previous?.dispatchCommandId === command.id) {
+      const input = { ...previous, state: "withdrawn" as const }
+      const cancelled = { ...current, state: "cancelled" as const, endedAt: new Date().toISOString(), stopReason: "cancelled" }
+      await journal.commit(snapshot, { inputs: [input], turns: [cancelled],
+        command: { ...command, status: "rejected", completedAt: cancelled.endedAt, error: "Input was withdrawn before provider dispatch" },
+        events: [journal.event(turn.sessionId, "input", input), journal.event(turn.sessionId, "turn", cancelled)],
+      })
+      return "cancelled"
+    }
+    if (!(error instanceof TurnAdmissionBlocked)) return
+    const reason = error.message
     if (!previous || !current || current.consumed) throw new Error("Cannot pause an already dispatched turn")
     const input = { ...previous, state: "pending" as const, requestedDelivery: "backlog" as const,
       dispatchCommandId: undefined, dispatcher: undefined, turnId: undefined, requestedTurnId: undefined,
@@ -111,6 +122,7 @@ export async function pauseTurn(journal: AgentJournal, turn: AgentTurn, command:
         journal.event(turn.sessionId, "session", session),
       ],
     })
+    return "paused"
   })
 }
 

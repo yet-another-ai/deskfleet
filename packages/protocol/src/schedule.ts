@@ -45,13 +45,66 @@ export interface ScheduledTask extends ScheduleInput {
 
 export interface ScheduleMethods {
   scheduleList: { params: Record<string, never>; result: ScheduledTask[] }
-  scheduleCreate: { params: { schedule: ScheduleInput }; result: ScheduledTask }
-  scheduleUpdate: { params: { scheduleId: string; changes: Partial<ScheduleInput> }; result: ScheduledTask }
-  scheduleDelete: { params: { scheduleId: string }; result: null }
-  scheduleRun: { params: { scheduleId: string }; result: ScheduleRun }
+  scheduleCreate: { params: { schedule: ScheduleInput; operationId?: string; scheduleId?: string }; result: ScheduledTask }
+  scheduleUpdate: { params: { scheduleId: string; changes: Partial<ScheduleInput>; operationId?: string }; result: ScheduledTask }
+  scheduleDelete: { params: { scheduleId: string; operationId?: string }; result: null }
+  scheduleRun: { params: { scheduleId: string; operationId?: string }; result: ScheduleRun }
 }
 export type ScheduleMethod = keyof ScheduleMethods
 export const SCHEDULE_METHODS = new Set<string>(["scheduleList", "scheduleCreate", "scheduleUpdate", "scheduleDelete", "scheduleRun"])
+
+/** Daemon-internal durable event emitted atomically alongside schedule mutations for private SA subscribers. */
+export interface SchedulePrivateEvent {
+  id: string
+  kind: "run_started" | "run_finished" | "run_skipped" | "schedule_created" | "schedule_updated" | "schedule_deleted"
+  scheduleId: string
+  scheduleTitle: string
+  scheduleVersion: number
+  workspaceId: string
+  targetKind: "worktree" | "directory" | "existing"
+  targetSessionId?: string
+  ownerUserId: string
+  previousOwnerUserId?: string
+  editorUserId?: string
+  scopeChanged?: boolean
+  manualRunByUserId?: string
+  runId?: string
+  runState?: ScheduleRun["state"]
+  scheduledFor?: string
+  startedAt?: string
+  finishedAt?: string
+  sessionId?: string
+  inputId?: string
+  error?: string
+  createdAt: string
+}
+
+export interface ScheduleCommandReceipt {
+  operationId: string
+  method: "scheduleCreate" | "scheduleUpdate" | "scheduleDelete" | "scheduleRun"
+  actorUserId: string
+  paramsHash: string
+  scheduleId: string
+  status: "completed" | "deleted"
+  result: ScheduledTask | ScheduleRun | null
+  createdAt: string
+}
+
+export function scheduleOperationId(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || !value.trim() || value.length > 256 || /[\x00-\x1f]/u.test(value)) {
+    throw new Error("Invalid schedule operation ID")
+  }
+  return value.trim()
+}
+
+export function schedulePlannedId(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu.test(value)) {
+    throw new Error("Invalid planned schedule ID")
+  }
+  return value.toLowerCase()
+}
 
 export function scheduleObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected schedule parameters")

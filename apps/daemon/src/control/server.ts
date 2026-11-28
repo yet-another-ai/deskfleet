@@ -1,4 +1,5 @@
 import type { AgentQuotaAuthority } from "../agent/quotas.ts"
+import type { routeSuperMessage } from "../super-agent/router.ts"
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
 import { once } from "node:events"
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -521,7 +522,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new DesktopPermissions(), agentProvider?: AgentProvider, options: { agentQuotas?: AgentQuotaAuthority; allowLocalControlForTests?: boolean; auvPath?: string; workspaceDirectory?: string; openCatalog?: Parameters<DaemonCatalog["init"]>[0]; centralTransport?: CentralTransport } = {}) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new DesktopPermissions(), agentProvider?: AgentProvider, options: { superRoute?: typeof routeSuperMessage; agentQuotas?: AgentQuotaAuthority; allowLocalControlForTests?: boolean; auvPath?: string; workspaceDirectory?: string; openCatalog?: Parameters<DaemonCatalog["init"]>[0]; centralTransport?: CentralTransport } = {}) {
   const machine = new MachineRuntime(directory, { peers, capabilities, agentProvider, terminals, ...options })
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)

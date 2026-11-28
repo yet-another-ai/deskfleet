@@ -1,3 +1,5 @@
+import { readDesktopRoutes } from "./desktop-routes.ts"
+import { runDesktopAcp } from "./desktop-acp.ts"
 import { createRequire } from "node:module"
 import { request } from "node:http"
 import { join } from "node:path"
@@ -40,6 +42,7 @@ export interface AccountServices {
   origin?: string
   version: string
   environment: unknown
+  coordinate?(input: CoordinatorInput): Promise<unknown>
   dispose(): Promise<void>
 }
 
@@ -67,6 +70,7 @@ export async function createAccountServices(entryPoint: string, login = false, o
   home?: string
   environment?: unknown
   projectEnv?: boolean
+  inference?: boolean
 } = {}): Promise<AccountServices> {
   const runtime = createRequire(entryPoint)
   const base = createRequire(runtime.resolve("@deepseek-ai/dsh-base/package.json"))
@@ -96,33 +100,69 @@ export async function createAccountServices(entryPoint: string, login = false, o
     const environment = options.environment ?? (options.projectEnv ? loadLayeredEnv("dsh")
       : harnessHomeEnvironment(loadLayeredEnv("dsh", resolveDshHome())))
     ctx.provide("launchEnvironment", environment)
-    const mount = async (plugin: unknown, config?: unknown) => {
-      const handle = ctx.plugin(plugin, config) as PluginHandle
+    const mount = async (plugin: unknown, config?: unknown, scope = ctx) => {
+      const handle = scope.plugin(plugin, config) as PluginHandle
       handles.push(handle)
       await handle
     }
-    await mount(LocalCredentialProvider, { watch: false, ...options.home ? { dshHome: options.home } : {},
-      ...process.env.DESKFLEET_DSH_CREDENTIALS_PATH ? { path: process.env.DESKFLEET_DSH_CREDENTIALS_PATH } : {} })
     const accountKey = credentialKey("deepseek-account-platform", "default")
-    if (login) {
+    const apiKeyConfigured = async () => (await ctx.credentials.describe(credentialRef("DEEPSEEK_API_KEY"))).configured as boolean
+    if (login || options.inference) {
       const { installProxyFromEnvironment } = await load("@deepseek-ai/dsh-http-proxy", runtime)
       disposeProxy = await installProxyFromEnvironment(environment, (message: string) => process.stderr.write(`dsh: ${message}\n`))
-      const config = DeepSeekAccount.Config(options.platform ?? {})
-      const stored = await ctx.credentials.readRecord(accountKey)
-      // The upstream constructor removes foreign-issuer grants. A cancelled DeskFleet
-      // login must preserve existing credentials, so reject before mounting that service.
-      if (stored && (stored.kind !== "grant" || stored.payload?.issuer !== config.platformOrigin)) {
-        throw new Error("Existing account credentials use another Harness account configuration")
+    }
+    const desktop = options.inference ? await readDesktopRoutes(entryPoint) : undefined
+    const hasDesktop = desktop && Object.keys(desktop.providers).length > 0
+    if (options.inference) await mount((await load("@deepseek-ai/dsh-llm")).default)
+    let deepseek = "deepseek-official"
+    try {
+      await mount(LocalCredentialProvider, { watch: false, ...options.home ? { dshHome: options.home } : {},
+        ...process.env.DESKFLEET_DSH_CREDENTIALS_PATH ? { path: process.env.DESKFLEET_DSH_CREDENTIALS_PATH } : {} })
+      const useAccount = !login && options.inference && !await apiKeyConfigured()
+      if (login || useAccount) {
+        const config = DeepSeekAccount.Config(options.platform ?? {})
+        const stored = await ctx.credentials.readRecord(accountKey)
+        // The upstream constructor removes foreign-issuer grants. A cancelled DeskFleet
+        // login must preserve existing credentials, so reject before mounting that service.
+        if (stored && (stored.kind !== "grant" || stored.payload?.issuer !== config.platformOrigin)) {
+          throw new Error("Existing account credentials use another Harness account configuration")
+        }
+        await mount(AuthorizationService)
+        if (login) {
+          const { default: WebServer } = await load("@deepseek-ai/dsh-host-webserver", accountRequire)
+          await mount(WebServer, { host: "127.0.0.1", port: 0 })
+        }
+        await mount(DeepSeekAccount, config)
       }
-      await mount(AuthorizationService)
-      const { default: WebServer } = await load("@deepseek-ai/dsh-host-webserver", accountRequire)
-      await mount(WebServer, { host: "127.0.0.1", port: 0 })
-      await mount(DeepSeekAccount, config)
+      if (options.inference) {
+        deepseek = useAccount ? "deepseek-account" : "deepseek-official"
+        await mount(await load(useAccount ? "@deepseek-ai/dsh-llm-deepseek-account" : "@deepseek-ai/dsh-llm-deepseek-api-key"))
+      }
+    } catch (error) {
+      if (!hasDesktop) throw error
+      // A stale registration grant must not prevent independent desktop routes from loading.
+      process.stderr.write("DSH registration model route is unavailable. Check its credentials.\n")
+    }
+    if (hasDesktop) {
+      // Only bundled model adapters run in this tool-free coordinator. Desktop credentials
+      // remain isolated from both the registration's official route and its login flow.
+      const scope = ctx.isolate("credentials")
+      try {
+        await mount(LocalCredentialProvider, { dshHome: desktop.home, watch: false }, scope)
+        await mount(await load("@deepseek-ai/dsh-llm-pi-ai"), { providers: desktop.providers }, scope)
+      } catch (error) {
+        if (!ctx.llm.listProviders().length) throw error
+        process.stderr.write("DSH desktop model routes could not start. Check the desktop Models configuration.\n")
+      }
     }
     return {
+      ...(options.inference ? { coordinate: async (input: CoordinatorInput) => {
+        if (input.images?.length) await mount((await load("@deepseek-ai/dsh-attachment-local")).default, { dshHome: process.cwd() })
+        return coordinate(ctx, deepseek, desktop?.preferred, input)
+      } } : {}),
       account: login ? ctx.deepseekAccount as Account : undefined,
       accountStored: async () => (await ctx.credentials.describeRecord(accountKey)).configured,
-      apiKeyConfigured: async () => (await ctx.credentials.describe(credentialRef("DEEPSEEK_API_KEY"))).configured,
+      apiKeyConfigured,
       origin: login ? ctx.webServer.getOrigin() as string : undefined,
       version: runtime("../package.json").version as string,
       environment,
@@ -272,8 +312,114 @@ export async function runAccountLogin(services: AccountServices, options: {
   }
 }
 
+interface CoordinatorInput {
+  action: "options" | "decide"
+  system?: string
+  text?: string
+  model?: string
+  reasoningEffort?: string
+  images?: { data: string; mimeType: string }[]
+}
+interface RouteInfo {
+  id: string
+  name: string
+  context?: { contextWindow: number }
+  inputModalities?: string[]
+  reasoning?: { efforts: { id: string }[]; defaultEffort?: string }
+}
+interface InferenceServices {
+  llm: {
+    listProviders(): { id: string }[]
+    listModels(provider: string): Promise<{ id: string }[]>
+    resolveModelInfo(provider: string, model: string): Promise<RouteInfo>
+    stream(input: object): AsyncIterable<{ type: string; text?: string; usage?: { totalTokens?: number; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }; reason?: { kind: string; failure?: { code?: string; status?: number } } }>
+  }
+  attachments: { saveImages(images: { data: Uint8Array; mediaType: string }[]): Promise<object[]> }
+}
+
+async function coordinate(ctx: InferenceServices, deepseek: string, preferred: { provider: string; model: string } | undefined, input: CoordinatorInput) {
+  const providers = ctx.llm.listProviders()
+  const discovered = await Promise.allSettled(providers.map(async ({ id: provider }) => {
+    const models = await ctx.llm.listModels(provider)
+    // Keep legacy bare IDs scoped to this registration's DeepSeek credential route.
+    return models.map(({ id: model }) => ({ provider, model, id: provider === deepseek ? model : JSON.stringify([provider, model]) }))
+  }))
+  const routes = discovered.flatMap(group => group.status === "fulfilled" ? group.value : [])
+  if (!routes.length) throw new Error("DSH_NO_MODELS")
+  const fallback = routes.find(r => r.provider === preferred?.provider && r.model === preferred.model)
+    ?? routes.find(r => r.provider === deepseek && r.model === "deepseek-flash") ?? routes[0]!
+  if (input.action === "options") {
+    const choices = await Promise.all(routes.map(async ({ id, provider, model }) => {
+      const info = await ctx.llm.resolveModelInfo(provider, model)
+      const name = provider === deepseek && providers.length === 1 ? info.name : provider + " / " + info.name
+      return { id, name, reasoningEfforts: info.reasoning?.efforts.map(e => e.id) ?? [], defaultReasoningEffort: info.reasoning?.defaultEffort }
+    }))
+    return { models: choices, defaultModel: fallback.id, defaultReasoningEfforts: choices.find(m => m.id === fallback.id)!.reasoningEfforts }
+  }
+  if (input.action !== "decide" || !input.system || !input.text) throw new Error("Invalid DeepSeek coordinator request")
+  const route = input.model === undefined ? fallback : routes.find(r => r.id === input.model)
+  if (!route) throw new Error("DSH_MODEL_UNAVAILABLE")
+  const { provider, model } = route
+  const info = await ctx.llm.resolveModelInfo(provider, model)
+  if (input.reasoningEffort && !info.reasoning?.efforts.some(e => e.id === input.reasoningEffort)) throw new Error("DSH_EFFORT_UNAVAILABLE")
+  if (input.images?.length && !info.inputModalities?.includes("image")) throw new Error("DSH_IMAGE_UNSUPPORTED")
+  const images = input.images?.length ? await ctx.attachments.saveImages(input.images.map(image => ({
+    data: Buffer.from(image.data, "base64"), mediaType: image.mimeType,
+  }))) : []
+  const content = [{ type: "text", text: input.text }, ...images.map(attachment => ({ type: "image", attachment }))]
+  let text = "", used: number | undefined, done = false
+  for await (const part of ctx.llm.stream({ provider, model, reasoningEffort: input.reasoningEffort, system: input.system, messages: [{ role: "user", content }], tools: [] })) {
+    if (part.type === "text-delta") {
+      text += part.text ?? ""
+      if (text.length > 1_000_000) throw new Error("DeepSeek routing result exceeds the limit")
+    }
+    if (part.type === "usage" && part.usage) {
+      const u = part.usage
+      used = u.totalTokens ?? u.inputTokens + u.outputTokens + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0)
+    }
+    if (part.type === "finish") {
+      if (part.reason?.kind !== "stop") {
+        const failure = part.reason?.failure
+        if (failure?.status === 401 || failure?.status === 403) throw new Error("DSH_AUTH")
+        if (failure?.status === 429) throw new Error("DSH_QUOTA")
+        throw new Error("DSH_MODEL_FAILURE")
+      }
+      done = true
+    }
+  }
+  if (!done) throw new Error("DSH_MODEL_FAILURE")
+  const value = text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1")
+  const decision: unknown = JSON.parse(value)
+  return { decision, ...(Number.isSafeInteger(used) && used! >= 0 ? { usage: { used, size: info.context?.contextWindow } } : {}) }
+}
+
+async function coordinatorCommand(entryPoint: string): Promise<void> {
+  const services = await createAccountServices(entryPoint, false, { inference: true })
+  try {
+    const chunks: Buffer[] = []
+    let bytes = 0
+    for await (const chunk of process.stdin) {
+      bytes += chunk.length
+      if (bytes > 32 * 1024 * 1024) throw new Error("DeepSeek coordinator input exceeds the limit")
+      chunks.push(Buffer.from(chunk))
+    }
+    const result = await services.coordinate!(JSON.parse(Buffer.concat(chunks).toString("utf8")))
+    process.stdout.write(JSON.stringify({ result }))
+  } finally { await services.dispose() }
+}
+
 async function main(action: string, entryPoint: string): Promise<void> {
+  if (action === "coordinate" && entryPoint) {
+    try { await coordinatorCommand(entryPoint) }
+    catch (error) {
+      const code = error instanceof Error ? error.message : ""
+      process.stdout.write(JSON.stringify({ error: /^DSH_(?:NO_MODELS|MODEL_UNAVAILABLE|EFFORT_UNAVAILABLE|IMAGE_UNSUPPORTED|AUTH|QUOTA|MODEL_FAILURE)$/.test(code) ? code : "DSH_MODEL_FAILURE" }))
+    }
+    return
+  }
   if (!["status", "login", "acp"].includes(action) || !entryPoint) throw new Error("Invalid DeepSeek runtime helper command")
+  // Capture the registration choice before the ACP launcher reads a workspace .env.
+  const desktop = action === "acp" ? await readDesktopRoutes(entryPoint) : undefined
   let services: AccountServices | undefined
   let status: AccountStatus = { auth: "unknown" }
   let environment: unknown
@@ -295,9 +441,7 @@ async function main(action: string, entryPoint: string): Promise<void> {
   if (action === "status") { process.stdout.write(`${JSON.stringify(status)}\n`); return }
   // Reuse the same launch snapshot: loading .env twice would relabel file values as inherited.
   if (!environment) throw new Error("DeepSeek Harness credential environment could not be loaded")
-  const runtime = createRequire(entryPoint)
-  const { runProfile } = await import(pathToFileURL(runtime.resolve("@deepseek-ai/dsh/profile-boot")).href)
-  await runProfile({ environment, profile: "acp", patchFiles: acpPatchFiles(status), args: [] })
+  await runDesktopAcp(entryPoint, environment, acpPatchFiles(status), desktop!)
 }
 
 if (import.meta.main) await main(process.argv[2] ?? "", process.argv[3] ?? "")

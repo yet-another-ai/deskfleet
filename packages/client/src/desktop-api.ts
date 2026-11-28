@@ -22,9 +22,50 @@ import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
 import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
 import type { SpeechApi } from "./speech.ts"
+import type {
+  SuperFeedbackProcessParams,
+  SuperFeedbackProcessResult,
+  SuperFeedbackPush,
+  SuperFeedbackSubscribeParams,
+  SuperFeedbackSubscribeResult,
+  SuperHistory,
+  SuperHistoryRequest,
+  SuperMethods,
+} from "@deskfleet/protocol/super-agent"
+
+type SuperAgentActions = {
+  [Name in keyof SuperMethods as Name extends `_deskfleet/super-agent/${infer Action}` ? Action : never]:
+    (params: SuperMethods[Name]["params"]) => Promise<SuperMethods[Name]["result"]>
+}
+export interface SuperFeedbackHandle {
+  initial: SuperFeedbackSubscribeResult
+  unsubscribe(): Promise<void>
+}
+export type SuperAgentApi = Omit<SuperAgentActions, "stop" | "archiveTicket" | "linkMessage" | "createTicket" | "followUpAuth" | "followUpSources" | "followUpUpdateSource" | "followUpRuns" | "feedbackSubscribe" | "feedbackUnsubscribe" | "feedbackProcess" | "summary" | "markRead"> & {
+  archiveTicket?: SuperAgentActions["archiveTicket"]
+  linkMessage?: SuperAgentActions["linkMessage"]
+  createTicket?: SuperAgentActions["createTicket"]
+  stop?: SuperAgentActions["stop"]
+  history?: (params: SuperHistoryRequest) => Promise<SuperHistory>
+  followUpAuth?: SuperAgentActions["followUpAuth"]
+  followUpSources?: SuperAgentActions["followUpSources"]
+  followUpUpdateSource?: SuperAgentActions["followUpUpdateSource"]
+  followUpRuns?: SuperAgentActions["followUpRuns"]
+  subscribeFeedback?: (
+    params: SuperFeedbackSubscribeParams,
+    onEvent: (push: SuperFeedbackPush) => void,
+    onDisconnect?: () => void,
+  ) => Promise<SuperFeedbackHandle>
+  feedbackProcess?: (params: SuperFeedbackProcessParams) => Promise<SuperFeedbackProcessResult>
+  summary?: SuperAgentActions["summary"]
+  markRead?: SuperAgentActions["markRead"]
+}
 
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
+  superAgent?: SuperAgentApi
+  /** This client can navigate projects on enrolled remote machines without a local daemon. */
+  remoteWorkspaceAgent?: boolean
   platform: "darwin" | "linux" | "win32" | "web"
   /** True when running inside the native mobile client (Android / iOS). */
   mobile?: boolean
@@ -33,6 +74,8 @@ export interface DeskfleetDesktopApi {
   siteAdministration?: SiteAdministrationApi
   onboarding?: OnboardingApi
   appearance?: AppearanceApi
+  /** Device-local text zoom hook exposed by mobile hosts that support interface text scaling. */
+  setInterfaceTextScale?: (percent: number) => void
   applications?: LocalApplicationsApi
   updates?: UpdateApi
   windowsDesktopService?: WindowsDesktopServiceApi
@@ -45,7 +88,7 @@ export interface DeskfleetDesktopApi {
   openExternal?: (url: string) => Promise<void>
   onOpenNotificationSession?: (listener: (target: { teamId: string; machineId: string; sessionId: string }) => void) => () => void
   initialError?: string
-  target?: { id: string; local: boolean; lastSeen?: string }
+  target?: { id: string; teamId?: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi
   muxChannels?: MuxChannelsApi
   locale: AppLocale

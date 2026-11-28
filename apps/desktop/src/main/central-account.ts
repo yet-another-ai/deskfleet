@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, powerMonitor, safeStorage, shell } from "electron"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
@@ -21,15 +22,23 @@ interface StoredAccount { serverUrl: string; encryptedToken?: string; user?: Sav
 
 async function readAccount(path: string): Promise<SavedAccount> {
   const serverUrl = serverAddress(backendUrl)
-  let value: StoredAccount
-  try { value = JSON.parse(await readFile(path, "utf8")) as StoredAccount }
+  let parsed: unknown
+  try { parsed = JSON.parse(await readFile(path, "utf8")) }
   catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { serverUrl }
-    throw error
+    // An unreadable or corrupted account file must not abort app startup or
+    // overwrite the saved file; start signed out until a fresh sign-in succeeds.
+    console.warn("Could not read saved desktop account", error)
+    return { serverUrl }
   }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as StoredAccount).serverUrl !== "string") {
+    console.warn("Saved desktop account file has an unexpected format")
+    return { serverUrl }
+  }
+  const value = parsed as StoredAccount
   if (value.serverUrl !== serverUrl) return { serverUrl }
   let token: string | undefined
-  if (value.encryptedToken) {
+  if (typeof value.encryptedToken === "string" && value.encryptedToken) {
     try {
       if (await safeStorage.isAsyncEncryptionAvailable()) {
         token = (await safeStorage.decryptStringAsync(Buffer.from(value.encryptedToken, "base64"))).result
@@ -46,7 +55,14 @@ async function saveAccount(path: string, account: SavedAccount): Promise<void> {
   const encryptedToken = account.token && await safeStorage.isAsyncEncryptionAvailable()
     ? (await safeStorage.encryptStringAsync(account.token)).toString("base64") : undefined
   await mkdir(app.getPath("userData"), { recursive: true })
-  await writeFile(path, JSON.stringify({ serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined } satisfies StoredAccount), { mode: 0o600 })
+  const stored: StoredAccount = { serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined }
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, JSON.stringify(stored), { mode: 0o600, flag: "wx" })
+    await rename(temporary, path)
+  } finally {
+    await rm(temporary, { force: true })
+  }
 }
 
 const DESKTOP_SCHEME = "ai.yetanother.deskfleet"

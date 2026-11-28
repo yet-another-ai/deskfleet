@@ -28,7 +28,7 @@ const open = ref(true)
 const expanded = ref(false)
 let loadRevision = 0
 
-const enabled = computed(() => Boolean(account?.superAgentEnabled.value))
+const enabled = computed(() => Boolean(account?.superAgentEnabled?.value))
 const scope = computed(() => JSON.stringify([
   account?.account.value.serverUrl,
   account?.account.value.user?.id,

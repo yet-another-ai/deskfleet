@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -26,6 +26,7 @@ execFileSync("bun", [
   "build", "apps/daemon/src/standalone.ts", "--compile",
   "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig",
   "--define", `DESKFLEET_TARGET_MACOS_X64=${macIntel}`,
+  "--define", `__DESKFLEET_ADHD_SKILL__=${JSON.stringify(readFileSync(join(root, ".agents/skills/i-have-adhd/SKILL.md"), "utf8"))}`,
   ...(macIntel ? ["--target=bun-darwin-x64-baseline"] : []),
   "--outfile", executable,
 ], { cwd: root, stdio: "inherit" })

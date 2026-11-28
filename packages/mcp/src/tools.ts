@@ -71,3 +71,17 @@ export const DESKFLEET_TOOLS: (Tool & { method: string })[] = [
   { name: "deskfleet_schedule_delete", method: "scheduleDelete", description: "Delete a Workspace scheduled task. Existing Sessions and their history remain available.", inputSchema: object({ scheduleId: id }, ["scheduleId"]) },
   { name: "deskfleet_schedule_run", method: "scheduleRun", description: "Run a Workspace scheduled task now, including a manual task.", inputSchema: object({ scheduleId: id }, ["scheduleId"]) },
 ]
+
+/** Restricted reporting entry exposed only to Workers bound to a Super Agent request; never exposed to classic sessions. */
+export const DESKFLEET_SA_WORKER_TOOLS: (Tool & { method: string })[] = [
+  {
+    name: "deskfleet_sa_report",
+    method: "_deskfleet/super-agent/workerReport",
+    description: "Report structured feedback to the bound Super Agent conversation. Use kind='milestone' only for an immediately usable finding, scope-changing fact, or requested checkpoint while work continues; use kind='activity' for brief routine progress details; use kind='final_answer' to explicitly mark a final deliverable; use kind='ack' only when confirming a new delegated task if not already confirmed. Supply a stable submissionId when retrying to avoid duplicates. The host binds target identity automatically.",
+    inputSchema: object({
+      kind: { enum: ["ack", "activity", "milestone", "final_answer"] },
+      text: id,
+      submissionId: id,
+    }, ["kind", "text"]),
+  },
+]

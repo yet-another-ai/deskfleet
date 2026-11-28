@@ -6,6 +6,7 @@ import type { FileResourceRequest } from "@deskfleet/client/files"
 import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { createHiddenWorkspaces } from "../composables/useHiddenWorkspaces.ts"
 import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
 import { createSidebarOrder } from "../composables/useSidebarOrder.ts"
 import { createSidebarPanel, panelForRouteName } from "../composables/useSidebarPanel.ts"
@@ -27,6 +28,7 @@ let nextWindowRequestId = 1
 
 export const useLayoutStore = defineStore("layout", () => {
   const sidebarOrder = markRaw(createSidebarOrder())
+  const hiddenWorkspaces = markRaw(createHiddenWorkspaces())
   const standaloneSession = ref(
     (typeof window !== "undefined" && parseSessionWindowHash(window.location.hash) !== undefined)
       || router.currentRoute.value.query.window === "session",
@@ -101,6 +103,7 @@ export const useLayoutStore = defineStore("layout", () => {
     terminalPanelHeight,
     sidebarFilter,
     sidebarOrder,
+    hiddenWorkspaces,
     sidebarPanel,
     toggleSidebar,
     toggleDetails,

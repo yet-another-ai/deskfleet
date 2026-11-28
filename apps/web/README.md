@@ -90,7 +90,26 @@ mise run android:test
 mise run android:build
 ```
 
-On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`ai.yetanother.deskfleet.BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.ai.yetanother.deskfleet` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
+### Workspace Agent iOS development build
+
+Run these commands from the repository root. The standard App ID is
+`ai.yetanother.deskfleet`. The development build uses a separate identity for
+its app, ReplayKit extension, and App Group. It uses the registered native
+authentication callback and the same DeskFleet service.
+
+```sh
+export DESKFLEET_IOS_APP_ID=com.example.deskfleet.workspaceagent
+export DESKFLEET_IOS_DISPLAY_NAME="DeskFleet Dev"
+export VITE_DESKFLEET_SERVER_URL=https://deskfleet.yetanother.ai
+mise run ios:sync
+```
+
+The existing session list opens by default. Switch on **Settings → Preferences → Enable Super Agent** to use project conversations on this device. You can organize history on the selected machine from the same settings page.
+
+On iOS, **Settings → Appearance → Text size** adjusts interface text from 85% to 150%
+and saves the selection on the device. Choose 100% to restore the default.
+
+On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`$(DESKFLEET_IOS_APP_ID).BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.$(DESKFLEET_IOS_APP_ID)` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
 
 ### Mobile push notifications
 

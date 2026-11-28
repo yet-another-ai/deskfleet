@@ -1,0 +1,414 @@
+/*
+ * Scoped SA ticket accent styles (48 light + 48 dark = 96 styles).
+ * Applied strictly to SA ticket detail labels, progress/quote side rails, and SA role dot markers.
+ * Never defines or overrides global theme tokens, message bubbles, body text, buttons, errors, or ordinary sessions.
+ */
+
+.sa-ticket-label {
+  color: var(--sa-accent-text, var(--ui-color-accent));
+  font-weight: 500;
+}
+
+.sa-ticket-rail {
+  border-left-color: var(--sa-accent-rail);
+}
+
+.sa-ticket-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1rem;
+  color: var(--sa-accent-text);
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1;
+  transform: translateY(-1.5px);
+}
+
+/* Light theme (48 slots) */
+.sa-ticket-accent[data-sa-accent-slot="0"] {
+  --sa-accent-text: #b31a4b;
+  --sa-accent-rail: #bd2e55;
+}
+.sa-ticket-accent[data-sa-accent-slot="1"] {
+  --sa-accent-text: #820925;
+  --sa-accent-rail: #841a2c;
+}
+.sa-ticket-accent[data-sa-accent-slot="2"] {
+  --sa-accent-text: #a84a46;
+  --sa-accent-rail: #bd645e;
+}
+.sa-ticket-accent[data-sa-accent-slot="3"] {
+  --sa-accent-text: #b52203;
+  --sa-accent-rail: #bf341a;
+}
+.sa-ticket-accent[data-sa-accent-slot="4"] {
+  --sa-accent-text: #782600;
+  --sa-accent-rail: #7e2800;
+}
+.sa-ticket-accent[data-sa-accent-slot="5"] {
+  --sa-accent-text: #a45121;
+  --sa-accent-rail: #b96a41;
+}
+.sa-ticket-accent[data-sa-accent-slot="6"] {
+  --sa-accent-text: #974c00;
+  --sa-accent-rail: #a65400;
+}
+.sa-ticket-accent[data-sa-accent-slot="7"] {
+  --sa-accent-text: #663800;
+  --sa-accent-rail: #6b3c00;
+}
+.sa-ticket-accent[data-sa-accent-slot="8"] {
+  --sa-accent-text: #955e00;
+  --sa-accent-rail: #ad7426;
+}
+.sa-ticket-accent[data-sa-accent-slot="9"] {
+  --sa-accent-text: #845a00;
+  --sa-accent-rail: #916300;
+}
+.sa-ticket-accent[data-sa-accent-slot="10"] {
+  --sa-accent-text: #584100;
+  --sa-accent-rail: #5d4500;
+}
+.sa-ticket-accent[data-sa-accent-slot="11"] {
+  --sa-accent-text: #826900;
+  --sa-accent-rail: #9a7f1c;
+}
+.sa-ticket-accent[data-sa-accent-slot="12"] {
+  --sa-accent-text: #716400;
+  --sa-accent-rail: #7d6e00;
+}
+.sa-ticket-accent[data-sa-accent-slot="13"] {
+  --sa-accent-text: #4a4800;
+  --sa-accent-rail: #4e4c00;
+}
+.sa-ticket-accent[data-sa-accent-slot="14"] {
+  --sa-accent-text: #6a7300;
+  --sa-accent-rail: #80892e;
+}
+.sa-ticket-accent[data-sa-accent-slot="15"] {
+  --sa-accent-text: #576d00;
+  --sa-accent-rail: #607800;
+}
+.sa-ticket-accent[data-sa-accent-slot="16"] {
+  --sa-accent-text: #324f00;
+  --sa-accent-rail: #355400;
+}
+.sa-ticket-accent[data-sa-accent-slot="17"] {
+  --sa-accent-text: #457c2e;
+  --sa-accent-rail: #5f924b;
+}
+.sa-ticket-accent[data-sa-accent-slot="18"] {
+  --sa-accent-text: #00791e;
+  --sa-accent-rail: #008521;
+}
+.sa-ticket-accent[data-sa-accent-slot="19"] {
+  --sa-accent-text: #005428;
+  --sa-accent-rail: #00592b;
+}
+.sa-ticket-accent[data-sa-accent-slot="20"] {
+  --sa-accent-text: #008053;
+  --sa-accent-rail: #349669;
+}
+.sa-ticket-accent[data-sa-accent-slot="21"] {
+  --sa-accent-text: #007557;
+  --sa-accent-rail: #008160;
+}
+.sa-ticket-accent[data-sa-accent-slot="22"] {
+  --sa-accent-text: #005243;
+  --sa-accent-rail: #005647;
+}
+.sa-ticket-accent[data-sa-accent-slot="23"] {
+  --sa-accent-text: #007d70;
+  --sa-accent-rail: #009687;
+}
+.sa-ticket-accent[data-sa-accent-slot="24"] {
+  --sa-accent-text: #00736e;
+  --sa-accent-rail: #007e79;
+}
+.sa-ticket-accent[data-sa-accent-slot="25"] {
+  --sa-accent-text: #005051;
+  --sa-accent-rail: #005456;
+}
+.sa-ticket-accent[data-sa-accent-slot="26"] {
+  --sa-accent-text: #007a85;
+  --sa-accent-rail: #00939f;
+}
+.sa-ticket-accent[data-sa-accent-slot="27"] {
+  --sa-accent-text: #007080;
+  --sa-accent-rail: #007b8d;
+}
+.sa-ticket-accent[data-sa-accent-slot="28"] {
+  --sa-accent-text: #004d5f;
+  --sa-accent-rail: #005264;
+}
+.sa-ticket-accent[data-sa-accent-slot="29"] {
+  --sa-accent-text: #00779a;
+  --sa-accent-rail: #0d8eb7;
+}
+.sa-ticket-accent[data-sa-accent-slot="30"] {
+  --sa-accent-text: #006c97;
+  --sa-accent-rail: #0076a5;
+}
+.sa-ticket-accent[data-sa-accent-slot="31"] {
+  --sa-accent-text: #004972;
+  --sa-accent-rail: #004e79;
+}
+.sa-ticket-accent[data-sa-accent-slot="32"] {
+  --sa-accent-text: #276fb1;
+  --sa-accent-rail: #4786c4;
+}
+.sa-ticket-accent[data-sa-accent-slot="33"] {
+  --sa-accent-text: #005ec7;
+  --sa-accent-rail: #1569d3;
+}
+.sa-ticket-accent[data-sa-accent-slot="34"] {
+  --sa-accent-text: #1c3c94;
+  --sa-accent-rail: #224293;
+}
+.sa-ticket-accent[data-sa-accent-slot="35"] {
+  --sa-accent-text: #5465b3;
+  --sa-accent-rail: #6b7cc6;
+}
+.sa-ticket-accent[data-sa-accent-slot="36"] {
+  --sa-accent-text: #544dc8;
+  --sa-accent-rail: #5d59d1;
+}
+.sa-ticket-accent[data-sa-accent-slot="37"] {
+  --sa-accent-text: #442f8f;
+  --sa-accent-rail: #48368f;
+}
+.sa-ticket-accent[data-sa-accent-slot="38"] {
+  --sa-accent-text: #725bac;
+  --sa-accent-rail: #8773bf;
+}
+.sa-ticket-accent[data-sa-accent-slot="39"] {
+  --sa-accent-text: #793eb8;
+  --sa-accent-rail: #834bc1;
+}
+.sa-ticket-accent[data-sa-accent-slot="40"] {
+  --sa-accent-text: #5d247f;
+  --sa-accent-rail: #602c80;
+}
+.sa-ticket-accent[data-sa-accent-slot="41"] {
+  --sa-accent-text: #89529b;
+  --sa-accent-rail: #9e6baf;
+}
+.sa-ticket-accent[data-sa-accent-slot="42"] {
+  --sa-accent-text: #94309b;
+  --sa-accent-rail: #9e3ea5;
+}
+.sa-ticket-accent[data-sa-accent-slot="43"] {
+  --sa-accent-text: #701967;
+  --sa-accent-rail: #722369;
+}
+.sa-ticket-accent[data-sa-accent-slot="44"] {
+  --sa-accent-text: #9a4b82;
+  --sa-accent-rail: #af6597;
+}
+.sa-ticket-accent[data-sa-accent-slot="45"] {
+  --sa-accent-text: #a72276;
+  --sa-accent-rail: #b23380;
+}
+.sa-ticket-accent[data-sa-accent-slot="46"] {
+  --sa-accent-text: #7c0d49;
+  --sa-accent-rail: #7e1b4d;
+}
+.sa-ticket-accent[data-sa-accent-slot="47"] {
+  --sa-accent-text: #a44865;
+  --sa-accent-rail: #b9627c;
+}
+
+/* Dark theme (48 slots) */
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="0"] {
+  --sa-accent-text: #ff7a93;
+  --sa-accent-rail: #ff708d;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="1"] {
+  --sa-accent-text: #ffaeb1;
+  --sa-accent-rail: #ffaeb1;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="2"] {
+  --sa-accent-text: #e48780;
+  --sa-accent-rail: #c46c66;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="3"] {
+  --sa-accent-text: #ff8067;
+  --sa-accent-rail: #ff775d;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="4"] {
+  --sa-accent-text: #ffb297;
+  --sa-accent-rail: #ffb297;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="5"] {
+  --sa-accent-text: #df8d63;
+  --sa-accent-rail: #c0734a;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="6"] {
+  --sa-accent-text: #fc871e;
+  --sa-accent-rail: #f78313;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="7"] {
+  --sa-accent-text: #ffb572;
+  --sa-accent-rail: #ffb572;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="8"] {
+  --sa-accent-text: #d2974e;
+  --sa-accent-rail: #b47c33;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="9"] {
+  --sa-accent-text: #e09c00;
+  --sa-accent-rail: #da9800;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="10"] {
+  --sa-accent-text: #efc054;
+  --sa-accent-rail: #efc054;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="11"] {
+  --sa-accent-text: #bea247;
+  --sa-accent-rail: #a1872b;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="12"] {
+  --sa-accent-text: #c2ac00;
+  --sa-accent-rail: #bda700;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="13"] {
+  --sa-accent-text: #d1cd5d;
+  --sa-accent-rail: #d1cd5d;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="14"] {
+  --sa-accent-text: #a2ad54;
+  --sa-accent-rail: #87913a;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="15"] {
+  --sa-accent-text: #98bb18;
+  --sa-accent-rail: #93b60a;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="16"] {
+  --sa-accent-text: #aad978;
+  --sa-accent-rail: #aad978;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="17"] {
+  --sa-accent-text: #81b66d;
+  --sa-accent-rail: #679954;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="18"] {
+  --sa-accent-text: #57c760;
+  --sa-accent-rail: #52c25b;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="19"] {
+  --sa-accent-text: #7de19c;
+  --sa-accent-rail: #7de19c;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="20"] {
+  --sa-accent-text: #5bbb8c;
+  --sa-accent-rail: #409e71;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="21"] {
+  --sa-accent-text: #00c897;
+  --sa-accent-rail: #00c393;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="22"] {
+  --sa-accent-text: #4de4c2;
+  --sa-accent-rail: #4de4c2;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="23"] {
+  --sa-accent-text: #36bcab;
+  --sa-accent-rail: #049f8f;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="24"] {
+  --sa-accent-text: #00c4bd;
+  --sa-accent-rail: #00bfb7;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="25"] {
+  --sa-accent-text: #2ae2e6;
+  --sa-accent-rail: #2ae2e6;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="26"] {
+  --sa-accent-text: #29b9c7;
+  --sa-accent-rail: #009ba8;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="27"] {
+  --sa-accent-text: #00bfdb;
+  --sa-accent-rail: #00bad5;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="28"] {
+  --sa-accent-text: #56daff;
+  --sa-accent-rail: #56daff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="29"] {
+  --sa-accent-text: #45b2dd;
+  --sa-accent-rail: #2696be;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="30"] {
+  --sa-accent-text: #00b8ff;
+  --sa-accent-rail: #00b3f8;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="31"] {
+  --sa-accent-text: #91cfff;
+  --sa-accent-rail: #91cfff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="32"] {
+  --sa-accent-text: #6aaaea;
+  --sa-accent-rail: #508dca;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="33"] {
+  --sa-accent-text: #72acff;
+  --sa-accent-rail: #6aa7ff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="34"] {
+  --sa-accent-text: #adc7ff;
+  --sa-accent-rail: #adc7ff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="35"] {
+  --sa-accent-text: #8c9fed;
+  --sa-accent-rail: #7284cd;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="36"] {
+  --sa-accent-text: #9aa0ff;
+  --sa-accent-rail: #959aff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="37"] {
+  --sa-accent-text: #c3bfff;
+  --sa-accent-rail: #c3bfff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="38"] {
+  --sa-accent-text: #aa96e5;
+  --sa-accent-rail: #8e7bc6;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="39"] {
+  --sa-accent-text: #bf8fff;
+  --sa-accent-rail: #bc88ff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="40"] {
+  --sa-accent-text: #deb3ff;
+  --sa-accent-rail: #deb3ff;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="41"] {
+  --sa-accent-text: #c28dd4;
+  --sa-accent-rail: #a573b5;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="42"] {
+  --sa-accent-text: #e180e7;
+  --sa-accent-rail: #dc7be2;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="43"] {
+  --sa-accent-text: #fba6ee;
+  --sa-accent-rail: #fba6ee;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="44"] {
+  --sa-accent-text: #d587bb;
+  --sa-accent-rail: #b66d9e;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="45"] {
+  --sa-accent-text: #f777bf;
+  --sa-accent-rail: #f273ba;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="46"] {
+  --sa-accent-text: #ffaacb;
+  --sa-accent-rail: #ffaacb;
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) .sa-ticket-accent[data-sa-accent-slot="47"] {
+  --sa-accent-text: #e0859e;
+  --sa-accent-rail: #c06b83;
+}

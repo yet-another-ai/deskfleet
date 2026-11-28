@@ -4,11 +4,18 @@ import { useLayoutStore } from "../stores/layout.ts"
 
 export type SidebarSessionFilter = "all" | "unread" | "working"
 
+export interface SidebarMachineCounts {
+  unread: number
+  working: number
+  unknown?: boolean
+}
+
 export function createSidebarFilter() {
   const filter = ref<SidebarSessionFilter>("all")
-  const counts = shallowReactive(new Map<string, { unread: number; working: number }>())
+  const counts = shallowReactive(new Map<string, SidebarMachineCounts>())
   const sum = (key: "unread" | "working") => [...counts.values()].reduce((total, item) => total + item[key], 0)
-  return { filter, counts, totalUnread: computed(() => sum("unread")), totalWorking: computed(() => sum("working")) }
+  const hasUnknown = computed(() => [...counts.values()].some(item => item.unknown === true))
+  return { filter, counts, hasUnknown, totalUnread: computed(() => sum("unread")), totalWorking: computed(() => sum("working")) }
 }
 
 export type SidebarFilterState = ReturnType<typeof createSidebarFilter>

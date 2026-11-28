@@ -7,7 +7,7 @@ import { installLocalApplications } from "./applications.ts"
 import { installNetworkDiagnostics } from "./network-diagnostics.ts"
 import { installSpeech } from "./speech.ts"
 import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
-import { app, powerMonitor, powerSaveBlocker } from "electron"
+import { app, dialog, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
 import { prepareAuv } from "./auv.ts"
@@ -44,7 +44,8 @@ import type { UpdateController } from "./update-controller.ts"
 import { UpdateSettingsController } from "./update-settings.ts"
 import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
-import { hideMainWindow, openMainWindowNotificationSession, showMainWindow } from "./windows.ts"
+import { hideMainWindow, openMainWindowNotificationSession, showMainWindow, showStartupWindow } from "./windows.ts"
+import { t } from "./i18n.ts"
 import { installApplication } from "./application.ts"
 import { installGoogleTag } from "./google-tag.ts"
 
@@ -71,7 +72,17 @@ function start(): void {
     : () => app.relaunch({ args: process.argv.slice(1) })
   const lifecycle = keepRunningInBackground(app, hideMainWindow, relaunch)
   installApplication(lifecycle)
-  const show = () => void showMainWindow(lifecycle)
+  let initialized = false
+  let startupVisible = false
+  let initialHash = ""
+  let startupTimer: ReturnType<typeof setTimeout> | undefined
+  const show = (hash = "") => {
+    if (initialized) void showMainWindow(lifecycle, hash)
+    else {
+      if (hash) initialHash = hash
+      if (startupVisible) showStartupWindow(lifecycle, true)
+    }
+  }
   let updates: UpdateController | undefined
   let userQuit = false
   let quittingForUpdate = false
@@ -89,10 +100,18 @@ function start(): void {
   app.on("second-instance", reopen)
 
   void app.whenReady().then(async () => {
-    configureApplicationDisplay(() => void showMainWindow(lifecycle, "#/settings/preferences"))
+    configureApplicationDisplay(() => show("#/settings/preferences"))
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
+    app.on("activate", reopen)
+    createTray({ show, quit: () => { userQuit = true; lifecycle.quit() } })
+    if (process.platform === "darwin") {
+      startupTimer = setTimeout(() => {
+        startupVisible = true
+        showStartupWindow(lifecycle)
+      }, 1000)
+    }
     installGoogleTag()
     installRendererDownloadGuard()
     installDesktopMediaIpc()
@@ -244,10 +263,18 @@ function start(): void {
     )
     try { updateSettings.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
+    initialized = true
     updates.start()
-    createTray({ show, quit: () => { userQuit = true; lifecycle.quit() } })
-    show()
-    app.on("activate", reopen)
+    show(initialHash)
+  }).finally(() => clearTimeout(startupTimer)).catch(async error => {
+    if (lifecycle.quitting) return
+    console.error("Could not start DeskFleet", error)
+    const choice = await dialog.showMessageBox({
+      type: "error", message: t("startup.failed"),
+      buttons: [t("welcome.retry"), t("tray.quit")], defaultId: 0, cancelId: 1,
+    }).catch(() => undefined)
+    if (choice?.response === 0) lifecycle.restart()
+    else lifecycle.quit()
   })
 }
 

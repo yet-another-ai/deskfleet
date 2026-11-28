@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { defineConfig } from "vite"
 import { nodeBuiltins } from "./build/node-builtins.ts"
 
 export default defineConfig({
+  define: { __DESKFLEET_ADHD_SKILL__: JSON.stringify(readFileSync(resolve(import.meta.dirname, "../../.agents/skills/i-have-adhd/SKILL.md"), "utf8")) },
   plugins: [{
     name: "deskfleet-native-addon",
     async generateBundle() {

@@ -6,6 +6,7 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 const props = defineProps<{
   to: RouteLocationRaw
   machineId?: string
+  compact?: boolean
   icon?: Component
   label: string
   dragSource?: HTMLAttributes
@@ -33,19 +34,20 @@ function open(event: MouseEvent, navigate: (event?: MouseEvent) => unknown): voi
     custom
   >
     <div
-      class="group flex h-8 items-center rounded-lg ui-motion"
-      :class="selected && isActive ? 'ui-nav-active hover:bg-ui-accent/20' : 'text-ui-text hover:bg-ui-hover'"
+      class="group flex items-center rounded-lg ui-motion"
+      :class="[compact ? 'h-7 w-7 justify-center' : 'h-8', selected && isActive ? 'ui-nav-active hover:bg-ui-accent/20' : 'text-ui-text hover:bg-ui-hover']"
     >
       <a
         v-bind="dragSource"
         :href="href"
+        :title="compact ? label : undefined"
         class="flex h-full min-w-0 flex-1 items-center gap-2.5 text-[13px] text-current no-underline active:scale-[0.985]"
-        :class="[indent[depth], $slots.actions ? 'pr-2.5 group-hover:pr-1 can-hover:group-has-[:focus-visible]:pr-1' : 'pr-2.5']"
+        :class="compact ? 'justify-center px-0' : [indent[depth], $slots.actions ? 'pr-2.5 group-hover:pr-1 can-hover:group-has-[:focus-visible]:pr-1' : 'pr-2.5']"
         :aria-current="selected && isExactActive ? 'page' : undefined"
         @click="open($event, navigate)"
       >
         <slot name="icon"><component v-if="icon" :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
-        <span class="min-w-0 flex-1 truncate">{{ label }}</span>
+        <span :class="compact ? 'sr-only' : 'min-w-0 flex-1 truncate'">{{ label }}</span>
         <span
           v-if="$slots.trailing"
           class="inline-flex shrink-0 items-center justify-center gap-1.5 ui-motion"

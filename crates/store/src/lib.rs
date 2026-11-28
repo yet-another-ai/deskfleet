@@ -4,9 +4,14 @@ mod agent;
 mod catalog;
 pub mod entities;
 mod local;
+mod super_agent;
+mod super_agent_follow_up;
 
 pub use catalog::{Catalog, CatalogWorkspace};
 pub use local::{LocalCatalog, LocalSnapshot};
+pub use super_agent_follow_up::{
+    FollowUpActionWrite, FollowUpRunQuery, FollowUpRunWrite, FollowUpSourceWrite,
+};
 
 use deskfleet_migration::{Migrator, MigratorTrait};
 use deskfleet_model::DirectoryBindingsError;

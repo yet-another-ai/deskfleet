@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, ExternalLink, FileText } from "@lucide/vue"
 import { useId } from "vue"
 import { useConversationDisclosures } from "../../stores/conversation-reading.ts"
 import { useI18n } from "vue-i18n"
+import { isGithubItemUri } from "@deskfleet/protocol/composer-reference"
 import type { AgentInput } from "@deskfleet/protocol/agent"
 import { previewKindFromUri, type MediaPreviewKind } from "../../services/preview.ts"
 import UiScrollArea from "../common/UiScrollArea.vue"
@@ -24,12 +25,8 @@ function toggleResource(index: number): void {
   else disclosures()[key] = true
 }
 
-function githubResource(uri: string): boolean {
-  return /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\/[1-9]\d*$/iu.test(uri)
-}
-
 function resourceLabel(uri: string, text: string): string {
-  if (githubResource(uri)) return text.split(/\r?\n/u, 1)[0] || uri
+  if (isGithubItemUri(uri)) return text.split(/\r?\n/u, 1)[0] || uri
   if (!uri || uri.startsWith("deskfleet://pasted-text")) return t("agent.pastedText")
   const name = uri.split(/[\\/]/u).filter(Boolean).at(-1)
   return name ? decodeURIComponent(name) : t("agent.pastedText")
@@ -78,7 +75,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
               <component :is="isExpanded(index) ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
             </span>
           </button>
-          <a v-if="githubResource(block.resource.uri)" :href="block.resource.uri" target="_blank" rel="noopener noreferrer" :aria-label="block.resource.uri" :title="block.resource.uri" class="mr-1 inline-flex rounded p-1.5 text-ui-accent hover:bg-ui-hover"><ExternalLink :size="14" aria-hidden="true" /></a>
+          <a v-if="isGithubItemUri(block.resource.uri)" :href="block.resource.uri" target="_blank" rel="noopener noreferrer" :aria-label="block.resource.uri" :title="block.resource.uri" class="mr-1 inline-flex rounded p-1.5 text-ui-accent hover:bg-ui-hover"><ExternalLink :size="14" aria-hidden="true" /></a>
         </div>
         <UiScrollArea v-if="isExpanded(index)" orientation="both" fade-size="sm" class="max-h-80 border-t border-ui-border bg-ui-badge/50">
           <pre class="m-0 p-3 font-mono text-xs whitespace-pre-wrap">{{ block.resource.text }}</pre>

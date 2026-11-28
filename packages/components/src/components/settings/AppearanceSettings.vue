@@ -2,7 +2,7 @@
 import { MessageSquare } from "@lucide/vue"
 import { computed, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, type AppearanceSettings, type ReadingSpotlightStyle } from "@deskfleet/client/appearance"
+import { DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, INTERFACE_TEXT_SCALES, type AppearanceSettings, type ReadingSpotlightStyle } from "@deskfleet/client/appearance"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import { useOutlineAudioStore } from "../../stores/outline-audio.ts"
@@ -38,6 +38,9 @@ const languages = computed(() => [
   { value: "zh-cmn-Hans-CN", label: "简体中文" },
   { value: "ja-JP", label: "日本語" },
 ])
+const textScales = computed(() => INTERFACE_TEXT_SCALES.map(scale => ({
+  value: String(scale), label: scale === 100 ? t("appearance.defaultTextSize") : `${scale}%`,
+})))
 const spotlightStyles = computed(() => [
   { value: "aside", label: t("appearance.readingSpotlightAside") },
   { value: "under", label: t("appearance.readingSpotlightUnder") },
@@ -69,6 +72,13 @@ onMounted(() => { void appearance.initialize() })
     <div class="my-5 flex flex-wrap items-center justify-between gap-3 border-y border-ui-border py-4 sm:gap-6">
       <span id="appearance-language-label" class="text-sm font-medium">{{ t("appearance.language") }}</span>
       <UiSelect name="appearance-language" aria-labelledby="appearance-language-label" class="w-44" :model-value="appearance.settings.language" :options="languages" :disabled="busy" @update:model-value="appearance.set({ language: $event as AppearanceSettings['language'] })" />
+    </div>
+
+    <div v-if="appearance.supportsTextScale" class="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <span id="appearance-text-size-label" class="text-sm font-medium">{{ t("appearance.textSize") }}</span>
+      <UiSelect name="appearance-text-size" aria-labelledby="appearance-text-size-label" class="w-44"
+        :model-value="String(appearance.interfaceTextScale)" :options="textScales" :disabled="busy"
+        @update:model-value="appearance.set({ interfaceTextScale: Number($event) })" />
     </div>
 
     <div class="grid items-center gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">

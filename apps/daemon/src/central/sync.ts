@@ -17,6 +17,7 @@ export class CentralSync {
   readonly #providerUpdates: Pick<ProviderUpdates, "snapshot" | "onChanged"> | undefined
   readonly #schedules: Pick<ScheduledTasks, "snapshot" | "onChanged"> | undefined
   readonly #desktopSupported: () => Promise<boolean>
+  readonly #superAgent: boolean
   readonly #cursors = new Map<string, string>()
   readonly #commandCursors = new Map<string, string>()
   readonly #pendingSessions = new Set<string>()
@@ -30,12 +31,13 @@ export class CentralSync {
   #closing = false
   #timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop, schedules?: Pick<ScheduledTasks, "snapshot" | "onChanged">, providerUpdates?: Pick<ProviderUpdates, "snapshot" | "onChanged">) {
+  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop, schedules?: Pick<ScheduledTasks, "snapshot" | "onChanged">, providerUpdates?: Pick<ProviderUpdates, "snapshot" | "onChanged">, superAgent = false) {
     this.#agents = agents; this.#catalog = catalog; this.#post = post
     this.#providers = providers
     this.#providerUpdates = providerUpdates
     this.#schedules = schedules
     this.#desktopSupported = desktopSupported
+    this.#superAgent = superAgent
     this.#unsubscribe = [agents.onEvent(event => {
       if (event.kind === "session") this.#catalogDirty = true
       this.changed(event.sessionId)
@@ -82,7 +84,7 @@ export class CentralSync {
           await this.#post("/api/daemon/catalog", {
             revision, snapshot: await this.#catalog.snapshot(),
             providers: { ...this.#providers.metadata(), ...(this.#providerUpdates ? { updates: this.#providerUpdates.snapshot() } : {}) },
-            capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true, mux: MUX_PROFILE },
+            capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), superAgent: this.#superAgent, agent: true, terminal: true, git: true, mux: MUX_PROFILE },
           })
         }
         catch (error) { this.#catalogDirty = true; throw error }

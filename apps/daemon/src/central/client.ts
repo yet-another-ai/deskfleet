@@ -8,6 +8,7 @@ import type { CentralSocket, CentralTransport } from "@deskfleet/client/central-
 import type { RemoteMcp } from "../mcp/remote.ts"
 import type { AgentActor } from "@deskfleet/protocol/agent"
 import type { GithubPullRequest, GithubPullRequestQuery } from "@deskfleet/client/central"
+import type { SuperFeedbackSubscribeHandler, SuperHandler } from "../agent/channel.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "../peers/authorized-peers.ts"
 import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "@deskfleet/protocol/central"
 import { CentralSync } from "./sync.ts"
@@ -65,24 +66,25 @@ export class CentralClient {
   #nextCloseReport = 0
   #suppressedCloseReports = 0
   #requests = new Set<Promise<void>>()
+  #readyListeners = new Set<() => void>()
   #enrolling = false
   #revocation: Promise<void> | undefined
 
   readonly #remoteMcp?: RemoteMcp
   readonly #transport?: CentralTransport
 
-  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport) {
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport, superAgent?: SuperHandler, superAgentFeedback?: SuperFeedbackSubscribeHandler) {
     this.#remoteMcp = remoteMcp
     this.#transport = centralTransport
     this.#shutdownTimeoutMs = shutdownTimeoutMs
     this.#path = join(directory, "central.json")
     this.#operations = operations
     this.#peers = new AuthorizedPeers({
-      peers, agents: operations.agents, terminals: operations.terminals,
+      peers, agents: operations.agents, terminals: operations.terminals, superAgent, superAgentFeedback,
       identity: operations.agents.journal.identity,
       signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
     })
-    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates)
+    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates, !!superAgent)
     this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
   }
 
@@ -107,6 +109,11 @@ export class CentralClient {
   }
 
   desktopCapabilitiesChanged(): void { this.#sync.changed() }
+
+  onReady(listener: () => void): () => void {
+    this.#readyListeners.add(listener)
+    return () => this.#readyListeners.delete(listener)
+  }
 
   openLocal(peerId: string, token: string, owner: object, sink: LocalPeerSink): void {
     this.#peers.openLocal(peerId, token, owner, sink)
@@ -327,6 +334,9 @@ export class CentralClient {
       if (message.machineId !== this.#credentials?.machineId || message.teamId !== this.#credentials?.teamId || message.serverId !== this.#credentials?.serverId) throw new Error("Control identity mismatch")
       this.#connected = true; this.#sync.enable(); this.#retryDelay = RETRY_MIN_MS
       void this.#operations.agents.reconcileAdmissions().catch(error => console.error("Session admission reconciliation failed", error))
+      for (const listener of this.#readyListeners) {
+        try { listener() } catch { /* ignore listener errors */ }
+      }
       return
     }
     if (message.type === "ping") { this.#send({ type: "pong" }); return }
