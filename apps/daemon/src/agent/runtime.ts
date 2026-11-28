@@ -256,7 +256,7 @@ export class AgentRuntime {
       })
     }
     if (this.#recovering) return this.#recovering.then(() => this.start(selection, forkSource))
-    if (this.running) { this.resumeBacklog(); return }
+    if (this.running) { this.#quotaPaused = false; await this.pump(); return }
     if (this.#starting) return this.#starting
     this.#starting = this.#start(selection, forkSource).finally(() => { this.#starting = undefined })
     return this.#starting
@@ -419,7 +419,8 @@ export class AgentRuntime {
           this.journal.event(this.sessionId, "session", session), this.journal.event(this.sessionId, "run", run),
         ] })
       })
-      void this.pump()
+      // Finish the startup backlog check before a caller applies configuration.
+      await this.pump()
     } catch (error) {
       this.#stopping = true
       this.journal.live.auth(this.sessionId, run.generation, null)
